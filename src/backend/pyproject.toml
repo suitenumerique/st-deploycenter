@@ -1,0 +1,133 @@
+#
+# deploycenter backend package
+#
+
+[project]
+name = "deploycenter-backend"
+version = "0.0.1"
+authors = [{ "name" = "ANCT", "email" = "contact@suite.anct.gouv.fr" }]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Framework :: Django",
+    "Framework :: Django :: 5",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+]
+description = "ST Deploy Center"
+keywords = ["Django"]
+license = "MIT"
+readme = "README.md"
+requires-python = ">=3.13,<4.0"
+
+# Note: after changing this list you must re-run `make back-poetry-lock`
+dependencies = [
+    "celery[redis]==5.5.2",
+    "cryptography==45.0.5",
+    "dj-database-url==2.3.0",
+    "django==5.1.11",
+    "django-celery-beat==2.8.0",
+    "django-celery-results==2.6.0",
+    "django-configurations==2.5.1",
+    "django-cors-headers==4.6.0",
+    "django-countries==7.6.1",
+    "django-fernet-encrypted-fields==0.3.0",
+    "django-filter==24.3",
+    "django-parler==2.3",
+    "django-redis==5.4.0",
+    "django-storages==1.14.4",
+    "django-timezone-field==7.1",
+    "djangorestframework==3.15.2",
+    "drf_spectacular==0.28.0",
+    "factory_boy==3.3.1",
+    "gunicorn==23.0.0",
+    "mozilla-django-oidc==4.0.1",
+    "psycopg[binary]==3.2.4",
+    "PyJWT==2.10.1",
+    "redis==5.2.1",
+    "requests==2.32.4",
+    "sentry-sdk[django]==2.27.0",
+    "url-normalize==1.4.3",
+    "whitenoise==6.8.2",
+]
+
+[project.urls]
+"Bug Tracker" = "https://github.com/suitenumerique/st-deploycenter/issues/new"
+"Changelog" = "https://github.com/suitenumerique/st-deploycenter/blob/main/CHANGELOG.md"
+"Homepage" = "https://github.com/suitenumerique/st-deploycenter"
+"Repository" = "https://github.com/suitenumerique/st-deploycenter"
+
+[project.optional-dependencies]
+dev = [
+    "django-extensions==3.2.3",
+    "drf-spectacular-sidecar==2024.12.1",
+    "flower==2.0.1",
+    "pip-audit==2.9.0",
+    "pylint-django==2.6.1",
+    "pylint==3.3.4",
+    "pytest-cov==6.0.0",
+    "pytest-django==4.9.0",
+    "pytest==8.3.4",
+    "pytest-icdiff==0.9",
+    "pytest-repeat==0.9.4",
+    "pytest-xdist==3.6.1",
+    "responses==0.25.6",
+    "ruff==0.9.3"
+]
+
+[tool.poetry]
+package-mode = false
+
+[tool.ruff]
+exclude = [
+    ".git",
+    ".venv",
+    "build",
+    "venv",
+    "__pycache__",
+    "*/migrations/*",
+]
+line-length = 88
+
+[tool.ruff.lint]
+ignore = ["DJ001", "PLR2004", "PLR0915", "PLR0912", "PLR0913", "PLR0911", "BLE001"]
+select = [
+    "B", # flake8-bugbear
+    "BLE", # flake8-blind-except
+    "C4", # flake8-comprehensions
+    "DJ", # flake8-django
+    "I", # isort
+    "PLC", # pylint-convention
+    "PLE", # pylint-error
+    "PLR", # pylint-refactoring
+    "PLW", # pylint-warning
+    "RUF100", # Ruff unused-noqa
+    "RUF200", # Ruff check pyproject.toml
+    "S", # flake8-bandit
+    "SLF", # flake8-self
+    "T20", # flake8-print
+    "F"  # pyflakes
+]
+
+[tool.ruff.lint.isort]
+section-order = ["future","standard-library","django","third-party","deploycenter","first-party","local-folder"]
+sections = { deploycenter=["core"], django=["django"] }
+extra-standard-library = ["tomllib"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/*" = ["S", "SLF"]
+
+[tool.pytest.ini_options]
+addopts = [
+    "-v",
+    "--cov-report",
+    "term-missing",
+    # Allow test files to have the same name in different directories.
+    "--import-mode=importlib",
+]
+python_files = [
+    "test_*.py",
+    "tests.py",
+]

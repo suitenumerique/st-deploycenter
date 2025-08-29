@@ -1,0 +1,79 @@
+name: Lint and tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - '*'
+
+env:
+  COMPOSE_BAKE: true
+
+jobs:
+
+  lint-back:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Create env files
+        run: make create-env-files
+      - name: Run linting checks
+        run: make back-lint
+
+
+  test-back:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Create env files
+        run: make create-env-files
+      - name: Setup data directories
+        run: |
+          mkdir -p data/media data/static
+          chmod -R 777 data
+      - name: Collect static files
+        run: make collectstatic
+      - name: Run backend tests
+        run: make back-test
+
+  # test-front:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
+  #     - name: Create env files
+  #       run: make create-env-files
+  #     - name: Install frontend dependencies
+  #       run: make front-install-frozen
+  #     - name: Run frontend tests
+  #       run: make front-test
+
+  # lint-front:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
+  #     - name: Create env files
+  #       run: make create-env-files
+  #     - name: Install frontend dependencies
+  #       run: make front-install-frozen
+  #     - name: Run frontend linting
+  #       run: make front-lint
+  #     - name: Run frontend check
+  #       run: make front-ts-check
+
+  # build-front:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
+  #     - name: Create env files
+  #       run: make create-env-files
+  #     - name: Install frontend dependencies
+  #       run: make front-install-frozen
+  #     - name: Build frontend
+  #       run: make front-build

@@ -1,0 +1,224 @@
+name: st-deploycenter
+
+services:
+  postgresql:
+    image: postgres:16.6
+    ports:
+      - "8965:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 1s
+      timeout: 2s
+      retries: 300
+    env_file:
+      - env.d/development/postgresql.defaults
+      - env.d/development/postgresql.local
+
+  redis:
+    image: redis:5
+    ports:
+      - "8966:6379"
+
+  # mailcatcher:
+  #   image: maildev/maildev:2.2.1
+  #   ports:
+  #     - "8904:1080"
+
+  # minio:
+  #   user: ${DOCKER_USER:-1000}
+  #   image: minio/minio
+  #   environment:
+  #     - MINIO_ROOT_USER=st-deploycenter
+  #     - MINIO_ROOT_PASSWORD=password
+  #   ports:
+  #     - "9000:9000"
+  #     - "9001:9001"
+  #   healthcheck:
+  #     test: ["CMD", "mc", "ready", "local"]
+  #     interval: 1s
+  #     timeout: 20s
+  #     retries: 300
+  #   entrypoint: ""
+  #   command: minio server --console-address :9001 /data
+  #   volumes:
+  #     - ./data/media:/data
+
+  backend-dev:
+    build:
+      context: src/backend
+      target: runtime-dev
+      args:
+        DOCKER_USER: ${DOCKER_USER:-1000}
+    user: ${DOCKER_USER:-1000}
+    environment:
+      - PYLINTHOME=/app/.pylint.d
+      - DJANGO_CONFIGURATION=Development
+    env_file:
+      - env.d/development/backend.defaults
+      - env.d/development/backend.local
+    ports:
+      - "8961:8000"
+    volumes:
+      - ./src/backend:/app
+      - ./data/static:/data/static
+    depends_on:
+      postgresql:
+        condition: service_healthy
+        restart: true
+      redis:
+        condition: service_started
+      keycloak:
+        condition: service_started
+
+      # createbuckets:
+      #  condition: service_started
+
+  backend-db:
+    profiles:
+      - tools
+    build:
+      context: src/backend
+      target: runtime-dev
+      args:
+        DOCKER_USER: ${DOCKER_USER:-1000}
+    user: ${DOCKER_USER:-1000}
+    environment:
+      - DJANGO_CONFIGURATION=DevelopmentMinimal
+    env_file:
+      - env.d/development/backend.defaults
+      - env.d/development/backend.local
+    ports:
+      - "8961:8000"
+    volumes:
+      - ./src/backend:/app
+      - ./data/static:/data/static
+    depends_on:
+      postgresql:
+        condition: service_healthy
+        restart: true
+  
+  backend-poetry:
+    profiles:
+      - tools
+    volumes:
+      - ./src/backend:/app
+    build:
+      context: src/backend/
+      target: poetry
+    pull_policy: build
+
+  celery-dev:
+    build:
+      context: src/backend
+      target: runtime-dev
+      args:
+        DOCKER_USER: ${DOCKER_USER:-1000}
+    user: ${DOCKER_USER:-1000}
+    command: ["celery", "-A", "deploycenter.celery_app", "worker", "-l", "DEBUG"]
+    environment:
+      - DJANGO_CONFIGURATION=Development
+    env_file:
+      - env.d/development/backend.defaults
+      - env.d/development/backend.local
+    volumes:
+      - ./src/backend:/app
+      - ./data/static:/data/static
+    depends_on:
+      - backend-dev
+
+  celery-ui:
+    build:
+      context: src/backend
+      target: runtime-dev
+      args:
+        DOCKER_USER: ${DOCKER_USER:-1000}
+    user: ${DOCKER_USER:-1000}
+    depends_on:
+      - redis
+    environment:
+      - FLOWER_UNAUTHENTICATED_API=true
+      - DJANGO_CONFIGURATION=Development
+    env_file:
+      - env.d/development/backend.defaults
+      - env.d/development/backend.local
+    volumes:
+      - ./src/backend:/app
+    ports:
+      - "8963:8803"
+    command: celery -A deploycenter.celery_app flower --port=8803
+
+  # nginx:
+  #   image: nginx:1.25
+  #   ports:
+  #     - "8083:8083"
+  #   volumes:
+  #     - ./docker/files/development/etc/nginx/conf.d:/etc/nginx/conf.d:ro
+  #   depends_on:
+  #     - keycloak
+  #     - backend-dev
+  #     - mta-in
+  #     - mta-out
+
+  # frontend-dev:
+  #   user: "${DOCKER_USER:-1000}"
+  #   build:
+  #     context: ./src/frontend
+  #     dockerfile: Dockerfile.dev
+  #   env_file:
+  #     - env.d/development/frontend.defaults
+  #     - env.d/development/frontend.local
+  #   command: ["npm", "run", "dev"]
+  #   volumes:
+  #     - ./src/frontend/:/home/frontend/
+  #   ports:
+  #     - "8900:3000"
+
+  # frontend-tools:
+  #   user: "${DOCKER_USER:-1000}"
+  #   profiles:
+  #     - frontend-tools
+  #   build:
+  #     dockerfile: ./src/frontend/Dockerfile.dev
+  #   volumes:
+  #     - ./src/backend/core/api/openapi.json:/home/backend/core/api/openapi.json
+  #     - ./src/frontend/:/home/frontend/
+
+  # frontend-tools-amd64:
+  #   user: "${DOCKER_USER:-1000}"
+  #   profiles:
+  #     - frontend-tools
+  #   platform: linux/amd64
+  #   build:
+  #     dockerfile: ./src/frontend/Dockerfile.dev
+  #   volumes:
+  #     - ./src/backend/core/api/openapi.json:/home/backend/core/api/openapi.json
+  #     - ./src/frontend/:/home/frontend/
+
+  # crowdin:
+  #   image: crowdin/cli:3.16.0
+  #   volumes:
+  #     - ".:/app"
+  #   env_file:
+  #     - env.d/development/crowdin
+  #   user: "${DOCKER_USER:-1000}"
+  #   working_dir: /app
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2.5
+    volumes:
+      - ./src/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
+    command:
+      - start-dev
+      - --features=preview
+      - --import-realm
+      - --proxy=edge
+      - --hostname=http://localhost:8962
+      - --hostname-admin=http://localhost:8962/
+      - --http-port=8802
+    env_file:
+      - env.d/development/keycloak.defaults
+      - env.d/development/keycloak.local
+    ports:
+      - "8962:8802"
+    depends_on:
+      - postgresql

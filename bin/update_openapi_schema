@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+source "$(dirname "${BASH_SOURCE[0]}")/_config.sh"
+
+_dc_run \
+    -e DJANGO_CONFIGURATION=Test \
+    --no-deps \
+    backend-dev \
+    python manage.py spectacular \
+    --api-version 'v1.0' \
+    --urlconf 'core.urls' \
+    --format openapi-json \
+    --file /app/core/api/openapi.json

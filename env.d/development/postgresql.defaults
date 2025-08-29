@@ -1,0 +1,4 @@
+# Postgresql db container configuration
+POSTGRES_DB=deploycenter
+POSTGRES_USER=user
+POSTGRES_PASSWORD=pass
