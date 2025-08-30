@@ -9,6 +9,7 @@ of queuing them as background tasks.
 import importlib
 import json
 import logging
+import traceback
 
 from django.core.management.base import BaseCommand, CommandError
 
@@ -92,8 +93,6 @@ class Command(BaseCommand):
 
         except Exception as e:
             if options["traceback"]:
-                import traceback
-
                 self.stdout.write(self.style.ERROR("Task failed with exception:"))
                 self.stdout.write(traceback.format_exc())
             else:

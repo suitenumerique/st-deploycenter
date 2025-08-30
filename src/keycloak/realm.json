@@ -270,7 +270,7 @@
       } ],
       "security-admin-console" : [ ],
       "admin-cli" : [ ],
-      "messages" : [ ],
+      "deploycenter" : [ ],
       "account-console" : [ ],
       "broker" : [ {
         "id" : "2e713186-38da-44d7-a5a5-19d91ef2dfca",

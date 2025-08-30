@@ -7,7 +7,6 @@ This module handles scraping metrics from external services and storing them in 
 import json
 import logging
 import time
-from decimal import Decimal
 from typing import Any, Dict, List
 
 from django.utils import timezone
@@ -15,7 +14,7 @@ from django.utils import timezone
 import requests
 from celery import shared_task
 
-from ..models import Metric, Organization, Service, ServiceSubscription
+from ..models import Metric, Organization, Service
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +42,7 @@ def scrape_all_service_metrics():
 
     for service in active_services:
         try:
-            logger.info("Scraping metrics for service: %s", service.type)
+            logger.info("Scraping metrics for service: %s", service.name)
 
             # Scrape metrics for this service
             service_result = scrape_service_metrics(str(service.id))
@@ -56,10 +55,10 @@ def scrape_all_service_metrics():
             service_results.append(service_result)
 
         except (requests.RequestException, ValueError, KeyError) as e:
-            logger.error("Error processing service %s: %s", service.type, str(e))
+            logger.error("Error processing service %s: %s", service.name, str(e))
             service_results.append(
                 {
-                    "service": service.type,
+                    "service": service.name,
                     "metrics_scraped": 0,
                     "metrics_stored": 0,
                     "status": "error",
@@ -134,12 +133,12 @@ def fetch_metrics_from_service(service: Service) -> List[Dict[str, Any]]:
     Returns:
         List of metrics data dictionaries
     """
-    logger.info("Fetching metrics from service: %s", service.type)
+    logger.info("Fetching metrics from service: %s", service.name)
 
     # Get metrics endpoint from service config
     metrics_endpoint = service.config.get("metrics_endpoint")
     if not metrics_endpoint:
-        logger.warning("No metrics endpoint configured for service %s", service.type)
+        logger.warning("No metrics endpoint configured for service %s", service.name)
         return []
 
     # Get authentication token from service config
@@ -218,7 +217,7 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
     Returns:
         Number of metrics stored
     """
-    logger.info("Storing metrics for service %s", service.type)
+    logger.info("Storing metrics for service %s", service.name)
 
     # Get all organizations by both SIRET and INSEE codes
     organizations_by_siret = {
@@ -232,19 +231,7 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
         )
     }
 
-    # Get or create service subscriptions for all organizations
-    all_organizations = list(organizations_by_siret.values()) + list(
-        organizations_by_insee.values()
-    )
-    subscriptions = {}
-    for org in all_organizations:
-        subscription, _ = ServiceSubscription.objects.get_or_create(
-            service=service, organization=org, defaults={"metadata": {}}
-        )
-        subscriptions[org.id] = subscription
-
-    metrics_to_create = []
-    metrics_to_update = []
+    metrics_to_create = {}
     timestamp = timezone.now()
 
     for item in metrics_data:
@@ -285,29 +272,13 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
                 if value is None:
                     continue
 
-                # Check if metric already exists
-                existing_metric = Metric.objects.filter(
-                    name=metric_name,
+                metrics_to_create[(service.id, organization.id, metric_name)] = Metric(
+                    key=metric_name,
+                    value=value,
                     service=service,
                     organization=organization,
-                    timestamp__date=timestamp.date(),
-                ).first()
-
-                if existing_metric:
-                    # Update existing metric
-                    existing_metric.value = Decimal(str(value))
-                    existing_metric.updated_at = timestamp
-                    metrics_to_update.append(existing_metric)
-                else:
-                    # Create new metric
-                    new_metric = Metric(
-                        name=metric_name,
-                        value=value,
-                        service=service,
-                        organization=organization,
-                        timestamp=timestamp,
-                    )
-                    metrics_to_create.append(new_metric)
+                    timestamp=timestamp,
+                )
 
         except (ValueError, KeyError, TypeError) as e:
             logger.error("Error processing metrics for %s: %s", item, str(e))
@@ -317,15 +288,14 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
     metrics_stored = 0
 
     if metrics_to_create:
-        Metric.objects.bulk_create(metrics_to_create, batch_size=1000)
+        Metric.objects.bulk_create(
+            metrics_to_create.values(),
+            batch_size=1000,
+            update_conflicts=True,
+            update_fields=["value", "timestamp"],
+            unique_fields=["service", "organization", "key"],
+        )
         metrics_stored += len(metrics_to_create)
         logger.info("Bulk created %d new metrics", len(metrics_to_create))
-
-    if metrics_to_update:
-        # Bulk update is more complex, so we'll do it in batches
-        for metric in metrics_to_update:
-            metric.save()
-        metrics_stored += len(metrics_to_update)
-        logger.info("Updated %d existing metrics", len(metrics_to_update))
 
     return metrics_stored

@@ -116,7 +116,7 @@ class ServiceViewSet(viewsets.ModelViewSet):
                     "organization_name": organization.name,
                     "subscription_id": subscription.id,
                     "service_id": service.id,
-                    "service_name": service.type,
+                    "service_name": service.name,
                     "error_message": None,
                 }
                 return Response(response_data, status=status.HTTP_200_OK)
@@ -128,7 +128,7 @@ class ServiceViewSet(viewsets.ModelViewSet):
                 "organization_name": organization.name,
                 "subscription_id": None,
                 "service_id": service.id,
-                "service_name": service.type,
+                "service_name": service.name,
                 "error_message": "Organization exists but has no subscription to this service",
             }
             return Response(response_data, status=status.HTTP_200_OK)

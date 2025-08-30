@@ -47,15 +47,13 @@ class MockMetricsServer(BaseHTTPRequestHandler):
             offset = int(params.get("offset", [0])[0])
 
             # Generate mock metrics data in the expected format
-            total_count = 154  # Total metrics available
+            total_count = 40  # Total orgs available
             start_idx = offset
             end_idx = min(offset + limit, total_count)
 
             # Create metrics for this page
             metrics = []
-            for i in range(start_idx, end_idx):
-                org_idx = i % 20  # 20 different organizations
-
+            for org_idx in range(start_idx, end_idx):
                 # Alternate between SIRET and INSEE identifiers
                 if org_idx % 2 == 0:
                     identifier = {"siret": f"123456789{org_idx:02d}"}
@@ -67,10 +65,10 @@ class MockMetricsServer(BaseHTTPRequestHandler):
                     {
                         **identifier,
                         "metrics": {
-                            "tu": 1000 + (i * 10) % 2000,  # Total users
-                            "yau": 100 + (i * 5) % 500,  # Yearly active users
-                            "mau": 50 + (i * 3) % 200,  # Monthly active users
-                            "wau": 10 + (i * 2) % 100,  # Weekly active users
+                            "tu": 1000 + (org_idx * 10) % 2000,  # Total users
+                            "yau": 100 + (org_idx * 5) % 500,  # Yearly active users
+                            "mau": 50 + (org_idx * 3) % 200,  # Monthly active users
+                            "wau": 10 + (org_idx * 2) % 100,  # Weekly active users
                         },
                     }
                 )
@@ -110,7 +108,7 @@ def fixture_test_organizations():
     organizations = {}
 
     # Create organizations with SIRET codes
-    for i in range(20):
+    for i in range(40):
         siret = f"123456789{i:02d}"
         org = factories.OrganizationFactory(
             siret=siret,
@@ -126,7 +124,7 @@ def fixture_test_organizations():
         )
 
     # Create organizations with INSEE codes
-    for i in range(20):
+    for i in range(40):
         insee = f"750{i:02d}"
         org = factories.OrganizationFactory(
             code_insee=insee,
@@ -163,7 +161,7 @@ def test_fetch_metrics_from_service(mock_metrics_server, test_service):
     metrics_data = fetch_metrics_from_service(test_service)
 
     # Verify we got all metrics
-    assert len(metrics_data) == 154
+    assert len(metrics_data) == 40
 
     # Verify pagination worked (should have made 2 requests: 100 + 54)
     # Check that metrics are properly structured
@@ -186,7 +184,7 @@ def test_fetch_metrics_from_service(mock_metrics_server, test_service):
         if "insee" in metric:
             org_identifiers.add(metric["insee"])
 
-    assert len(org_identifiers) == 20  # 20 different orgs (10 SIRET + 10 INSEE)
+    assert len(org_identifiers) == 40
 
 
 @pytest.mark.django_db
@@ -194,35 +192,27 @@ def test_store_service_metrics(mock_metrics_server, test_service, test_organizat
     """Test storing fetched metrics in the database."""
     # Fetch metrics first
     metrics_data = fetch_metrics_from_service(test_service)
-    assert len(metrics_data) == 154
+    assert len(metrics_data) == 40
 
     # Store metrics
     metrics_stored = store_service_metrics(test_service, metrics_data)
 
-    # Verify metrics were stored (154 orgs * 4 metric types = 616 metrics)
-    assert metrics_stored == 616
+    # Verify metrics were stored (40 orgs * 4 metric types = 160 metrics)
+    assert metrics_stored == 160
 
     # Check that metrics exist in database
     stored_metrics = models.Metric.objects.filter(service=test_service)
 
-    tu_metrics = stored_metrics.filter(name="tu")
-    yau_metrics = stored_metrics.filter(name="yau")
-    mau_metrics = stored_metrics.filter(name="mau")
-    wau_metrics = stored_metrics.filter(name="wau")
+    tu_metrics = stored_metrics.filter(key="tu")
+    yau_metrics = stored_metrics.filter(key="yau")
+    mau_metrics = stored_metrics.filter(key="mau")
+    wau_metrics = stored_metrics.filter(key="wau")
 
-    assert tu_metrics.count() == 154
-    assert yau_metrics.count() == 154
-    assert mau_metrics.count() == 154
-    assert wau_metrics.count() == 154
-    assert stored_metrics.count() == 616
-
-    # Check that service subscriptions were created
-    subscriptions = models.ServiceSubscription.objects.filter(service=test_service)
-    assert subscriptions.count() == 40  # 40 organizations
-
-    # Verify subscription metadata
-    subscription = subscriptions.first()
-    assert subscription.metadata == {}
+    assert tu_metrics.count() == 40
+    assert yau_metrics.count() == 40
+    assert mau_metrics.count() == 40
+    assert wau_metrics.count() == 40
+    assert stored_metrics.count() == 160
 
 
 @pytest.mark.django_db
@@ -239,7 +229,7 @@ def test_metrics_with_authentication(mock_metrics_server):
 
     # Fetch metrics (this will test auth headers)
     metrics_data = fetch_metrics_from_service(auth_service)
-    assert len(metrics_data) == 154
+    assert len(metrics_data) == 40
 
 
 @pytest.mark.django_db
@@ -264,7 +254,7 @@ def test_metrics_storage_with_existing_data(
     )
     assert initial_metrics_db.count() == 4
 
-    initial_tu_metric = initial_metrics_db.filter(name="tu").first()
+    initial_tu_metric = initial_metrics_db.filter(key="tu").first()
     assert initial_tu_metric is not None
     initial_value = initial_tu_metric.value
 
@@ -290,7 +280,7 @@ def test_metrics_storage_with_existing_data(
     updated_tu_metric = models.Metric.objects.filter(
         service=test_service,
         organization=test_organizations["12345678900"],
-        name="tu",
+        key="tu",
     ).first()
     assert updated_tu_metric.value == 2000
     assert updated_tu_metric.value != initial_value

@@ -1,4 +1,3 @@
-# ruff: noqa: S311
 """
 Core application factories
 """
@@ -120,6 +119,7 @@ class ServiceFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = models.Service
 
+    name = factory.Faker("word")
     type = factory.Faker("word")
     url = factory.Faker("url")
     description = factory.Faker("text", max_nb_chars=100)
@@ -143,3 +143,16 @@ class ServiceSubscriptionFactory(factory.django.DjangoModelFactory):
     metadata = factory.Dict(
         {"subscription_type": "standard", "notes": "Test subscription"}
     )
+
+
+class MetricFactory(factory.django.DjangoModelFactory):
+    """Factory for Metric model with unique constraint."""
+
+    class Meta:
+        model = models.Metric
+
+    key = factory.Faker("word")
+    value = factory.Faker("pydecimal", left_digits=5, right_digits=2, positive=True)
+    service = factory.SubFactory(ServiceFactory)
+    organization = factory.SubFactory(OrganizationFactory)
+    timestamp = factory.Faker("date_time_this_year")

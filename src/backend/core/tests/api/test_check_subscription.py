@@ -46,7 +46,7 @@ class TestServiceSubscriptionCheck:
         assert data["organization_name"] == organization.name
         assert data["subscription_id"] == str(subscription.id)
         assert data["service_id"] == str(service.id)
-        assert data["service_name"] == service.type
+        assert data["service_name"] == service.name
         assert data["error_message"] is None
 
     def test_check_service_subscription_with_insee_success(self, api_client):
@@ -83,7 +83,7 @@ class TestServiceSubscriptionCheck:
         assert data["organization_name"] == organization.name
         assert data["subscription_id"] == str(subscription.id)
         assert data["service_id"] == str(service.id)
-        assert data["service_name"] == service.type
+        assert data["service_name"] == service.name
         assert data["error_message"] is None
 
     def test_check_service_subscription_no_subscription(self, api_client):
@@ -117,7 +117,7 @@ class TestServiceSubscriptionCheck:
         assert data["organization_name"] == organization.name
         assert data["subscription_id"] is None
         assert data["service_id"] == str(service.id)
-        assert data["service_name"] == service.type
+        assert data["service_name"] == service.name
 
         assert "no subscription" in data["error_message"]
 

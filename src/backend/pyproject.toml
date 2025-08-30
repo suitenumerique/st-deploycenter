@@ -24,33 +24,30 @@ requires-python = ">=3.13,<4.0"
 
 # Note: after changing this list you must re-run `make back-poetry-lock`
 dependencies = [
-    "celery[redis]==5.5.2",
-    "cryptography==45.0.5",
-    "dj-database-url==2.3.0",
-    "django==5.1.11",
-    "django-celery-beat==2.8.0",
+    "celery[redis]==5.5.3",
+    "cryptography==45.0.6",
+    "dj-database-url==3.0.1",
+    "django==5.2.5",
+    "django-celery-beat==2.8.1",
     "django-celery-results==2.6.0",
     "django-configurations==2.5.1",
-    "django-cors-headers==4.6.0",
+    "django-cors-headers==4.7.0",
     "django-countries==7.6.1",
     "django-fernet-encrypted-fields==0.3.0",
-    "django-filter==24.3",
+    "django-filter==25.1",
     "django-parler==2.3",
     "django-redis==5.4.0",
-    "django-storages==1.14.4",
     "django-timezone-field==7.1",
-    "djangorestframework==3.15.2",
+    "djangorestframework==3.16.1",
     "drf_spectacular==0.28.0",
-    "factory_boy==3.3.1",
     "gunicorn==23.0.0",
     "mozilla-django-oidc==4.0.1",
-    "psycopg[binary]==3.2.4",
+    "psycopg[binary]==3.2.9",
     "PyJWT==2.10.1",
     "redis==5.2.1",
-    "requests==2.32.4",
-    "sentry-sdk[django]==2.27.0",
-    "url-normalize==1.4.3",
-    "whitenoise==6.8.2",
+    "requests==2.32.5",
+    "sentry-sdk[django]==2.35.1",
+    "whitenoise==6.9.0",
 ]
 
 [project.urls]
@@ -61,20 +58,21 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "django-extensions==3.2.3",
-    "drf-spectacular-sidecar==2024.12.1",
+    "django-extensions==4.1",
+    "drf-spectacular-sidecar==2025.8.1",
+    "factory_boy==3.3.3",
     "flower==2.0.1",
     "pip-audit==2.9.0",
     "pylint-django==2.6.1",
-    "pylint==3.3.4",
-    "pytest-cov==6.0.0",
-    "pytest-django==4.9.0",
-    "pytest==8.3.4",
+    "pylint==3.3.8",
+    "pytest-cov==6.2.1",
+    "pytest-django==4.11.1",
+    "pytest==8.4.1",
     "pytest-icdiff==0.9",
     "pytest-repeat==0.9.4",
-    "pytest-xdist==3.6.1",
-    "responses==0.25.6",
-    "ruff==0.9.3"
+    "pytest-xdist==3.8.0",
+    "responses==0.25.8",
+    "ruff==0.12.11"
 ]
 
 [tool.poetry]

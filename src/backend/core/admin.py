@@ -7,6 +7,31 @@ from django.utils.translation import gettext_lazy as _
 from . import models
 
 
+class OperatorUsersInline(admin.TabularInline):
+    """Inline admin for users associated with an operator."""
+
+    model = models.UserOperatorRole
+    extra = 0
+    readonly_fields = ("id", "created_at", "updated_at")
+    autocomplete_fields = ["user"]
+    fields = ("user", "role", "created_at", "updated_at")
+    verbose_name = _("user role")
+    verbose_name_plural = _("user roles")
+
+
+class OrganizationServicesInline(admin.TabularInline):
+    """Inline admin for service subscriptions in an organization."""
+
+    model = models.ServiceSubscription
+    extra = 0
+    readonly_fields = ("id", "created_at", "updated_at")
+    autocomplete_fields = ["service"]
+    fields = ("service", "metadata", "created_at", "updated_at")
+    verbose_name = _("service subscription")
+    verbose_name_plural = _("service subscriptions")
+    list_select_related = ["service"]
+
+
 @admin.register(models.User)
 class UserAdmin(auth_admin.UserAdmin):
     """Admin class for the User model"""
@@ -81,7 +106,6 @@ class UserAdmin(auth_admin.UserAdmin):
         "id",
         "sub",
         "email",
-        "full_name",
         "created_at",
         "updated_at",
     )
@@ -101,10 +125,10 @@ class OperatorAdmin(admin.ModelAdmin):
 
     fieldsets = (
         (None, {"fields": ("name", "url", "is_active")}),
-        (_("Users"), {"fields": ("users",)}),
         (_("Metadata"), {"fields": ("created_at", "updated_at")}),
     )
     autocomplete_fields = ["users"]
+    inlines = [OperatorUsersInline]
 
 
 @admin.register(models.UserOperatorRole)
@@ -161,12 +185,14 @@ class OrganizationAdmin(admin.ModelAdmin):
                     "code_insee",
                     "departement_code_insee",
                     "region_code_insee",
+                    "epci_libelle",
+                    "epci_siren",
                 )
             },
         ),
         (
             _("Population Data"),
-            {"fields": ("population", "epci_libelle", "epci_siren", "epci_population")},
+            {"fields": ("population", "epci_population")},
         ),
         (
             _("Digital Presence"),
@@ -182,20 +208,21 @@ class OrganizationAdmin(admin.ModelAdmin):
         ),
         (_("Metadata"), {"fields": ("created_at", "updated_at")}),
     )
+    inlines = [OrganizationServicesInline]
 
 
 @admin.register(models.Service)
 class ServiceAdmin(admin.ModelAdmin):
     """Admin class for the Service model"""
 
-    list_display = ("type", "url", "description", "config", "is_active", "created_at")
+    list_display = ("name", "type", "url", "description", "is_active", "created_at")
     list_filter = ("is_active", "created_at")
-    search_fields = ("type", "description")
-    ordering = ("type", "url")
+    search_fields = ("name", "type", "description")
+    ordering = ("name", "type", "url")
     readonly_fields = ("id", "created_at", "updated_at")
 
     fieldsets = (
-        (None, {"fields": ("type", "url", "description", "is_active")}),
+        (None, {"fields": ("name", "type", "url", "description", "is_active")}),
         (_("Configuration"), {"fields": ("config",)}),
         (_("Metadata"), {"fields": ("created_at", "updated_at")}),
     )
@@ -225,8 +252,8 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
 
     list_display = ("organization", "service", "created_at")
     list_filter = ("organization__operator_roles__operator", "created_at")
-    search_fields = ("organization__name", "service__type")
-    ordering = ("organization__name", "service__type")
+    search_fields = ("organization__name", "service__name", "service__type")
+    ordering = ("organization__name", "service__name")
     readonly_fields = ("id", "created_at", "updated_at")
 
     autocomplete_fields = ["organization", "service"]
@@ -242,16 +269,16 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
 class MetricAdmin(admin.ModelAdmin):
     """Admin class for the Metric model"""
 
-    list_display = ("name", "value", "organization", "timestamp", "created_at")
-    list_filter = ("timestamp", "organization__operator_roles__operator", "created_at")
-    search_fields = ("name", "organization__name", "service__type")
-    ordering = ("-timestamp", "name")
-    readonly_fields = ("id", "timestamp", "created_at", "updated_at")
+    list_display = ("key", "value", "service", "organization", "timestamp")
+    list_filter = ("timestamp", "organization__operator_roles__operator")
+    search_fields = ("key", "organization__name", "service__name", "service__type")
+    ordering = ("-timestamp", "key")
+    readonly_fields = ("id", "timestamp")
 
     autocomplete_fields = ["service", "organization"]
 
     fieldsets = (
-        (None, {"fields": ("name", "value")}),
+        (None, {"fields": ("key", "value")}),
         (_("Relationships"), {"fields": ("service", "organization")}),
-        (_("Metadata"), {"fields": ("timestamp", "created_at", "updated_at")}),
+        (_("Metadata"), {"fields": ("timestamp",)}),
     )

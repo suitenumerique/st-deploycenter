@@ -10,7 +10,6 @@ from django.conf import settings
 from django.contrib.auth import models as auth_models
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.core import validators
-from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -492,6 +491,12 @@ class Service(BaseModel):
         help_text=_("Type of service (activates custom implementation code)"),
     )
 
+    name = models.CharField(
+        _("name"),
+        max_length=255,
+        help_text=_("Human-readable name of the service"),
+    )
+
     url = models.URLField(
         _("URL"),
         blank=True,
@@ -527,13 +532,13 @@ class Service(BaseModel):
         db_table = "deploycenter_service"
         verbose_name = _("service")
         verbose_name_plural = _("services")
-        ordering = ["type", "url"]
+        ordering = ["name", "type", "url"]
         indexes = [
             models.Index(fields=["is_active"]),
         ]
 
     def __str__(self):
-        return f"{self.type} - {self.url or 'No URL'}"
+        return f"{self.name} ({self.type})"
 
 
 class ServiceSubscription(BaseModel):
@@ -571,24 +576,24 @@ class ServiceSubscription(BaseModel):
         verbose_name = _("service subscription")
         verbose_name_plural = _("service subscriptions")
         unique_together = ["organization", "service"]
-        ordering = ["organization__name", "service__type"]
+        ordering = ["organization__name", "service__name"]
         indexes = []
 
     def __str__(self):
-        return f"{self.organization.name} → {self.service.type}"
+        return f"{self.organization.name} → {self.service.name}"
 
 
-class Metric(BaseModel):
+class Metric(models.Model):
     """
-    Metrics that can be linked to services and optionally to organizations.
+    Metrics that can be linked to services and to organizations.
     Designed for aggregation and dashboard display.
     """
 
     # Metric identification
-    name = models.CharField(
-        _("name"),
+    key = models.CharField(
+        _("key"),
         max_length=255,
-        help_text=_("Name of the metric"),
+        help_text=_("Key identifier of the metric"),
     )
 
     value = models.DecimalField(
@@ -605,7 +610,6 @@ class Metric(BaseModel):
         help_text=_("When this metric was recorded"),
     )
 
-    # Relationships - metrics are linked to service and optionally to organization
     service = models.ForeignKey(
         Service,
         on_delete=models.CASCADE,
@@ -619,29 +623,22 @@ class Metric(BaseModel):
         on_delete=models.CASCADE,
         related_name="metrics",
         verbose_name=_("organization"),
-        help_text=_("Organization this metric is associated with (optional)"),
-        blank=True,
-        null=True,
+        help_text=_("Organization this metric is associated with"),
     )
 
     class Meta:
         db_table = "deploycenter_metric"
         verbose_name = _("metric")
         verbose_name_plural = _("metrics")
-        ordering = ["-timestamp", "name"]
+        ordering = ["-timestamp", "key"]
+        unique_together = [["service", "organization", "key"]]
         indexes = [
             models.Index(fields=["timestamp"]),
-            models.Index(fields=["name"]),
+            models.Index(fields=["key"]),
             models.Index(fields=["service"]),
             models.Index(fields=["organization"]),
         ]
 
     def __str__(self):
         org_name = self.organization.name if self.organization else "Unknown"
-        return f"{self.name}: {self.value} for {self.service.type} - {org_name}"
-
-    def clean(self):
-        """Ensure service relationship is set."""
-        super().clean()
-        if not self.service:
-            raise ValidationError(_("Metric must be linked to a service"))
+        return f"{self.key}: {self.value} for {self.service.name} - {org_name}"
