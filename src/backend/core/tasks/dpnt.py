@@ -116,10 +116,10 @@ def import_dpnt_dataset(self, force_update: bool = False, max_rows: int = None):
                 stats["total_processed"] += 1
 
             except (ValueError, KeyError, TypeError, ValidationError) as e:
-                error_msg = f"Error processing organization {item.get('nom', 'Unknown')}: {str(e)}"
+                error_msg = f"Error processing organization {item.get('siret', 'Unknown')}: {str(e)}"
                 logger.error(
                     "Error processing organization %s: %s",
-                    item.get("nom", "Unknown"),
+                    item.get("siret", "Unknown"),
                     str(e),
                 )
                 stats["errors"] += 1

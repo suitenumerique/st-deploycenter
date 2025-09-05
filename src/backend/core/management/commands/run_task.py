@@ -9,7 +9,6 @@ of queuing them as background tasks.
 import importlib
 import json
 import logging
-import traceback
 
 from django.core.management.base import BaseCommand, CommandError
 
@@ -24,7 +23,7 @@ class Command(BaseCommand):
     
     Examples:
         python manage.py run_task fetch_service_metrics
-        python manage.py run_task fetch_metrics_for_service --args 123e4567-e89b-12d3-a456-426614174000
+        python manage.py run_task fetch_metrics_for_service --pargs '["123e4567-e89b-12d3-a456-426614174000"]'
         python manage.py run_task fetch_service_metrics --kwargs '{"debug": true}'
         python manage.py run_task other_app.tasks.some_task
     """
@@ -35,7 +34,7 @@ class Command(BaseCommand):
 
         # Task execution options
         parser.add_argument(
-            "--args", nargs="*", help="Positional arguments for the task"
+            "--pargs", type=str, help="Positional arguments as JSON string for the task"
         )
 
         parser.add_argument(
@@ -44,14 +43,6 @@ class Command(BaseCommand):
 
         # Output options
         parser.add_argument("--json", action="store_true", help="Output result as JSON")
-
-        parser.add_argument(
-            "--traceback", action="store_true", help="Show traceback on error"
-        )
-
-        parser.add_argument(
-            "--verbose", "-v", action="store_true", help="Verbose output"
-        )
 
     def handle(self, *args, **options):
         """Execute the command."""
@@ -66,18 +57,22 @@ class Command(BaseCommand):
                 raise CommandError(f"Invalid JSON in --kwargs: {e}") from e
 
         # Parse positional arguments
-        task_args = options["args"] or []
+        task_args = []
+        if options["pargs"]:
+            try:
+                task_args = json.loads(options["args"])
+            except json.JSONDecodeError as e:
+                raise CommandError(f"Invalid JSON in --args: {e}") from e
 
         # Get task function
         task_func = self._get_task_function(task_name)
         if not task_func:
             raise CommandError(f"Task '{task_name}' not found")
 
-        if options["verbose"]:
-            self.stdout.write(f"Running task: {task_name}")
-            self.stdout.write(f"Arguments: {task_args}")
-            self.stdout.write(f"Keyword arguments: {kwargs}")
-            self.stdout.write("")
+        self.stdout.write(f"Running task: {task_name}")
+        self.stdout.write(f"Arguments: {task_args}")
+        self.stdout.write(f"Keyword arguments: {kwargs}")
+        self.stdout.write("")
 
         try:
             # Execute task synchronously
@@ -88,15 +83,10 @@ class Command(BaseCommand):
                 self.stdout.write(json.dumps(result, indent=2, default=str))
             else:
                 self.stdout.write(self.style.SUCCESS("Task completed successfully"))
-                if options["verbose"]:
-                    self.stdout.write(f"Result: {result}")
+                self.stdout.write(f"Result: {result}")
 
         except Exception as e:
-            if options["traceback"]:
-                self.stdout.write(self.style.ERROR("Task failed with exception:"))
-                self.stdout.write(traceback.format_exc())
-            else:
-                self.stdout.write(self.style.ERROR(f"Task failed: {e}"))
+            self.stdout.write(self.style.ERROR(f"Task failed: {e}"))
             raise CommandError(f"Task execution failed: {e}") from e
 
     def _get_task_function(self, task_name: str):
