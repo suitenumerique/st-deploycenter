@@ -149,7 +149,7 @@ def fetch_metrics_from_service(service: Service) -> List[Dict[str, Any]]:
 
     all_metrics = []
     offset = 0
-    limit = 100  # Default page size
+    limit = service.config.get("metrics_limit", 1000)  # Default page size
 
     while True:
         try:
@@ -175,7 +175,7 @@ def fetch_metrics_from_service(service: Service) -> List[Dict[str, Any]]:
             # Add results to our collection
             all_metrics.extend(results)
             logger.info(
-                "Fetched %d metrics (offset: %d, total so far: %d)",
+                "Fetched %d results (offset: %d, total so far: %d)",
                 len(results),
                 offset,
                 len(all_metrics),
