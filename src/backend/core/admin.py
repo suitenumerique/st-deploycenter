@@ -1,10 +1,41 @@
 """Admin classes and registrations for core app."""
 
+from django import forms
 from django.contrib import admin
 from django.contrib.auth import admin as auth_admin
 from django.utils.translation import gettext_lazy as _
 
 from . import models
+
+
+class ServiceForm(forms.ModelForm):
+    """Custom form for Service model with file upload for logo_svg."""
+    
+    logo_svg_file = forms.FileField(
+        label=_("Logo SVG File"),
+        help_text=_("Upload an SVG file for the service logo"),
+        required=False,
+        widget=forms.FileInput(attrs={'accept': '.svg'})
+    )
+    
+    class Meta:
+        model = models.Service
+        fields = '__all__'
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk and self.instance.logo_svg:
+            self.fields['logo_svg_file'].help_text = _("Current logo is set. Upload a new file to replace it.")
+    
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        logo_file = self.cleaned_data.get('logo_svg_file')
+        if logo_file:
+            # Read the uploaded file and store as binary data
+            instance.logo_svg = logo_file.read()
+        if commit:
+            instance.save()
+        return instance
 
 
 class OperatorUsersInline(admin.TabularInline):
@@ -215,6 +246,7 @@ class OrganizationAdmin(admin.ModelAdmin):
 class ServiceAdmin(admin.ModelAdmin):
     """Admin class for the Service model"""
 
+    form = ServiceForm
     list_display = ("name", "type", "url", "description", "is_active", "created_at")
     list_filter = ("is_active", "created_at")
     search_fields = ("name", "type", "description")
@@ -223,6 +255,7 @@ class ServiceAdmin(admin.ModelAdmin):
 
     fieldsets = (
         (None, {"fields": ("name", "type", "url", "description", "is_active")}),
+        (_("Logo"), {"fields": ("logo_svg_file",)}),
         (_("Configuration"), {"fields": ("config",)}),
         (_("Metadata"), {"fields": ("created_at", "updated_at")}),
     )

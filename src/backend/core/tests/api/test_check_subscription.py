@@ -45,7 +45,7 @@ class TestServiceSubscriptionCheck:
         assert data["organization_id"] == str(organization.id)
         assert data["organization_name"] == organization.name
         assert data["subscription_id"] == str(subscription.id)
-        assert data["service_id"] == str(service.id)
+        assert data["service_id"] == service.id
         assert data["service_name"] == service.name
         assert data["error_message"] is None
 
@@ -82,7 +82,7 @@ class TestServiceSubscriptionCheck:
         assert data["organization_id"] == str(organization.id)
         assert data["organization_name"] == organization.name
         assert data["subscription_id"] == str(subscription.id)
-        assert data["service_id"] == str(service.id)
+        assert data["service_id"] == service.id
         assert data["service_name"] == service.name
         assert data["error_message"] is None
 
@@ -116,7 +116,7 @@ class TestServiceSubscriptionCheck:
         assert data["organization_id"] == str(organization.id)
         assert data["organization_name"] == organization.name
         assert data["subscription_id"] is None
-        assert data["service_id"] == str(service.id)
+        assert data["service_id"] == service.id
         assert data["service_name"] == service.name
 
         assert "no subscription" in data["error_message"]

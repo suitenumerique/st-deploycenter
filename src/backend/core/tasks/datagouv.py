@@ -64,8 +64,7 @@ def upload_deployment_metrics_dataset():
             "siret": metric.organization.siret,
             "insee": metric.organization.code_insee,
             "population": metric.organization.population,
-            "service": metric.service.url.split("/", 2)[2].rstrip("/"),
-            "service_id": metric.service.id,
+            "service": metric.service.id,
             "active": 0,
         }
         for metric in Metric.objects.select_related("organization", "service")
@@ -75,7 +74,7 @@ def upload_deployment_metrics_dataset():
         .all()
     }
 
-    unique_services = {row["service_id"] for row in data.values()}
+    unique_services = {row["service"] for row in data.values()}
     for service_id in unique_services:
         # Services might have different criteria to define if they are active. For now, we consider yau>0.
         active_sirets = (
@@ -85,10 +84,6 @@ def upload_deployment_metrics_dataset():
         )
         for siret in active_sirets:
             data[siret]["active"] = 1
-
-    data = list(data.values())
-    for row in data:
-        del row["service_id"]
 
     # Create gzipped CSV in memory
     buffer = io.BytesIO()
@@ -120,8 +115,11 @@ def upload_deployment_services_dataset():
     services = Service.objects.filter(is_active=True)
 
     data = [{
+        "id": service.id,
         "nom": service.name,
         "url": service.url,
+        "maturite": service.maturity,
+        "date_lancement": service.launch_date,
     } for service in services]
     
     buffer = io.StringIO()

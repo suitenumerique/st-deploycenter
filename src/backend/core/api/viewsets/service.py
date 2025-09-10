@@ -2,9 +2,10 @@
 Core model viewsets for the API.
 """
 
+from django.http import HttpResponse
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 
 from core import models
@@ -141,3 +142,36 @@ class ServiceViewSet(viewsets.ModelViewSet):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class ServiceLogoViewSet(viewsets.ReadOnlyModelViewSet):
+    """Public ViewSet for serving service logos as SVG files."""
+
+    queryset = models.Service.objects.filter(is_active=True, logo_svg__isnull=False)
+    permission_classes = [AllowAny]
+    lookup_field = "id"
+
+    def retrieve(self, request, *args, **kwargs):
+        """
+        Serve the service logo as an SVG file with proper headers.
+        """
+        service = self.get_object()
+        
+        if not service.logo_svg:
+            return Response(
+                {"detail": "Logo not found for this service"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Create response with SVG content
+        response = HttpResponse(
+            service.logo_svg,
+            content_type="image/svg+xml; charset=utf-8"
+        )
+        
+        # Set appropriate headers for SVG files
+        response["Content-Disposition"] = f'inline; filename="logo.svg"'
+        response["Cache-Control"] = "public, max-age=3600"  # Cache for 1 hour
+        response["Access-Control-Allow-Origin"] = "*"  # Allow CORS for public access
+        
+        return response

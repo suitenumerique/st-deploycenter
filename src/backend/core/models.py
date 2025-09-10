@@ -485,6 +485,13 @@ class Service(BaseModel):
     Contains the base service configuration and metadata.
     """
 
+    id = models.AutoField(
+        verbose_name="id",
+        help_text=_("primary key for the record as numeric ID"),
+        primary_key=True,
+        editable=False,
+    )
+
     type = models.CharField(
         _("type"),
         max_length=100,
@@ -499,8 +506,6 @@ class Service(BaseModel):
 
     url = models.URLField(
         _("URL"),
-        blank=True,
-        null=True,
         help_text=_("URL where the service can be accessed"),
     )
 
@@ -509,6 +514,21 @@ class Service(BaseModel):
         blank=True,
         null=True,
         help_text=_("Description of what this service provides"),
+    )
+
+    maturity = models.CharField(
+        _("maturity"),
+        max_length=10,
+        choices=[("alpha", "Alpha"), ("beta", "Beta"), ("stable", "Stable"), ("deprecated", "Deprecated")],
+        default="alpha",
+        help_text=_("Maturity level of the service"),
+    )
+
+    launch_date = models.DateField(
+        _("launch date"),
+        blank=True,
+        null=True,
+        help_text=_("Date of the launch of the service (out of beta)"),
     )
 
     # Base configuration for metrics scraping
@@ -526,6 +546,13 @@ class Service(BaseModel):
         _("active"),
         default=True,
         help_text=_("Whether this service is currently available for subscription"),
+    )
+
+    logo_svg = models.BinaryField(
+        _("logo SVG"),
+        blank=True,
+        null=True,
+        help_text=_("SVG logo for the service stored as binary data"),
     )
 
     class Meta:
