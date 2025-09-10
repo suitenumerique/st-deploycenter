@@ -74,6 +74,8 @@ def upload_deployment_metrics_dataset():
         .all()
     }
 
+    logger.info("Produced %s data rows", len(data))
+
     unique_services = {row["service"] for row in data.values()}
     for service_id in unique_services:
         # Services might have different criteria to define if they are active. For now, we consider yau>0.
@@ -84,6 +86,8 @@ def upload_deployment_metrics_dataset():
         )
         for siret in active_sirets:
             data[siret]["active"] = 1
+
+    data = list(data.values())
 
     # Create gzipped CSV in memory
     buffer = io.BytesIO()
@@ -121,7 +125,7 @@ def upload_deployment_services_dataset():
             "url": service.url,
             "maturite": service.maturity,
             "date_lancement": service.launch_date,
-            "logo_url": f"{settings.API_PUBLIC_URL}servicelogo/{service.id}/",
+            "logo_url": f"{settings.API_PUBLIC_URL}servicelogo/{service.id}/" if service.logo_svg else "",
         }
         for service in services
     ]
