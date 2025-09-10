@@ -10,7 +10,7 @@ from rest_framework.routers import DefaultRouter
 from core.authentication.urls import urlpatterns as oidc_urls
 
 from .api.viewsets.config import ConfigView
-from .api.viewsets.service import ServiceViewSet, ServiceLogoViewSet
+from .api.viewsets.service import ServiceLogoViewSet, ServiceViewSet
 from .api.viewsets.user import UserViewSet
 
 # Create router and register viewsets

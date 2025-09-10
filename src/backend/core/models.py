@@ -519,7 +519,12 @@ class Service(BaseModel):
     maturity = models.CharField(
         _("maturity"),
         max_length=10,
-        choices=[("alpha", "Alpha"), ("beta", "Beta"), ("stable", "Stable"), ("deprecated", "Deprecated")],
+        choices=[
+            ("alpha", "Alpha"),
+            ("beta", "Beta"),
+            ("stable", "Stable"),
+            ("deprecated", "Deprecated"),
+        ],
         default="alpha",
         help_text=_("Maturity level of the service"),
     )

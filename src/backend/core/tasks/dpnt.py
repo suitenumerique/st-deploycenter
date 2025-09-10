@@ -49,6 +49,8 @@ def import_dpnt_dataset(self, force_update: bool = False, max_rows: int = None):
         logger.info(
             "Limited to %d rows from %d total", max_rows, len(download_result["data"])
         )
+    elif len(data) < 30000:
+        raise ValueError("DPNT dataset has less than 30000 rows, which is not expected")
 
     logger.info("Processing %d organizations from DPNT dataset", len(data))
 

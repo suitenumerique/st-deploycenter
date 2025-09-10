@@ -5,13 +5,15 @@ This package contains all Celery tasks for the core application.
 """
 
 # Import DPNT tasks
+# Import datagouv tasks
+from .datagouv import (
+    upload_deployment_metrics_dataset,
+    upload_deployment_services_dataset,
+)
 from .dpnt import download_dpnt_dataset, import_dpnt_dataset
 
 # Import metrics tasks
 from .metrics import scrape_all_service_metrics, scrape_service_metrics
-
-# Import datagouv tasks
-from .datagouv import upload_deployment_services_dataset, upload_deployment_metrics_dataset
 
 __all__ = [
     # DPNT tasks

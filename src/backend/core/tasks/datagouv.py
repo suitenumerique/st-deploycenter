@@ -114,14 +114,18 @@ def upload_deployment_services_dataset():
 
     services = Service.objects.filter(is_active=True)
 
-    data = [{
-        "id": service.id,
-        "nom": service.name,
-        "url": service.url,
-        "maturite": service.maturity,
-        "date_lancement": service.launch_date,
-    } for service in services]
-    
+    data = [
+        {
+            "id": service.id,
+            "nom": service.name,
+            "url": service.url,
+            "maturite": service.maturity,
+            "date_lancement": service.launch_date,
+            "logo_url": f"{settings.API_PUBLIC_URL}servicelogo/{service.id}/",
+        }
+        for service in services
+    ]
+
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=data[0].keys(), delimiter=";")
     writer.writeheader()
@@ -129,10 +133,14 @@ def upload_deployment_services_dataset():
         writer.writerow(row)
 
     buffer.seek(0)
-    _upload_data_to_data_gouv(dataset_id, resource_id, buffer.getvalue().encode('utf-8'), "services-quotidien.csv")
+    _upload_data_to_data_gouv(
+        dataset_id,
+        resource_id,
+        buffer.getvalue().encode("utf-8"),
+        "services-quotidien.csv",
+    )
 
     return {
         "status": "success",
         "message": f"Uploaded {len(data)} services to data.gouv.fr",
     }
-

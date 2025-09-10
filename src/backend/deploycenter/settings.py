@@ -456,6 +456,10 @@ class Base(Configuration):
         None, environ_name="DATA_GOUV_API_KEY", environ_prefix=None
     )
 
+    API_PUBLIC_URL = values.Value(
+        None, environ_name="API_PUBLIC_URL", environ_prefix=None
+    )
+
     # pylint: disable=invalid-name
     @property
     def ENVIRONMENT(self):

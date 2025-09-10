@@ -10,26 +10,37 @@ from . import models
 
 class ServiceForm(forms.ModelForm):
     """Custom form for Service model with file upload for logo_svg."""
-    
+
     logo_svg_file = forms.FileField(
         label=_("Logo SVG File"),
         help_text=_("Upload an SVG file for the service logo"),
         required=False,
-        widget=forms.FileInput(attrs={'accept': '.svg'})
+        widget=forms.FileInput(attrs={"accept": ".svg"}),
     )
-    
+
     class Meta:
         model = models.Service
-        fields = '__all__'
-    
+        fields = [
+            "name",
+            "type",
+            "url",
+            "description",
+            "maturity",
+            "launch_date",
+            "is_active",
+            "logo_svg_file",
+        ]
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.instance and self.instance.pk and self.instance.logo_svg:
-            self.fields['logo_svg_file'].help_text = _("Current logo is set. Upload a new file to replace it.")
-    
+            self.fields["logo_svg_file"].help_text = _(
+                "Current logo is set. Upload a new file to replace it."
+            )
+
     def save(self, commit=True):
         instance = super().save(commit=False)
-        logo_file = self.cleaned_data.get('logo_svg_file')
+        logo_file = self.cleaned_data.get("logo_svg_file")
         if logo_file:
             # Read the uploaded file and store as binary data
             instance.logo_svg = logo_file.read()
@@ -254,7 +265,20 @@ class ServiceAdmin(admin.ModelAdmin):
     readonly_fields = ("id", "created_at", "updated_at")
 
     fieldsets = (
-        (None, {"fields": ("name", "type", "url", "description", "is_active")}),
+        (
+            None,
+            {
+                "fields": (
+                    "name",
+                    "type",
+                    "url",
+                    "description",
+                    "maturity",
+                    "launch_date",
+                    "is_active",
+                )
+            },
+        ),
         (_("Logo"), {"fields": ("logo_svg_file",)}),
         (_("Configuration"), {"fields": ("config",)}),
         (_("Metadata"), {"fields": ("created_at", "updated_at")}),

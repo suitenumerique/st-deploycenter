@@ -28,6 +28,9 @@ DJANGO_EMAIL_HOST="mailcatcher"
 DJANGO_EMAIL_LOGO_IMG="http://localhost:8960/assets/logo-suite-numerique.png"
 DJANGO_EMAIL_PORT=1025
 
+# API
+API_PUBLIC_URL="http://localhost:8961/api/v1.0/"
+
 # Media
 STORAGES_STATICFILES_BACKEND=django.contrib.staticfiles.storage.StaticFilesStorage
 AWS_S3_ENDPOINT_URL=http://minio:9000
