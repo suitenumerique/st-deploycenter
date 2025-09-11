@@ -28,6 +28,10 @@
 
 Deploy Center helps operators of instances of [La Suite territoriale](https://suiteterritoriale.anct.gouv.fr/) to configure apps for each of the organizations they manage.
 
+![Overall data flow](docs/assets/data-flow.svg)
+
+![Overall data model](docs/assets/data-model.svg)
+
 ## Getting started 🔧
 
 ### Prerequisite

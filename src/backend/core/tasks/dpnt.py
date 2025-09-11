@@ -86,6 +86,10 @@ def import_dpnt_dataset(self, force_update: bool = False, max_rows: int = None):
                     "service_public_url": item.get("service_public_url"),
                 }
 
+                if not org_data.get("siret"):
+                    logger.info("Skipped organization without SIRET: %s", org_data["code_insee"])
+                    continue
+
                 # Remove None values
                 org_data = {k: v for k, v in org_data.items() if v is not None}
 
