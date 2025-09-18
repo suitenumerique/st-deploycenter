@@ -87,7 +87,9 @@ def import_dpnt_dataset(self, force_update: bool = False, max_rows: int = None):
                 }
 
                 if not org_data.get("siret"):
-                    logger.info("Skipped organization without SIRET: %s", org_data["code_insee"])
+                    logger.info(
+                        "Skipped organization without SIRET: %s", org_data["code_insee"]
+                    )
                     continue
 
                 # Remove None values
@@ -135,11 +137,10 @@ def import_dpnt_dataset(self, force_update: bool = False, max_rows: int = None):
     return stats
 
 
-@shared_task
 def download_dpnt_dataset() -> Dict[str, Any]:
     """
     Download the actual DPNT dataset from data.gouv.fr.
-    This is a helper task that can be called before import_dpnt_dataset.
+    This is a helper method called by import_dpnt_dataset.
 
     Returns:
         Dict with download information

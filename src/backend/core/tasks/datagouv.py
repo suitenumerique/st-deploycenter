@@ -59,7 +59,7 @@ def upload_deployment_metrics_dataset():
     resource_id = "8f100b83-73c5-49ce-90ce-03d5c6a1783d"
 
     data = {
-        metric.organization.siret: {
+        f"{metric.organization.siret} {metric.service.id}": {
             "type": metric.organization.type,
             "siret": metric.organization.siret,
             "insee": metric.organization.code_insee,
@@ -86,7 +86,7 @@ def upload_deployment_metrics_dataset():
             .values_list("organization__siret", flat=True)
         )
         for siret in active_sirets:
-            data[siret]["active"] = 1
+            data[f"{siret} {service_id}"]["active"] = 1
 
     data = list(data.values())
 
@@ -126,7 +126,9 @@ def upload_deployment_services_dataset():
             "url": service.url,
             "maturite": service.maturity,
             "date_lancement": service.launch_date,
-            "logo_url": f"{settings.API_PUBLIC_URL}servicelogo/{service.id}/" if service.logo_svg else "",
+            "logo_url": f"{settings.API_PUBLIC_URL}servicelogo/{service.id}/"
+            if service.logo_svg
+            else "",
         }
         for service in services
     ]

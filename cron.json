@@ -2,6 +2,15 @@
   "jobs": [
     {
       "command": "0 0 * * * bin/scalingo_pgdump.sh"
+    },
+    {
+      "command": "0 1 * * * python manage.py run_task import_dpnt_dataset"
+    },
+    {
+      "command": "0 2 * * * python manage.py run_task scrape_all_service_metrics"
+    },
+    {
+      "command": "0 3 * * * sh -c 'python manage.py run_task upload_deployment_services_dataset && python manage.py run_task upload_deployment_metrics_dataset'"
     }
   ]
 }
