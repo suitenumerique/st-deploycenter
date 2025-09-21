@@ -4,6 +4,8 @@ Metrics scraping and processing tasks.
 This module handles scraping metrics from external services and storing them in the database.
 """
 
+import csv
+import io
 import json
 import logging
 import time
@@ -45,7 +47,7 @@ def scrape_all_service_metrics():
             logger.info("Scraping metrics for service: %s", service.name)
 
             # Scrape metrics for this service
-            service_result = scrape_service_metrics(str(service.id))
+            service_result = scrape_service_metrics(service.id)
 
             # Update totals
             if service_result.get("status") == "success":
@@ -83,7 +85,7 @@ def scrape_all_service_metrics():
 
 
 @shared_task
-def scrape_service_metrics(service_id: str):
+def scrape_service_metrics(service_id: int):
     """
     Scrape metrics for a specific service (Celery task).
 
@@ -125,7 +127,7 @@ def scrape_service_metrics(service_id: str):
 
 def fetch_metrics_from_service(service: Service) -> List[Dict[str, Any]]:
     """
-    Fetch metrics from a service's metrics endpoint with pagination support.
+    Fetch metrics from a service's metrics endpoint or CSV file.
 
     Args:
         service: Service to fetch metrics from
@@ -135,11 +137,31 @@ def fetch_metrics_from_service(service: Service) -> List[Dict[str, Any]]:
     """
     logger.info("Fetching metrics from service: %s", service.name)
 
-    # Get metrics endpoint from service config
+    # Check if service uses CSV or endpoint
+    metrics_csv = service.config.get("metrics_csv")
     metrics_endpoint = service.config.get("metrics_endpoint")
-    if not metrics_endpoint:
-        logger.warning("No metrics endpoint configured for service %s", service.name)
+
+    if metrics_csv:
+        return fetch_metrics_from_csv(service, metrics_csv)
+    elif metrics_endpoint:
+        return fetch_metrics_from_endpoint(service, metrics_endpoint)
+    else:
+        logger.warning("No metrics endpoint or CSV configured for service %s", service.name)
         return []
+
+
+def fetch_metrics_from_endpoint(service: Service, metrics_endpoint: str) -> List[Dict[str, Any]]:
+    """
+    Fetch metrics from a service's metrics endpoint with pagination support.
+
+    Args:
+        service: Service to fetch metrics from
+        metrics_endpoint: URL of the metrics endpoint
+
+    Returns:
+        List of metrics data dictionaries
+    """
+    logger.info("Fetching metrics from endpoint: %s", metrics_endpoint)
 
     # Get authentication token from service config
     auth_token = service.config.get("metrics_auth_token")
@@ -204,6 +226,119 @@ def fetch_metrics_from_service(service: Service) -> List[Dict[str, Any]]:
     return all_metrics
 
 
+def fetch_metrics_from_csv(service: Service, metrics_csv: str) -> List[Dict[str, Any]]:
+    """
+    Fetch metrics from a CSV file with mapping configuration.
+
+    Args:
+        service: Service to fetch metrics from
+        metrics_csv: URL or path to the CSV file
+
+    Returns:
+        List of metrics data dictionaries
+    """
+    logger.info("Fetching metrics from CSV: %s", metrics_csv)
+
+    # Get CSV mapping configuration
+    csv_mapping = service.config.get("metrics_csv_mapping", {})
+    if not csv_mapping:
+        logger.error("No CSV mapping configured for service %s", service.name)
+        return []
+
+    # Get authentication token from service config
+    auth_token = service.config.get("metrics_auth_token")
+    headers = {}
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+
+    delimiter = service.config.get("metrics_csv_delimiter", ",")
+
+    try:
+        # Fetch CSV content
+        response = requests.get(metrics_csv, headers=headers, timeout=30)
+        response.raise_for_status()
+
+        # Parse CSV content
+        csv_content = response.text
+        csv_reader = csv.DictReader(io.StringIO(csv_content), delimiter=delimiter)
+
+        all_metrics = []
+        for row_num, row in enumerate(csv_reader, start=2):  # Start at 2 because header is row 1
+            try:
+                # Map CSV columns to expected format using the mapping configuration
+                mapped_row = map_csv_row(row, csv_mapping)
+                if mapped_row:
+                    all_metrics.append(mapped_row)
+                else:
+                    logger.warning("Skipping row %d due to mapping issues", row_num)
+
+            except (ValueError, KeyError, TypeError) as e:
+                logger.error("Error processing CSV row %d: %s", row_num, str(e))
+                continue
+
+        logger.info("CSV fetch completed. Total metrics fetched: %d", len(all_metrics))
+        return all_metrics
+
+    except requests.RequestException as e:
+        logger.error("Request error fetching CSV: %s", str(e))
+        return []
+    except (ValueError, csv.Error) as e:
+        logger.error("CSV parsing error: %s", str(e))
+        return []
+
+
+def map_csv_row(row: Dict[str, str], csv_mapping: Dict[str, str]) -> Dict[str, Any]:
+    """
+    Map a CSV row to the expected metrics format using the mapping configuration.
+
+    Args:
+        row: CSV row as dictionary
+        csv_mapping: Mapping configuration (csv_column_name => target_field)
+
+    Returns:
+        Mapped row in expected format or None if mapping fails
+    """
+    mapped_row = {}
+
+    # Map organization identifiers and metrics
+    organization_identifiers = {}
+    metrics = {}
+
+    for csv_col, target_field in csv_mapping.items():
+        if csv_col not in row:
+            logger.warning("CSV column '%s' not found in row", csv_col)
+            continue
+
+        value = row[csv_col].strip() if row[csv_col] else None
+        if not value:
+            continue
+
+        if target_field.startswith("metrics."):
+            # This is a metric field
+            metric_name = target_field[8:]  # Remove "metrics." prefix
+            metrics[metric_name] = value
+        else:
+            # This is an organization identifier field
+            organization_identifiers[target_field] = value
+
+    # Validate that we have at least one organization identifier
+    if not organization_identifiers:
+        logger.warning("No organization identifier found in CSV row")
+        return None
+
+    # Add organization identifiers to mapped row
+    mapped_row.update(organization_identifiers)
+
+    # Add metrics if any
+    if metrics:
+        mapped_row["metrics"] = metrics
+    else:
+        logger.warning("No metrics found in CSV row")
+        return None
+
+    return mapped_row
+
+
 def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) -> int:
     """
     Store metrics data for a service.
@@ -213,6 +348,7 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
         metrics_data: List of metrics data dictionaries with format:
             [{"siret": "123456789", "metrics": {"tu": 1234, "yau": 123, ...}}, ...]
             or [{"insee": "75001", "metrics": {"tu": 1234, "yau": 123, ...}}, ...]
+            or any other organization identifier fields
 
     Returns:
         Number of metrics stored
@@ -223,6 +359,10 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
     organizations_by_siret = {
         org.siret: org
         for org in Organization.objects.filter(siret__isnull=False).exclude(siret="")
+    }
+    organizations_by_siren = {
+        org.siren: org
+        for org in Organization.objects.filter(siren__isnull=False).exclude(siren="")
     }
     organizations_by_insee = {
         org.code_insee: org
@@ -236,28 +376,34 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
 
     for item in metrics_data:
         try:
-            # Extract organization identifier (SIRET or INSEE)
-            siret = item.get("siret")
-            insee = item.get("insee")
+            # Extract organization identifier (any field that's not "metrics")
+            organization_identifiers = {
+                k: v for k, v in item.items() if k != "metrics"
+            }
 
-            if not siret and not insee:
+            if not organization_identifiers:
                 logger.warning(
                     "Skipping metric without organization identifier: %s", item
                 )
                 continue
 
-            # Find organization
+            # Find organization by SIRET or INSEE
             organization = None
+            siret = organization_identifiers.get("siret")
+            siren = organization_identifiers.get("siren")
+            insee = organization_identifiers.get("insee")
+
             if siret and siret in organizations_by_siret:
                 organization = organizations_by_siret[siret]
+            elif siren and siren in organizations_by_siren:
+                organization = organizations_by_siren[siren]
             elif insee and insee in organizations_by_insee:
                 organization = organizations_by_insee[insee]
 
             if not organization:
                 logger.warning(
-                    "Organization not found for identifier: siret=%s, insee=%s",
-                    siret,
-                    insee,
+                    "Organization not found for identifiers: %s",
+                    organization_identifiers,
                 )
                 continue
 

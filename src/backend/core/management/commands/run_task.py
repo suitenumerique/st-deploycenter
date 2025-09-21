@@ -60,9 +60,9 @@ class Command(BaseCommand):
         task_args = []
         if options["pargs"]:
             try:
-                task_args = json.loads(options["args"])
+                task_args = json.loads(options["pargs"])
             except json.JSONDecodeError as e:
-                raise CommandError(f"Invalid JSON in --args: {e}") from e
+                raise CommandError(f"Invalid JSON in --pargs: {e}") from e
 
         # Get task function
         task_func = self._get_task_function(task_name)

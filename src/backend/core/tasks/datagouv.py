@@ -70,7 +70,8 @@ def upload_deployment_metrics_dataset():
         for metric in Metric.objects.select_related("organization", "service")
         .filter(key="tu", value__gt=0)
         .filter(organization__population__gt=0)
-        .filter(organization__siret__isempty=False)
+        .exclude(organization__siret__isnull=True)
+        .exclude(organization__siret="")
         .filter(service__is_active=True)
         .all()
     }
