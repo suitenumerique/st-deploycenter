@@ -146,11 +146,15 @@ def fetch_metrics_from_service(service: Service) -> List[Dict[str, Any]]:
     elif metrics_endpoint:
         return fetch_metrics_from_endpoint(service, metrics_endpoint)
     else:
-        logger.warning("No metrics endpoint or CSV configured for service %s", service.name)
+        logger.warning(
+            "No metrics endpoint or CSV configured for service %s", service.name
+        )
         return []
 
 
-def fetch_metrics_from_endpoint(service: Service, metrics_endpoint: str) -> List[Dict[str, Any]]:
+def fetch_metrics_from_endpoint(
+    service: Service, metrics_endpoint: str
+) -> List[Dict[str, Any]]:
     """
     Fetch metrics from a service's metrics endpoint with pagination support.
 
@@ -176,7 +180,8 @@ def fetch_metrics_from_endpoint(service: Service, metrics_endpoint: str) -> List
     while True:
         try:
             # Construct paginated URL
-            paginated_url = f"{metrics_endpoint}?limit={limit}&offset={offset}"
+            amp = "?" if "?" not in metrics_endpoint else "&"
+            paginated_url = f"{metrics_endpoint}{amp}limit={limit}&offset={offset}"
             logger.info("Fetching metrics from: %s", paginated_url)
 
             # Make request to metrics endpoint
@@ -263,7 +268,9 @@ def fetch_metrics_from_csv(service: Service, metrics_csv: str) -> List[Dict[str,
         csv_reader = csv.DictReader(io.StringIO(csv_content), delimiter=delimiter)
 
         all_metrics = []
-        for row_num, row in enumerate(csv_reader, start=2):  # Start at 2 because header is row 1
+        for row_num, row in enumerate(
+            csv_reader, start=2
+        ):  # Start at 2 because header is row 1
             try:
                 # Map CSV columns to expected format using the mapping configuration
                 mapped_row = map_csv_row(row, csv_mapping)
@@ -377,9 +384,7 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
     for item in metrics_data:
         try:
             # Extract organization identifier (any field that's not "metrics")
-            organization_identifiers = {
-                k: v for k, v in item.items() if k != "metrics"
-            }
+            organization_identifiers = {k: v for k, v in item.items() if k != "metrics"}
 
             if not organization_identifiers:
                 logger.warning(
@@ -389,9 +394,9 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
 
             # Find organization by SIRET or INSEE
             organization = None
-            siret = organization_identifiers.get("siret")
-            siren = organization_identifiers.get("siren")
-            insee = organization_identifiers.get("insee")
+            siret = (organization_identifiers.get("siret") or "").replace(" ", "")
+            siren = (organization_identifiers.get("siren") or "").replace(" ", "")
+            insee = (organization_identifiers.get("insee") or "").replace(" ", "")
 
             if siret and siret in organizations_by_siret:
                 organization = organizations_by_siret[siret]
