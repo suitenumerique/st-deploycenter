@@ -143,13 +143,12 @@ def fetch_metrics_from_service(service: Service) -> List[Dict[str, Any]]:
 
     if metrics_csv:
         return fetch_metrics_from_csv(service, metrics_csv)
-    elif metrics_endpoint:
+
+    if metrics_endpoint:
         return fetch_metrics_from_endpoint(service, metrics_endpoint)
-    else:
-        logger.warning(
-            "No metrics endpoint or CSV configured for service %s", service.name
-        )
-        return []
+
+    logger.warning("No metrics endpoint or CSV configured for service %s", service.name)
+    return []
 
 
 def fetch_metrics_from_endpoint(

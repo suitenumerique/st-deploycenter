@@ -166,3 +166,114 @@ class SubscriptionCheckResponseSerializer(serializers.Serializer):
     def update(self, instance, validated_data):
         """Not implemented - this serializer is for validation only."""
         raise NotImplementedError("This serializer is for validation only")
+
+
+class OrganizationIdentifierSerializer(serializers.Serializer):
+    """
+    Serializer for organization identifier validation and lookup.
+
+    Accepts exactly one of: siret, siren, or insee.
+    Validates format and returns the corresponding organization.
+    """
+
+    siret = serializers.CharField(
+        required=False, allow_blank=True, help_text="SIRET code (14 digits)"
+    )
+    siren = serializers.CharField(
+        required=False, allow_blank=True, help_text="SIREN code (9 digits)"
+    )
+    insee = serializers.CharField(
+        required=False, allow_blank=True, help_text="INSEE code (5 digits)"
+    )
+
+    def validate(self, attrs):
+        """Validate that at most one identifier is provided and has correct format."""
+        # Get non-empty identifiers
+        identifiers = {
+            key: value.strip()
+            for key, value in attrs.items()
+            if value and value.strip()
+        }
+
+        # If no identifiers provided, that's OK for organization-less mode
+        if len(identifiers) == 0:
+            return attrs
+
+        if len(identifiers) > 1:
+            raise serializers.ValidationError(
+                "Cannot provide multiple identifiers. Use exactly one of: siret, siren, or insee"
+            )
+
+        # Validate format of the provided identifier
+        identifier_type, identifier_value = next(iter(identifiers.items()))
+
+        if identifier_type == "siret":
+            if not (len(identifier_value) == 14 and identifier_value.isdigit()):
+                raise serializers.ValidationError(
+                    {"siret": "Invalid SIRET format. Must be 14 digits."}
+                )
+        elif identifier_type == "siren":
+            if not (len(identifier_value) == 9 and identifier_value.isdigit()):
+                raise serializers.ValidationError(
+                    {"siren": "Invalid SIREN format. Must be 9 digits."}
+                )
+        elif identifier_type == "insee":
+            if not (len(identifier_value) == 5 and identifier_value.isdigit()):
+                raise serializers.ValidationError(
+                    {"insee": "Invalid INSEE format. Must be 5 digits."}
+                )
+
+        # Store the validated identifier info
+        attrs["_identifier_type"] = identifier_type
+        attrs["_identifier_value"] = identifier_value
+
+        return attrs
+
+    def get_organization(self):
+        """
+        Retrieve the organization based on the validated identifier.
+
+        Returns:
+            Organization or None: The organization object, or None if no identifier provided
+        Raises:
+            serializers.ValidationError: If organization is not found
+        """
+        validated_data = self.validated_data
+
+        # Check if no identifier was provided (organization-less mode)
+        if "_identifier_type" not in validated_data:
+            return None
+
+        identifier_type = validated_data["_identifier_type"]
+        identifier_value = validated_data["_identifier_value"]
+
+        # Look up organization by identifier
+        if identifier_type == "siret":
+            organization = models.Organization.objects.filter(
+                siret=identifier_value
+            ).first()
+        elif identifier_type == "siren":
+            organization = models.Organization.objects.filter(
+                siren=identifier_value
+            ).first()
+        elif identifier_type == "insee":
+            organization = models.Organization.objects.filter(
+                code_insee=identifier_value
+            ).first()
+        else:
+            raise serializers.ValidationError("Invalid identifier type")
+
+        if not organization:
+            raise serializers.ValidationError(
+                f"Organization not found with {identifier_type}: {identifier_value}"
+            )
+
+        return organization
+
+    def create(self, validated_data):
+        """Not implemented - this serializer is for validation only."""
+        raise NotImplementedError("This serializer is for validation only")
+
+    def update(self, instance, validated_data):
+        """Not implemented - this serializer is for validation only."""
+        raise NotImplementedError("This serializer is for validation only")

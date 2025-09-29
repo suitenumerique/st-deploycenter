@@ -8,8 +8,10 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.serializers import ValidationError
 
 from core import models
+from core.api import serializers
 
 
 class ServiceViewSet(viewsets.ModelViewSet):
@@ -33,72 +35,35 @@ class ServiceViewSet(viewsets.ModelViewSet):
         """
         Check if an organization has an active subscription to this service.
 
-        This endpoint allows services to check if a SIRET or INSEE code
+        This endpoint allows services to check if a SIRET, SIREN, or INSEE code
         has access to their service.
         """
         # Get the service
         service = self.get_object()
 
-        # Get siret or insee from request data
-        siret = request.data.get("siret")
-        insee = request.data.get("insee")
+        # Validate organization identifier using serializer
+        serializer = serializers.OrganizationIdentifierSerializer(data=request.data)
 
-        if not siret and not insee:
+        if not serializer.is_valid():
             return Response(
                 {
                     "has_subscription": False,
-                    "error_message": 'Must provide either "siret" or "insee"',
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if siret and insee:
-            return Response(
-                {
-                    "has_subscription": False,
-                    "error_message": 'Cannot provide both "siret" and "insee"',
+                    "error_message": serializer.errors,
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         try:
-            # Find organization by siret or insee
-            if siret:
-                # Validate SIRET format (14 digits)
-                if not (len(siret) == 14 and siret.isdigit()):
-                    return Response(
-                        {
-                            "has_subscription": False,
-                            "error_message": "Invalid SIRET format. Must be 14 digits.",
-                        },
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
+            # Get organization using serializer (requires identifier for this endpoint)
+            organization = serializer.get_organization()
 
-                organization = models.Organization.objects.filter(siret=siret).first()
-            else:  # insee
-                # Validate INSEE format (5 digits)
-                if not (len(insee) == 5 and insee.isdigit()):
-                    return Response(
-                        {
-                            "has_subscription": False,
-                            "error_message": "Invalid INSEE format. Must be 5 digits.",
-                        },
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-
-                organization = models.Organization.objects.filter(
-                    code_insee=insee
-                ).first()
-
-            if not organization:
-                identifier_value = siret or insee
-                identifier_type = "siret" if siret else "insee"
+            if organization is None:
                 return Response(
                     {
                         "has_subscription": False,
-                        "error_message": f"Organization not found with {identifier_type}: {identifier_value}",
+                        "error_message": "No organization identifier provided",
                     },
-                    status=status.HTTP_404_NOT_FOUND,
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
 
             # Check for subscription
@@ -135,6 +100,14 @@ class ServiceViewSet(viewsets.ModelViewSet):
             }
             return Response(response_data, status=status.HTTP_200_OK)
 
+        except ValidationError as e:
+            return Response(
+                {
+                    "has_subscription": False,
+                    "error_message": str(e),
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
         except (ValueError, KeyError, TypeError) as e:
             return Response(
                 {

@@ -10,11 +10,13 @@ from rest_framework.routers import DefaultRouter
 from core.authentication.urls import urlpatterns as oidc_urls
 
 from .api.viewsets.config import ConfigView
+from .api.viewsets.lagaufre import LagaufreViewSet
 from .api.viewsets.service import ServiceLogoViewSet, ServiceViewSet
 from .api.viewsets.user import UserViewSet
 
 # Create router and register viewsets
 router = DefaultRouter()
+router.register(r"lagaufre", LagaufreViewSet, basename="lagaufre")
 router.register(r"services", ServiceViewSet)
 router.register(r"servicelogo", ServiceLogoViewSet, basename="servicelogo")
 router.register(r"users", UserViewSet, basename="user")

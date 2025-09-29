@@ -165,7 +165,8 @@ class TestServiceSubscriptionCheck:
         data = response.json()
 
         assert data["has_subscription"] is False
-        assert "Invalid SIRET format" in data["error_message"]
+        assert "siret" in data["error_message"]
+        assert "Invalid SIRET format" in data["error_message"]["siret"][0]
 
     def test_check_service_subscription_invalid_insee_format(self, api_client):
         """Test service subscription check with invalid INSEE format."""
@@ -187,7 +188,8 @@ class TestServiceSubscriptionCheck:
         data = response.json()
 
         assert data["has_subscription"] is False
-        assert "Invalid INSEE format" in data["error_message"]
+        assert "insee" in data["error_message"]
+        assert "Invalid INSEE format" in data["error_message"]["insee"][0]
 
     def test_check_service_subscription_both_siret_and_insee(self, api_client):
         """Test service subscription check with both SIRET and INSEE provided."""
@@ -209,7 +211,11 @@ class TestServiceSubscriptionCheck:
         data = response.json()
 
         assert data["has_subscription"] is False
-        assert "Cannot provide both" in data["error_message"]
+        assert "non_field_errors" in data["error_message"]
+        assert (
+            "Cannot provide multiple identifiers"
+            in data["error_message"]["non_field_errors"][0]
+        )
 
     def test_check_service_subscription_missing_required_fields(self, api_client):
         """Test service subscription check with missing required fields."""
@@ -229,7 +235,7 @@ class TestServiceSubscriptionCheck:
         data = response.json()
 
         assert data["has_subscription"] is False
-        assert "Must provide either" in data["error_message"]
+        assert "No organization identifier provided" in data["error_message"]
 
     def test_check_service_subscription_unauthenticated(self, api_client):
         """Test service subscription check without authentication."""
