@@ -1,0 +1,16 @@
+@use "@gouvfr-lasuite/ui-kit/sass/fonts";
+@use "@gouvfr-lasuite/ui-kit/style";
+@use "./cunningham-tokens.css";
+@use "./../features/layouts/components/header/index.scss";
+@use "./../features/ui/components/toaster";
+
+@use "./../features/ui/components/spinner/SpinnerPage.scss";
+@use "./../pages/index.scss" as *;
+
+body {
+  margin: 0;
+}
+
+* {
+  box-sizing: border-box;
+}

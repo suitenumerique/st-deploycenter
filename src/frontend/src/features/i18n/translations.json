@@ -1,0 +1,22 @@
+{
+  "en": {
+    "translation": {
+      "app_title": "Operator Space",
+      "home": {
+        "title": "Operator Space",
+        "subtitle": "Where the magic operates"
+      },
+      "login": "Login"
+    }
+  },
+  "fr": {
+    "translation": {
+      "app_title": "Espace Opérateur",
+      "home": {
+        "title": "Espace Opérateur",
+        "subtitle": "Là où la magie opère"
+      },
+      "login": "Connexion"
+    } 
+  }
+}
