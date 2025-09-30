@@ -3,6 +3,7 @@
 from django.core import exceptions
 
 from rest_framework import permissions
+from core import models
 
 ACTION_FOR_METHOD_TO_PERMISSION = {
     "versions_detail": {"DELETE": "versions_destroy", "GET": "versions_retrieve"},
@@ -65,3 +66,15 @@ class IsOwnedOrPublic(IsAuthenticated):
             return obj.user == request.user
         except exceptions.ObjectDoesNotExist:
             return False
+
+class OrganizationAccessPermission(permissions.BasePermission):
+    """
+    Allows access only to authenticated users with a role in a organizations's operator.
+    """
+
+    def has_object_permission(self, request, view, obj):
+        """
+        Check if the user has a role in a organizations's operator.
+        """
+        has_role = models.OperatorOrganizationRole.objects.filter(organization=obj, operator__user_roles__user=request.user).exists()
+        return has_role

@@ -38,6 +38,7 @@ ENV VIRTUAL_ENV=/venv
 ENV VIRTUAL_ENV_PROMPT=venv
 
 # Install dependencies in this new virtual environment
+RUN poetry lock
 RUN poetry install --compile
 
 # ---- Base image with dependencies installed for development ----

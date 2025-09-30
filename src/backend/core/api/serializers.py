@@ -166,3 +166,28 @@ class SubscriptionCheckResponseSerializer(serializers.Serializer):
     def update(self, instance, validated_data):
         """Not implemented - this serializer is for validation only."""
         raise NotImplementedError("This serializer is for validation only")
+
+class OperatorSerializer(serializers.ModelSerializer):
+    """Serialize operators."""
+
+    user_role = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = models.Operator
+        fields = ["id", "name", "url", "scope", "is_active", "user_role"]
+        read_only_fields = fields
+
+    def get_user_role(self, obj):
+        roles = obj.user_roles.all()
+        if roles.count() > 0:
+            return roles[0].role
+        return None
+
+
+class OrganizationSerializer(serializers.ModelSerializer):
+    """Serialize organizations."""
+
+    class Meta:
+        model = models.Organization
+        fields = ["id", "name", "type", "siret", "siren", "code_postal", "code_insee", "population", "epci_libelle", "epci_siren", "epci_population", "departement_code_insee", "region_code_insee", "adresse_messagerie", "site_internet", "telephone", "rpnt", "service_public_url"]
+        read_only_fields = fields

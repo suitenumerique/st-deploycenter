@@ -581,10 +581,16 @@ class Development(Base):
         },
     }
 
+    DEBUG_TOOLBAR_CONFIG = {
+        "SHOW_TOOLBAR_CALLBACK": lambda request: True,
+    }    
+
     # pylint: disable=invalid-name
     def __init__(self):
         super().__init__()
-        self.INSTALLED_APPS += ["django_extensions"]
+        # pylint: disable=invalid-name
+        self.MIDDLEWARE += ["debug_toolbar.middleware.DebugToolbarMiddleware"]
+        self.INSTALLED_APPS += ["django_extensions", "debug_toolbar"]
 
 
 class DevelopmentMinimal(Development):
