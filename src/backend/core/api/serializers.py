@@ -191,3 +191,39 @@ class OrganizationSerializer(serializers.ModelSerializer):
         model = models.Organization
         fields = ["id", "name", "type", "siret", "siren", "code_postal", "code_insee", "population", "epci_libelle", "epci_siren", "epci_population", "departement_code_insee", "region_code_insee", "adresse_messagerie", "site_internet", "telephone", "rpnt", "service_public_url"]
         read_only_fields = fields
+
+class ServiceSerializer(serializers.ModelSerializer):
+    """Serialize services."""
+
+    class Meta:
+        model = models.Service
+        fields = ["id", "name", "type", "url", "description", "maturity", "launch_date", "is_active"]
+        read_only_fields = fields
+
+class ServiceSubscriptionSerializer(serializers.ModelSerializer):
+    """Serialize service subscriptions."""
+
+    class Meta:
+        model = models.ServiceSubscription
+        fields = ["id", "metadata", "created_at", "updated_at"]
+        read_only_fields = fields
+
+class OrganizationServiceSerializer(ServiceSerializer):
+    """Serialize services for an organization. It contains the subscription for the given organization."""
+
+    subscription = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = models.Service
+        fields = ServiceSerializer.Meta.fields + ["subscription"]
+        read_only_fields = fields
+
+    def get_subscription(self, obj):
+        """
+        Return only the first subscription if multiple exist.
+        """
+        first_subscription = obj.subscriptions.first()
+        if first_subscription:
+            return ServiceSubscriptionSerializer(first_subscription).data
+        return None
+

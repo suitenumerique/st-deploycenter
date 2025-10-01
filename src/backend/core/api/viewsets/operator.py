@@ -1,9 +1,21 @@
+"""
+API endpoints for Operator model.
+"""
 
 from rest_framework import viewsets
 from .. import permissions, serializers
 from core import models
 
 class OperatorViewSet(viewsets.ReadOnlyModelViewSet):   
+    """ViewSet for Operator model.
+    
+    GET /api/v1.0/operators/
+        Return the list of operators based on the user's permissions.
+
+    GET /api/v1.0/operators/<operator_id>
+        Return the operator with the given id based on the user's permissions.
+    """
+
     queryset = models.Operator.objects.all()
     serializer_class = serializers.OperatorSerializer
     permission_classes = [permissions.IsAuthenticated]

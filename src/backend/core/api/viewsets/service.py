@@ -1,5 +1,5 @@
 """
-Core model viewsets for the API.
+API endpoints for Service model.
 """
 
 from django.http import HttpResponse
@@ -10,12 +10,16 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from core import models
+from .. import serializers
+import rest_framework as drf
+from django.db.models import Prefetch
 
 
-class ServiceViewSet(viewsets.ModelViewSet):
+class ServiceViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for Service model."""
 
     queryset = models.Service.objects.all()
+    serializer_class = serializers.ServiceSerializer
     permission_classes = [IsAuthenticated]
 
     filterset_fields = ["is_active", "type"]
@@ -175,3 +179,26 @@ class ServiceLogoViewSet(viewsets.ReadOnlyModelViewSet):
         response["Access-Control-Allow-Origin"] = "*"  # Allow CORS for public access
 
         return response
+
+
+class OrganizationServiceViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for OrganizationService model.
+    
+    GET /api/v1.0/organizations/<organization_id>/services/
+        Return the list of services including the subscription for the given organization 
+        based on the user's permissions.
+    """
+
+    queryset = models.Service.objects.all()
+    serializer_class = serializers.OrganizationServiceSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        organization = models.Organization.objects.get(id=self.kwargs['resource_id'])
+        has_role = models.OperatorOrganizationRole.objects.filter(organization=organization, operator__user_roles__user=self.request.user)
+        # We need to make sure that the user has at least one role for one linked operator.
+        if not has_role:
+            raise drf.exceptions.NotFound
+
+        prefetch_queryset = models.ServiceSubscription.objects.filter(organization=organization)
+        return models.Service.objects.all().prefetch_related(Prefetch("subscriptions", queryset=prefetch_queryset))

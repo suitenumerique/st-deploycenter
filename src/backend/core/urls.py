@@ -15,7 +15,7 @@ from .api.viewsets.service import ServiceLogoViewSet, ServiceViewSet
 from .api.viewsets.user import UserViewSet
 from .api.viewsets.organization import OperatorOrganizationViewSet
 from .api.viewsets.organization import OrganizationViewSet
-
+from .api.viewsets.service import OrganizationServiceViewSet
 # Create router and register viewsets
 router = DefaultRouter()
 router.register(r"services", ServiceViewSet)
@@ -27,6 +27,9 @@ router.register(r"organizations", OrganizationViewSet)
 operator_organization_router = DefaultRouter()
 operator_organization_router.register(r"organizations", OperatorOrganizationViewSet)
 
+organization_service_router = DefaultRouter()
+organization_service_router.register(r"services", OrganizationServiceViewSet)
+
 urlpatterns = [
     # Include all router URLs
     path(
@@ -37,7 +40,7 @@ urlpatterns = [
                 *oidc_urls,
                 path("config/", ConfigView.as_view(), name="api-config"),
                 re_path(r"^operators/(?P<resource_id>[0-9a-z-]*)/", include(operator_organization_router.urls)),
-
+                re_path(r"^organizations/(?P<resource_id>[0-9a-z-]*)/", include(organization_service_router.urls)),
             ]
         ),
     ),
