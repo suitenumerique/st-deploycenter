@@ -48,7 +48,7 @@ export const HeaderRight = () => {
       ) : (
         <LoginButton />
       )}
-      <LanguagePicker />
+      {/* <LanguagePicker /> */}
     </>
   );
 };
@@ -86,10 +86,10 @@ export const LanguagePicker = () => {
           console.error("Error changing language", err);
         });
         if (user) {
-          // fetchAPI(`users/${user.id}/`, {
-          //   method: "PATCH",
-          //   body: JSON.stringify({ language: value }),
-          // });
+          fetchAPI(`users/${user.id}/`, {
+            method: "PATCH",
+            body: JSON.stringify({ language: value }),
+          });
         }
       }}
       selectedValues={selectedValues}

@@ -4,13 +4,15 @@ import rest_framework as drf
 from rest_framework import viewsets
 
 from .. import permissions, serializers
+from core import models
 
 
-class UserViewSet(viewsets.ViewSet):
+class UserViewSet(viewsets.GenericViewSet, drf.mixins.UpdateModelMixin):
     """ViewSet for User model."""
 
     serializer_class = serializers.UserSerializer
     permission_classes = [permissions.IsSelf]
+    queryset = models.User.objects.all()
 
     @drf.decorators.action(
         detail=False,

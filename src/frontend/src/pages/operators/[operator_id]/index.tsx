@@ -10,7 +10,7 @@ import { useTranslation } from "react-i18next";
 import { Button, DataGrid } from "@openfun/cunningham-react";
 import { Badge } from "@gouvfr-lasuite/ui-kit";
 import Link from "next/link";
-import useOperator from "@/hooks/useQueries";
+import useOperator, { useOperatorOrganizations } from "@/hooks/useQueries";
 import { Breadcrumbs } from "@/features/ui/components/breadcrumbs/Breadcrumbs";
 
 const FAKE_SERVICES = [
@@ -28,14 +28,7 @@ export default function Operator() {
   const { t } = useTranslation();
 
   const { data: operator } = useOperator(operatorId);
-
-  const { data: organizations } = useQuery({
-    queryKey: ["operators", operatorId, "organizations"],
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    queryFn: () => getOperatorOrganizations(operatorId),
-    enabled: !!operatorId,
-  });
+  const { data: organizations } = useOperatorOrganizations(operatorId);
 
   return (
     <Container>
@@ -94,11 +87,13 @@ export default function Operator() {
 
               return (
                 <div className="dc__organizations__list__item__services">
-                  {getRandomServices().map((service) => (
-                    <Badge type="info" key={service}>
-                      {service}
-                    </Badge>
-                  ))}
+                  {params.row.service_subscriptions?.map(
+                    (serviceSubscription) => (
+                      <Badge type="info" key={serviceSubscription.service!.id}>
+                        {serviceSubscription.service!.name}
+                      </Badge>
+                    )
+                  )}
                 </div>
               );
             },

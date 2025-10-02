@@ -18,15 +18,17 @@ urlpatterns = [
 ]
 
 if settings.DEBUG:
+    from debug_toolbar.toolbar import debug_toolbar_urls
+
     urlpatterns = (
         urlpatterns
         + staticfiles_urlpatterns()
         + static(settings.MEDIA_URL, item_root=settings.MEDIA_ROOT)
+        + debug_toolbar_urls()
     )
 
 
 if settings.USE_SWAGGER or settings.DEBUG:
-    from debug_toolbar.toolbar import debug_toolbar_urls
     urlpatterns += [
         path(
             f"api/{settings.API_VERSION}/swagger.json",
@@ -46,5 +48,4 @@ if settings.USE_SWAGGER or settings.DEBUG:
             SpectacularRedocView.as_view(url_name="client-api-schema"),
             name="redoc-schema",
         ),
-        *debug_toolbar_urls()
     ]

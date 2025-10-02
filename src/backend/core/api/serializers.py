@@ -97,8 +97,8 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = models.User
-        fields = ["id", "email", "full_name"]
-        read_only_fields = fields
+        fields = ["id", "email", "full_name", "language"]
+        read_only_fields = ["id", "email", "full_name"]
 
 
 class UserField(serializers.PrimaryKeyRelatedField):
@@ -184,14 +184,6 @@ class OperatorSerializer(serializers.ModelSerializer):
         return None
 
 
-class OrganizationSerializer(serializers.ModelSerializer):
-    """Serialize organizations."""
-
-    class Meta:
-        model = models.Organization
-        fields = ["id", "name", "type", "siret", "siren", "code_postal", "code_insee", "population", "epci_libelle", "epci_siren", "epci_population", "departement_code_insee", "region_code_insee", "adresse_messagerie", "site_internet", "telephone", "rpnt", "service_public_url"]
-        read_only_fields = fields
-
 class ServiceSerializer(serializers.ModelSerializer):
     """Serialize services."""
 
@@ -206,6 +198,27 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
     class Meta:
         model = models.ServiceSubscription
         fields = ["id", "metadata", "created_at", "updated_at"]
+        read_only_fields = fields
+
+
+class ServiceSubscriptionWithServiceSerializer(ServiceSubscriptionSerializer):
+    """Serialize service subscriptions with the service."""
+
+    service = ServiceSerializer(read_only=True)
+
+    class Meta:
+        model = models.ServiceSubscription
+        fields = ServiceSubscriptionSerializer.Meta.fields + ["service"]
+        read_only_fields = fields
+
+class OrganizationSerializer(serializers.ModelSerializer):
+    """Serialize organizations."""
+
+    service_subscriptions = ServiceSubscriptionWithServiceSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = models.Organization
+        fields = ["id", "name", "type", "siret", "siren", "code_postal", "code_insee", "population", "epci_libelle", "epci_siren", "epci_population", "departement_code_insee", "region_code_insee", "adresse_messagerie", "site_internet", "telephone", "rpnt", "service_public_url", "service_subscriptions"]
         read_only_fields = fields
 
 class OrganizationServiceSerializer(ServiceSerializer):

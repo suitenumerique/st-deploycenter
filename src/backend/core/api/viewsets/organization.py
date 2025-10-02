@@ -20,7 +20,7 @@ class OperatorOrganizationViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [permissions.IsAuthenticated, permissions.OperatorAccessPermission]
 
     def get_queryset(self):
-        return models.Organization.objects.filter(operators__id=self.kwargs['operator_id']).all()
+        return models.Organization.objects.filter(operators__id=self.kwargs['operator_id']).prefetch_related("service_subscriptions__service").all()
 
 class OrganizationViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for Organization model.

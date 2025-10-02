@@ -23,22 +23,8 @@ export default function Organization() {
   const organizationId = router.query.id as string;
   const { t } = useTranslation();
   const { data: operator } = useOperator(operatorId);
-
   const { data: organization } = useOrganization(organizationId);
   const { data: services } = useOrganizationServices(organizationId);
-
-  useEffect(() => {
-    if (services?.results?.length && services.results.length > 0) {
-      const service = services.results[0]!;
-      // createOrganizationServiceSubscription(organizationId, service.id);
-      // createOrganizationServiceSubscription(
-      //   "eae355c0-f890-4a4a-9bc8-594f3b1dd544",
-      //   service.id
-      // );
-    }
-  }, [services]);
-
-  console.log("services", services);
 
   return (
     <Container>

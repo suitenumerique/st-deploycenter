@@ -7,7 +7,7 @@ export const LeftPanelMobile = () => {
   const { user } = useAuth();
   return (
     <div className="drive__home__left-panel">
-      <LanguagePicker />
+      {/* <LanguagePicker /> */}
       {user ? <LogoutButton /> : <LoginButton />}
     </div>
   );

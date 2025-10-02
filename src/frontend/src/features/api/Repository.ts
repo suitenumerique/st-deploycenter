@@ -19,6 +19,7 @@ type Organization = {
   id: string;
   name: string;
   url: string;
+  service_subscriptions: ServiceSubscription[];
 };
 
 export type ServiceSubscription = {
@@ -27,6 +28,7 @@ export type ServiceSubscription = {
   metadata: Record<string, any>;
   created_at: string;
   updated_at: string;
+  service?: Service;
 };
 
 export type Service = {

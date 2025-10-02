@@ -18,11 +18,13 @@ import resources from "./translations.json";
  */
 
 i18n
-  .use(LanguageDetector)
+  // .use(LanguageDetector)
   .use(initReactI18next)
   .init({
     resources,
-    fallbackLng: "en",
+    fallbackLng: "fr-fr",
+    // Force french as default language for now.
+    lng: "fr-fr",
     detection: {
       order: ["cookie", "navigator"],
       caches: ["cookie"],

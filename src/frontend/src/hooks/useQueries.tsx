@@ -3,6 +3,7 @@ import {
   getOrganizationServices,
   deleteOrganizationServiceSubscription,
   createOrganizationServiceSubscription,
+  getOperatorOrganizations,
 } from "@/features/api/Repository";
 import { getOrganization } from "@/features/api/Repository";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -10,8 +11,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 export const useOperator = (operatorId: string) => {
   return useQuery({
     queryKey: ["operators", operatorId],
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
     queryFn: () => getOperator(operatorId),
     enabled: !!operatorId,
   });
@@ -20,17 +19,20 @@ export const useOperator = (operatorId: string) => {
 export const useOrganization = (organizationId: string) => {
   return useQuery({
     queryKey: ["organizations", organizationId],
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
     queryFn: () => getOrganization(organizationId),
+  });
+};
+
+export const useOperatorOrganizations = (operatorId: string) => {
+  return useQuery({
+    queryKey: ["operators", operatorId, "organizations"],
+    queryFn: () => getOperatorOrganizations(operatorId),
   });
 };
 
 export const useOrganizationServices = (organizationId: string) => {
   return useQuery({
     queryKey: ["organizations", organizationId, "services"],
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
     queryFn: () => getOrganizationServices(organizationId),
   });
 };
@@ -57,6 +59,9 @@ export const useMutationDeleteOrganizationServiceSubscription = () => {
       queryClient.invalidateQueries({
         queryKey: ["organizations", variables.organizationId, "services"],
       });
+      queryClient.invalidateQueries({
+        queryKey: ["operators"],
+      });
     },
   });
 };
@@ -76,6 +81,9 @@ export const useMutationCreateOrganizationServiceSubscription = () => {
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["organizations", variables.organizationId, "services"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["operators"],
       });
     },
   });
