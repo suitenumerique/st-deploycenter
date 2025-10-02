@@ -3,14 +3,15 @@
 @use "./cunningham-tokens.css";
 @use "./../features/layouts/components/header/index.scss";
 @use "./../features/ui/components/toaster";
+@use "./../features/ui/components/breadcrumbs/index.scss" as *;
+
+@use "./../features/layouts/components/container/Container.scss" as *;
 
 @use "./../features/ui/components/spinner/SpinnerPage.scss";
 @use "./../pages/index.scss" as *;
+@use "./../pages/operators/index.scss" as *;
+@use "./../pages/operators/[operator_id]/organizations/index.scss" as *;
 
 body {
   margin: 0;
-}
-
-* {
-  box-sizing: border-box;
 }

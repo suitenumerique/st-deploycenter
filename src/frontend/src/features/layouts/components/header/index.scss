@@ -9,6 +9,15 @@ $tablet: map.get($themes, "default", "theme", "breakpoints", "tablet");
   }
 }
 
+.drive__header__logo {
+  background-image: url("/assets/logo_bg.png");
+  width: 112px;
+  height: 42px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
 .c__header__right {
   display: flex;
   align-items: center;

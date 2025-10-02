@@ -10,7 +10,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from core import models
-from .. import serializers
+from .. import serializers, permissions
 import rest_framework as drf
 from django.db.models import Prefetch
 
@@ -191,14 +191,88 @@ class OrganizationServiceViewSet(viewsets.ReadOnlyModelViewSet):
 
     queryset = models.Service.objects.all()
     serializer_class = serializers.OrganizationServiceSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, permissions.ParentOrganizationAccessPermission]
 
     def get_queryset(self):
-        organization = models.Organization.objects.get(id=self.kwargs['resource_id'])
-        has_role = models.OperatorOrganizationRole.objects.filter(organization=organization, operator__user_roles__user=self.request.user)
-        # We need to make sure that the user has at least one role for one linked operator.
-        if not has_role:
-            raise drf.exceptions.NotFound
-
+        organization = models.Organization.objects.get(id=self.kwargs['organization_id'])
         prefetch_queryset = models.ServiceSubscription.objects.filter(organization=organization)
         return models.Service.objects.all().prefetch_related(Prefetch("subscriptions", queryset=prefetch_queryset))
+
+
+class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
+    """ViewSet for OrganizationServiceSubscription model.
+    
+    POST /api/v1.0/organizations/<organization_id>/services/<service_id>/subscription/
+        Create a new subscription for the given organization and service.
+
+    DELETE /api/v1.0/organizations/<organization_id>/services/<service_id>/subscription/
+        Delete the given subscription for the given organization and service.
+    """
+
+    queryset = models.ServiceSubscription.objects.all()
+    serializer_class = serializers.ServiceSubscriptionSerializer
+    permission_classes = [IsAuthenticated, permissions.ParentOrganizationAccessPermission]
+
+    def get_queryset(self):
+        return models.ServiceSubscription.objects.filter(
+            organization=self.kwargs['organization_id'], 
+            service=self.kwargs['service_id']
+        )
+
+    def list(self, request, *args, **kwargs):
+        """
+        Return the subscription if one exists, otherwise return empty response.
+        Since there can only be one subscription per organization-service pair,
+        we return the subscription directly instead of a paginated list.
+        """
+        try:
+            subscription = self.get_queryset().get()
+            serializer = self.get_serializer(subscription)
+            return Response(serializer.data)
+        except models.ServiceSubscription.DoesNotExist:
+            return Response({}, status=status.HTTP_404_NOT_FOUND)
+
+    def retrieve(self, request, *args, **kwargs):
+        """
+        Return 404 since individual subscription retrieval is not supported.
+        Use the list method to get the subscription for the organization-service pair.
+        """
+        return Response({}, status=status.HTTP_404_NOT_FOUND)
+    
+    def update(self, request, *args, **kwargs):
+        """
+        Update the subscription for the organization-service pair.
+        """
+        return Response({}, status=status.HTTP_404_NOT_FOUND)
+
+    def create(self, request, *args, **kwargs):
+        """
+        Create a new subscription for the organization-service pair.
+        Returns 400 if subscription already exists.
+        """
+        if self.get_queryset().exists():
+            return Response(
+                {'error': 'Subscription already exists'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        organization = models.Organization.objects.get(id=self.kwargs['organization_id'])
+        service = models.Service.objects.get(id=self.kwargs['service_id'])
+        
+        subscription = models.ServiceSubscription.objects.create(
+            organization=organization, 
+            service=service
+        )
+
+        serializer = self.get_serializer(subscription)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def destroy(self, request, *args, **kwargs):
+        """
+        Delete the subscription for the organization-service pair.
+        """
+        subscription = self.get_object()
+        if not subscription:
+            return Response({}, status=status.HTTP_404_NOT_FOUND)
+        subscription.delete()
+        return Response({}, status=status.HTTP_204_NO_CONTENT)
