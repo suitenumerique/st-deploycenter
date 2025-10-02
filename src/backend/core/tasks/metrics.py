@@ -190,6 +190,9 @@ def fetch_metrics_from_endpoint(
             # Parse response
             data = response.json()
 
+            if isinstance(data, list):
+                data = {"results": data, "count": len(data)}
+
             # Extract pagination info
             count = data.get("count", 0)
             results = data.get("results", [])

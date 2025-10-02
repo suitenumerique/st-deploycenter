@@ -93,7 +93,9 @@ def upload_deployment_metrics_dataset():
 
     # Create gzipped CSV in memory
     buffer = io.BytesIO()
-    with gzip.GzipFile(fileobj=buffer, mode="wb", compresslevel=9) as gz_file:
+    with gzip.GzipFile(
+        filename="deploiement-quotidien.csv", fileobj=buffer, mode="wb", compresslevel=9
+    ) as gz_file:
         with io.TextIOWrapper(gz_file, encoding="utf-8") as text_file:
             writer = csv.DictWriter(text_file, fieldnames=data[0].keys(), delimiter=";")
             writer.writeheader()
