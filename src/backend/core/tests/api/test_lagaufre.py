@@ -37,10 +37,9 @@ class TestLagaufreServicesEndpoint:
         # No authentication required for anonymous API
 
         # Test request
-        response = api_client.post(
+        response = api_client.get(
             "/api/v1.0/lagaufre/services/",
             {"siret": organization.siret},
-            format="json",
         )
 
         assert response.status_code == 200
@@ -80,10 +79,9 @@ class TestLagaufreServicesEndpoint:
         # No authentication required for anonymous API
 
         # Test request
-        response = api_client.post(
+        response = api_client.get(
             "/api/v1.0/lagaufre/services/",
             {"siren": organization.siren},
-            format="json",
         )
 
         assert response.status_code == 200
@@ -103,10 +101,9 @@ class TestLagaufreServicesEndpoint:
         # No authentication required for anonymous API
 
         # Test request
-        response = api_client.post(
+        response = api_client.get(
             "/api/v1.0/lagaufre/services/",
             {"insee": organization.code_insee},
-            format="json",
         )
 
         assert response.status_code == 200
@@ -125,10 +122,9 @@ class TestLagaufreServicesEndpoint:
         # No authentication required for anonymous API
 
         # Test request
-        response = api_client.post(
+        response = api_client.get(
             "/api/v1.0/lagaufre/services/",
             {"siret": organization.siret},
-            format="json",
         )
 
         assert response.status_code == 200
@@ -156,10 +152,9 @@ class TestLagaufreServicesEndpoint:
         # No authentication required for anonymous API
 
         # Test request
-        response = api_client.post(
+        response = api_client.get(
             "/api/v1.0/lagaufre/services/",
             {"siret": organization.siret},
-            format="json",
         )
 
         assert response.status_code == 200
@@ -184,10 +179,9 @@ class TestLagaufreServicesEndpoint:
         # No authentication required for anonymous API
 
         # Test request
-        response = api_client.post(
+        response = api_client.get(
             "/api/v1.0/lagaufre/services/",
             {"siret": organization.siret},
-            format="json",
         )
 
         assert response.status_code == 200
@@ -215,10 +209,9 @@ class TestLagaufreServicesEndpoint:
         # No authentication required for anonymous API
 
         # Test request with non-existent SIRET
-        response = api_client.post(
+        response = api_client.get(
             "/api/v1.0/lagaufre/services/",
             {"siret": "99999999999999"},
-            format="json",
         )
 
         assert response.status_code == 404
@@ -234,10 +227,9 @@ class TestLagaufreServicesEndpoint:
         # No authentication required for anonymous API
 
         # Test request with invalid SIRET format
-        response = api_client.post(
+        response = api_client.get(
             "/api/v1.0/lagaufre/services/",
             {"siret": "12345"},  # Too short
-            format="json",
         )
 
         assert response.status_code == 400
@@ -254,10 +246,9 @@ class TestLagaufreServicesEndpoint:
         # No authentication required for anonymous API
 
         # Test request with invalid SIREN format
-        response = api_client.post(
+        response = api_client.get(
             "/api/v1.0/lagaufre/services/",
             {"siren": "123"},  # Too short
-            format="json",
         )
 
         assert response.status_code == 400
@@ -274,10 +265,9 @@ class TestLagaufreServicesEndpoint:
         # No authentication required for anonymous API
 
         # Test request with invalid INSEE format
-        response = api_client.post(
+        response = api_client.get(
             "/api/v1.0/lagaufre/services/",
             {"insee": "123"},  # Too short
-            format="json",
         )
 
         assert response.status_code == 400
@@ -294,10 +284,9 @@ class TestLagaufreServicesEndpoint:
         # No authentication required for anonymous API
 
         # Test request with multiple identifiers
-        response = api_client.post(
+        response = api_client.get(
             "/api/v1.0/lagaufre/services/",
             {"siret": "12345678901234", "siren": "123456789"},
-            format="json",
         )
 
         assert response.status_code == 400
@@ -318,10 +307,9 @@ class TestLagaufreServicesEndpoint:
         # No authentication required for anonymous API
 
         # Test request with no identifiers (should work in organization-less mode)
-        response = api_client.post(
+        response = api_client.get(
             "/api/v1.0/lagaufre/services/",
             {},
-            format="json",
         )
 
         assert response.status_code == 200
@@ -340,10 +328,9 @@ class TestLagaufreServicesEndpoint:
         factories.ServiceSubscriptionFactory(organization=organization, service=service)
 
         # Test request without authentication (should work now)
-        response = api_client.post(
+        response = api_client.get(
             "/api/v1.0/lagaufre/services/",
             {"siret": organization.siret},
-            format="json",
         )
 
         assert response.status_code == 200
@@ -359,10 +346,9 @@ class TestLagaufreServicesEndpoint:
         # No authentication required for anonymous API
 
         # Test request with empty string identifiers (should work in organization-less mode)
-        response = api_client.post(
+        response = api_client.get(
             "/api/v1.0/lagaufre/services/",
             {"siret": "", "siren": "", "insee": ""},
-            format="json",
         )
 
         assert response.status_code == 200
@@ -382,10 +368,9 @@ class TestLagaufreServicesEndpoint:
         # No authentication required for anonymous API
 
         # Test request with whitespace around SIRET
-        response = api_client.post(
+        response = api_client.get(
             "/api/v1.0/lagaufre/services/",
             {"siret": f"  {organization.siret}  "},
-            format="json",
         )
 
         assert response.status_code == 200
@@ -416,10 +401,9 @@ class TestLagaufreServicesEndpoint:
         # No authentication required for anonymous API
 
         # Test request
-        response = api_client.post(
+        response = api_client.get(
             "/api/v1.0/lagaufre/services/",
             {"siret": organization.siret},
-            format="json",
         )
 
         assert response.status_code == 200
@@ -460,10 +444,9 @@ class TestLagaufreServicesEndpoint:
         # No authentication required for anonymous API
 
         # Test request with no organization identifier
-        response = api_client.post(
+        response = api_client.get(
             "/api/v1.0/lagaufre/services/",
             {},
-            format="json",
         )
 
         assert response.status_code == 200
@@ -502,10 +485,9 @@ class TestLagaufreServicesEndpoint:
         # No authentication required for anonymous API
 
         # Test request with empty string identifiers
-        response = api_client.post(
+        response = api_client.get(
             "/api/v1.0/lagaufre/services/",
             {"siret": "", "siren": "", "insee": ""},
-            format="json",
         )
 
         assert response.status_code == 200
@@ -524,10 +506,9 @@ class TestLagaufreServicesEndpoint:
         # No authentication required for anonymous API
 
         # Test request with whitespace-only identifiers
-        response = api_client.post(
+        response = api_client.get(
             "/api/v1.0/lagaufre/services/",
             {"siret": "   ", "siren": "  ", "insee": " "},
-            format="json",
         )
 
         assert response.status_code == 200

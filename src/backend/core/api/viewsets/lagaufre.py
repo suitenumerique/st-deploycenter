@@ -25,7 +25,7 @@ class LagaufreViewSet(viewsets.ViewSet):
 
     @action(
         detail=False,
-        methods=["post"],
+        methods=["get"],
         url_path="services",
         url_name="services",
     )
@@ -33,7 +33,7 @@ class LagaufreViewSet(viewsets.ViewSet):
         """
         Return a list of services with their subscription status for an organization.
 
-        POST parameters (optional):
+        Query parameters (optional):
         - siret: SIRET code (14 digits)
         - siren: SIREN code (9 digits)
         - insee: INSEE code (5 digits)
@@ -45,7 +45,9 @@ class LagaufreViewSet(viewsets.ViewSet):
         organization is provided, or by name when no organization is provided.
         """
         # Validate organization identifier using serializer
-        serializer = serializers.OrganizationIdentifierSerializer(data=request.data)
+        serializer = serializers.OrganizationIdentifierSerializer(
+            data=request.query_params
+        )
 
         if not serializer.is_valid():
             return Response(
