@@ -90,7 +90,9 @@ class LagaufreViewSet(viewsets.ViewSet):
             services, subscription_ids
         )
 
-        return Response(response_data)
+        response = Response(response_data, headers={"Access-Control-Allow-Origin": "*"})
+
+        return response
 
     def _build_services_data(self, services, subscription_ids):
         """Build services data with optional subscription information."""
