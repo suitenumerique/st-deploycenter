@@ -204,7 +204,7 @@ class TestLagaufreServicesEndpoint:
 
         assert (
             service_with_logo_data["logo"]
-            == f"/api/v1.0/servicelogo/{service_with_logo.id}/"
+            == f"http://localhost:8961/api/v1.0/servicelogo/{service_with_logo.id}/"
         )
         assert service_without_logo_data["logo"] is None
 

@@ -127,11 +127,9 @@ def upload_deployment_services_dataset():
             "id": service.id,
             "nom": service.name,
             "url": service.url,
-            "maturite": service.maturity,
-            "date_lancement": service.launch_date,
-            "logo_url": f"{settings.API_PUBLIC_URL}servicelogo/{service.id}/"
-            if service.logo_svg
-            else "",
+            "maturite": service.maturity or "",
+            "date_lancement": service.launch_date or "",
+            "logo_url": service.get_logo_url() or "",
         }
         for service in services
     ]

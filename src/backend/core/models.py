@@ -572,6 +572,14 @@ class Service(BaseModel):
     def __str__(self):
         return f"{self.name} ({self.type})"
 
+    def get_logo_url(self):
+        """
+        Get the URL of the service logo as SVG.
+        """
+        if self.logo_svg:
+            return f"{settings.API_PUBLIC_URL}servicelogo/{self.id}/"
+        return None
+
 
 class ServiceSubscription(BaseModel):
     """

@@ -103,9 +103,7 @@ class LagaufreViewSet(viewsets.ViewSet):
                 "name": service.name,
                 "url": service.url,
                 "maturity": service.maturity,
-                "logo": f"/api/v1.0/servicelogo/{service.id}/"
-                if service.logo_svg
-                else None,
+                "logo": service.get_logo_url(),
             }
 
             if subscription_ids is not None:
