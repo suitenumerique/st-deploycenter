@@ -1,34 +1,22 @@
 import { useRouter } from "next/router";
-import { useQuery } from "@tanstack/react-query";
-import {
-  getOperator,
-  getOperatorOrganizations,
-} from "@/features/api/Repository";
 import { getGlobalExplorerLayout } from "@/features/layouts/components/GlobalLayout";
 import { Container } from "@/features/layouts/components/container/Container";
 import { useTranslation } from "react-i18next";
-import { Button, DataGrid, usePagination } from "@openfun/cunningham-react";
+import { DataGrid, usePagination } from "@openfun/cunningham-react";
 import { Badge } from "@gouvfr-lasuite/ui-kit";
 import Link from "next/link";
 import useOperator, { useOperatorOrganizations } from "@/hooks/useQueries";
 import { Breadcrumbs } from "@/features/ui/components/breadcrumbs/Breadcrumbs";
 import { useEffect } from "react";
-
-const FAKE_SERVICES = [
-  "Fichiers",
-  "Docs",
-  "FI ANCT",
-  "Messages",
-  "Espace sur Demande",
-  "FI Adico",
-];
+import { useBreadcrumbOperator } from "@/features/ui/components/breadcrumbs/Parts";
 
 export default function Operator() {
   const router = useRouter();
   const operatorId = router.query.operator_id as string;
   const { t } = useTranslation();
 
-  const { data: operator } = useOperator(operatorId);
+  const { data: operator, isLoading: isOperatorLoading } =
+    useOperator(operatorId);
   const pagination = usePagination({ defaultPage: 1, pageSize: 20 });
   const { data: organizations, isLoading } = useOperatorOrganizations(
     operatorId,
@@ -44,23 +32,15 @@ export default function Operator() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [organizations]);
 
+  const breadcrumbOperator = useBreadcrumbOperator(
+    operatorId,
+    operator,
+    isOperatorLoading
+  );
+
   return (
     <Container>
-      <Breadcrumbs
-        items={[
-          {
-            content: (
-              <button
-                className="c__breadcrumbs__button"
-                data-testid="breadcrumb-button"
-                onClick={() => router.push(`/operators/${operatorId}`)}
-              >
-                {t("organizations.title", { operator: operator?.name })}
-              </button>
-            ),
-          },
-        ]}
-      />
+      <Breadcrumbs items={[breadcrumbOperator]} />
       <div className="dc__container__content__subtitle">
         {t("organizations.subtitle")}
       </div>
@@ -85,20 +65,14 @@ export default function Operator() {
             field: "population",
             headerName: "Population",
             size: 100,
+            renderCell: (params) => {
+              return new Intl.NumberFormat().format(params.row.population || 0);
+            },
           },
           {
             field: "services",
             headerName: "Services",
             renderCell: (params) => {
-              // TODO: Implement services logic.
-              const getRandomServices = () => {
-                const shuffled = [...FAKE_SERVICES].sort(
-                  () => 0.5 - Math.random()
-                );
-                const count = Math.floor(Math.random() * 3) + 1; // Random number between 1 and 3
-                return shuffled.slice(0, count);
-              };
-
               return (
                 <div className="dc__organizations__list__item__services">
                   {params.row.service_subscriptions?.map(
@@ -118,9 +92,7 @@ export default function Operator() {
             size: 100,
             renderCell: () => {
               // TODO: Implement RPNT logic.
-              return (
-                <Badge type="success">{t("organizations.rpnt.yes")}</Badge>
-              );
+              return <Badge type="success">wip</Badge>;
             },
           },
         ]}

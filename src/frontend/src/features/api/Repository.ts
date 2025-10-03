@@ -7,7 +7,7 @@ type PaginatedResponse<T> = {
   results: T[];
 };
 
-type Operator = {
+export type Operator = {
   id: string;
   name: string;
   url: string;
@@ -20,6 +20,7 @@ type Organization = {
   name: string;
   url: string;
   service_subscriptions: ServiceSubscription[];
+  population: number;
 };
 
 export type ServiceSubscription = {
@@ -58,7 +59,6 @@ export const getOperatorOrganizations = async (
   const response = await fetchAPI(
     `operators/${operatorId}/organizations/?page=${page}`
   );
-  await new Promise((resolve) => setTimeout(resolve, 5000));
   const data = (await response.json()) as PaginatedResponse<Organization>;
   return data;
 };

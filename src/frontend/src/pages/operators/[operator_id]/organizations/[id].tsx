@@ -8,39 +8,35 @@ import useOperator, {
   useOrganizationServices,
 } from "@/hooks/useQueries";
 import { useTranslation } from "react-i18next";
-import {
-  createOrganizationServiceSubscription,
-  deleteOrganizationServiceSubscription,
-  Service,
-} from "@/features/api/Repository";
+import { Service } from "@/features/api/Repository";
 import { Switch, useModals } from "@openfun/cunningham-react";
 import { Breadcrumbs } from "@/features/ui/components/breadcrumbs/Breadcrumbs";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useBreadcrumbOperator } from "@/features/ui/components/breadcrumbs/Parts";
+import { Spinner } from "@gouvfr-lasuite/ui-kit";
 
 export default function Organization() {
   const router = useRouter();
   const operatorId = router.query.operator_id as string;
   const organizationId = router.query.id as string;
   const { t } = useTranslation();
-  const { data: operator } = useOperator(operatorId);
-  const { data: organization } = useOrganization(organizationId);
-  const { data: services } = useOrganizationServices(organizationId);
+  const { data: operator, isLoading: isOperatorLoading } =
+    useOperator(operatorId);
+  const { data: organization, isLoading: isOrganizationLoading } =
+    useOrganization(organizationId);
+  const { data: services, isLoading: isServicesLoading } =
+    useOrganizationServices(organizationId);
+  const breadcrumbOperator = useBreadcrumbOperator(
+    operatorId,
+    operator,
+    isOperatorLoading
+  );
 
   return (
     <Container>
       <Breadcrumbs
         items={[
-          {
-            content: (
-              <button
-                className="c__breadcrumbs__button"
-                data-testid="breadcrumb-button"
-                onClick={() => router.push(`/operators/${operatorId}`)}
-              >
-                {t("organizations.title", { operator: operator?.name })}
-              </button>
-            ),
-          },
+          breadcrumbOperator,
           {
             content: (
               <button
@@ -53,6 +49,7 @@ export default function Organization() {
                 }
               >
                 {organization?.name}
+                {isOrganizationLoading && <Spinner />}
               </button>
             ),
           },
@@ -66,13 +63,17 @@ export default function Organization() {
       </div>
 
       <div className="dc__services__list">
-        {services?.results.map((service) => (
-          <ServiceBlock
-            key={service.id}
-            service={service}
-            organizationId={organizationId}
-          />
-        ))}
+        {isServicesLoading ? (
+          <Spinner />
+        ) : (
+          services?.results.map((service) => (
+            <ServiceBlock
+              key={service.id}
+              service={service}
+              organizationId={organizationId}
+            />
+          ))
+        )}
       </div>
     </Container>
   );
@@ -107,10 +108,17 @@ const ServiceBlock = ({
             if (e.target.checked) {
               const decision = await modals.confirmationModal();
               if (decision === "yes") {
-                createOrganizationServiceSubscription({
-                  organizationId,
-                  serviceId: service.id,
-                });
+                createOrganizationServiceSubscription(
+                  {
+                    organizationId,
+                    serviceId: service.id,
+                  },
+                  {
+                    onError: () => {
+                      setChecked(false);
+                    },
+                  }
+                );
                 setChecked(true);
               }
             } else {
@@ -121,11 +129,18 @@ const ServiceBlock = ({
                 }),
               });
               if (decision === "delete") {
-                deleteOrganizationServiceSubscription({
-                  organizationId,
-                  serviceId: service.id,
-                  subscriptionId: service.subscription.id,
-                });
+                deleteOrganizationServiceSubscription(
+                  {
+                    organizationId,
+                    serviceId: service.id,
+                    subscriptionId: service.subscription.id,
+                  },
+                  {
+                    onError: () => {
+                      setChecked(true);
+                    },
+                  }
+                );
                 setChecked(false);
               }
             }

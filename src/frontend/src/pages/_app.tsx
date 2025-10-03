@@ -6,12 +6,15 @@ import type { AppProps } from "next/app";
 import { ReactElement, ReactNode } from "react";
 import { CunninghamProvider } from "@gouvfr-lasuite/ui-kit";
 import { APIError, errorToString } from "@/features/api/APIError";
-import { addToast, ToasterItem } from "@/features/ui/components/toaster/Toaster";
+import {
+  addToast,
+  ToasterItem,
+} from "@/features/ui/components/toaster/Toaster";
 import { capitalizeRegion } from "@/features/i18n/utils";
 import Head from "next/head";
 import { useTranslation } from "react-i18next";
 import "@/styles/globals.scss";
-import "@/features/i18n/initI18n"; 
+import "@/features/i18n/initI18n";
 
 export type NextPageWithLayout<P = object, IP = P> = NextPage<P, IP> & {
   getLayout?: (page: ReactElement) => ReactNode;
@@ -72,10 +75,10 @@ export default function App({ Component, pageProps }: AppPropsWithLayout) {
           theme={"default"}
         >
           {/* <ConfigProvider> */}
-            {/* <AnalyticsProvider> */}
-              {getLayout(<Component {...pageProps} />)}
-              
-            {/* </AnalyticsProvider> */}
+          {/* <AnalyticsProvider> */}
+          {getLayout(<Component {...pageProps} />)}
+
+          {/* </AnalyticsProvider> */}
           {/* </ConfigProvider> */}
         </CunninghamProvider>
       </QueryClientProvider>

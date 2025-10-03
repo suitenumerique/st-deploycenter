@@ -3,6 +3,7 @@ import { MainLayout } from "@gouvfr-lasuite/ui-kit";
 import { HeaderRight } from "./header/Header";
 import { HeaderIcon } from "./header/Header";
 import { LeftPanelMobile } from "./left-panel/LeftPanelMobile";
+import { Toaster } from "@/features/ui/components/toaster/Toaster";
 
 /**
  * This layout is used for the global contexts (auth, etc).
@@ -30,6 +31,7 @@ export const GlobalExplorerLayout = ({
         rightHeaderContent={<HeaderRight />}
       >
         {children}
+        <Toaster />
       </MainLayout>
     </GlobalLayout>
   );

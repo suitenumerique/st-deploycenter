@@ -25,6 +25,11 @@
           "subtitle": "List of services available for this organization",
           "status": "Active"
         }
+      },
+      "api": {
+        "error": {
+          "unexpected": "An unexpected error occurred"
+        }
       }
     }
   },
@@ -57,6 +62,11 @@
             "title": "Désactivation du service",
             "content": "Êtes-vous sûr de vouloir désactiver le service {{service}} ?"
           }
+        }
+      },
+      "api": {
+        "error": {
+          "unexpected": "Une erreur inattendue est survenue"
         }
       }
     }
