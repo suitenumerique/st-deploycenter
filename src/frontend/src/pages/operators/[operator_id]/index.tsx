@@ -7,11 +7,12 @@ import {
 import { getGlobalExplorerLayout } from "@/features/layouts/components/GlobalLayout";
 import { Container } from "@/features/layouts/components/container/Container";
 import { useTranslation } from "react-i18next";
-import { Button, DataGrid } from "@openfun/cunningham-react";
+import { Button, DataGrid, usePagination } from "@openfun/cunningham-react";
 import { Badge } from "@gouvfr-lasuite/ui-kit";
 import Link from "next/link";
 import useOperator, { useOperatorOrganizations } from "@/hooks/useQueries";
 import { Breadcrumbs } from "@/features/ui/components/breadcrumbs/Breadcrumbs";
+import { useEffect } from "react";
 
 const FAKE_SERVICES = [
   "Fichiers",
@@ -28,7 +29,20 @@ export default function Operator() {
   const { t } = useTranslation();
 
   const { data: operator } = useOperator(operatorId);
-  const { data: organizations } = useOperatorOrganizations(operatorId);
+  const pagination = usePagination({ defaultPage: 1, pageSize: 20 });
+  const { data: organizations, isLoading } = useOperatorOrganizations(
+    operatorId,
+    pagination.page
+  );
+
+  useEffect(() => {
+    if (organizations) {
+      pagination.setPagesCount(
+        Math.ceil(organizations.count / pagination.pageSize)
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [organizations]);
 
   return (
     <Container>
@@ -112,6 +126,8 @@ export default function Operator() {
         ]}
         rows={organizations?.results || []}
         emptyPlaceholderLabel={t("organizations.empty")}
+        pagination={pagination}
+        isLoading={isLoading}
       />
     </Container>
   );

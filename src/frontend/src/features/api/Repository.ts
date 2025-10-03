@@ -52,9 +52,13 @@ export const getOperator = async (operatorId: string): Promise<Operator> => {
 };
 
 export const getOperatorOrganizations = async (
-  operatorId: string
+  operatorId: string,
+  page: number
 ): Promise<PaginatedResponse<Organization>> => {
-  const response = await fetchAPI(`operators/${operatorId}/organizations/`);
+  const response = await fetchAPI(
+    `operators/${operatorId}/organizations/?page=${page}`
+  );
+  await new Promise((resolve) => setTimeout(resolve, 5000));
   const data = (await response.json()) as PaginatedResponse<Organization>;
   return data;
 };
