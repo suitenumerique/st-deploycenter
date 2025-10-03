@@ -33,10 +33,11 @@ class LagaufreViewSet(viewsets.ViewSet):
         """
         Return a list of services with their subscription status for an organization.
 
-        Query parameters (optional):
-        - siret: SIRET code (14 digits)
-        - siren: SIREN code (9 digits)
-        - insee: INSEE code (5 digits)
+        Query parameters:
+        - operator: Operator ID (required)
+        - siret: SIRET code (14 digits, optional)
+        - siren: SIREN code (9 digits, optional)
+        - insee: INSEE code (5 digits, optional)
 
         If no organization identifier is provided, returns all services without
         subscription information (organization-less mode).
@@ -44,6 +45,19 @@ class LagaufreViewSet(viewsets.ViewSet):
         Returns services ordered by subscription status (subscribed first) when
         organization is provided, or by name when no organization is provided.
         """
+
+        # Get operator (required parameter)
+        operator_id = request.query_params.get("operator")
+        if not operator_id:
+            return Response(
+                {
+                    "error": "operator is required",
+                    "services": [],
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        operator = models.Operator.objects.get(id=operator_id)
+
         # Validate organization identifier using serializer
         serializer = serializers.OrganizationIdentifierSerializer(
             data=request.query_params
@@ -67,8 +81,12 @@ class LagaufreViewSet(viewsets.ViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Get all active services
-        services = models.Service.objects.filter(is_active=True).order_by("name")
+        # Get all active & configured services for this operator
+        services = (
+            models.Service.objects.filter(is_active=True, operators=operator)
+            .select_related()
+            .order_by("-operatorserviceconfig__display_priority")
+        )
 
         response_data = {}
 
