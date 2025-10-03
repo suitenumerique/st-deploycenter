@@ -2,6 +2,7 @@
 Test users API endpoints in the deploycenter core app.
 """
 
+from core.tests.utils import assert_equals_partial
 import pytest
 from rest_framework.test import APIClient
 
@@ -25,16 +26,6 @@ def test_api_organizations_list_anonymous():
         "detail": "Informations d'authentification non fournies."
     }
 
-def assert_equals_partial(actual, expected):
-    """Assert that the expected dictionary is a subset of the actual dictionary."""
-    if isinstance(actual, list):
-        assert len(actual) == len(expected)
-        for i, item in enumerate(actual):
-            assert_equals_partial(item, expected[i])
-    else:
-        for key, value in expected.items():
-            assert key in actual
-            assert actual[key] == value
 
 def test_api_organizations_list_authenticated():
     """Authenticated users should be able to list organizations of an operator for which they have a UserOperatorRole."""

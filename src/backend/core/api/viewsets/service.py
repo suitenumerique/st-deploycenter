@@ -196,7 +196,9 @@ class OrganizationServiceViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         organization = models.Organization.objects.get(id=self.kwargs['organization_id'])
         prefetch_queryset = models.ServiceSubscription.objects.filter(organization=organization)
-        return models.Service.objects.all().prefetch_related(Prefetch("subscriptions", queryset=prefetch_queryset))
+        return models.Service.objects.all().prefetch_related(
+            Prefetch("subscriptions", queryset=prefetch_queryset)
+        ).order_by('created_at')
 
 
 class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):

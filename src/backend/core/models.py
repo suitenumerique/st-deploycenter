@@ -564,7 +564,7 @@ class Service(BaseModel):
         db_table = "deploycenter_service"
         verbose_name = _("service")
         verbose_name_plural = _("services")
-        ordering = ["name", "type", "url"]
+        ordering = ["name", "type", "url", "created_at"]
         indexes = [
             models.Index(fields=["is_active"]),
         ]
