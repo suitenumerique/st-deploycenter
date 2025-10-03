@@ -132,6 +132,17 @@ class ServiceFactory(factory.django.DjangoModelFactory):
     is_active = True
 
 
+class OperatorServiceConfigFactory(factory.django.DjangoModelFactory):
+    """Factory for OperatorServiceConfig model."""
+
+    class Meta:
+        model = models.OperatorServiceConfig
+
+    operator = factory.SubFactory(OperatorFactory)
+    service = factory.SubFactory(ServiceFactory)
+    display_priority = factory.Faker("random_int", min=1, max=100)
+
+
 class ServiceSubscriptionFactory(factory.django.DjangoModelFactory):
     """Factory for ServiceSubscription model."""
 

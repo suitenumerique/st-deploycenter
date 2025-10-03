@@ -479,6 +479,44 @@ class OperatorOrganizationRole(BaseModel):
         return f"{self.operator.name} - {self.role} at {self.organization.name}"
 
 
+class OperatorServiceConfig(BaseModel):
+    """
+    Through model representing a relationship between an operator and a service.
+    """
+
+    operator = models.ForeignKey(
+        Operator,
+        on_delete=models.CASCADE,
+        verbose_name=_("operator"),
+        help_text=_("Operator with a service configuration"),
+    )
+    service = models.ForeignKey(
+        "Service",
+        on_delete=models.CASCADE,
+        verbose_name=_("service"),
+        help_text=_("Service with a configuration"),
+    )
+    display_priority = models.IntegerField(
+        _("display priority"),
+        default=0,
+        help_text=_("Priority of the operator and service for display"),
+    )
+
+    class Meta:
+        db_table = "deploycenter_operator_service_config"
+        verbose_name = _("operator service config")
+        verbose_name_plural = _("operator service configs")
+        ordering = ["operator__name", "service__name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["operator", "service"], name="unique_operator_service"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.operator.name} - {self.service.name} (priority: {self.display_priority})"
+
+
 class Service(BaseModel):
     """
     Service that can be subscribed to by organizations.
@@ -558,6 +596,14 @@ class Service(BaseModel):
         blank=True,
         null=True,
         help_text=_("SVG logo for the service stored as binary data"),
+    )
+
+    operators = models.ManyToManyField(
+        Operator,
+        through="OperatorServiceConfig",
+        related_name="services",
+        verbose_name=_("operators"),
+        help_text=_("Operators with a configuration for this service"),
     )
 
     class Meta:

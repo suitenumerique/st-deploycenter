@@ -303,6 +303,24 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
     )
 
 
+@admin.register(models.OperatorServiceConfig)
+class OperatorServiceConfigAdmin(admin.ModelAdmin):
+    """Admin class for the OperatorServiceConfig model"""
+
+    list_display = ("operator", "service", "display_priority", "created_at")
+    list_filter = ("operator", "service__is_active", "created_at")
+    search_fields = ("operator__name", "service__name", "service__type")
+    ordering = ("operator__name", "display_priority", "service__name")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+    autocomplete_fields = ["operator", "service"]
+
+    fieldsets = (
+        (None, {"fields": ("operator", "service", "display_priority")}),
+        (_("Metadata"), {"fields": ("created_at", "updated_at")}),
+    )
+
+
 @admin.register(models.ServiceSubscription)
 class ServiceSubscriptionAdmin(admin.ModelAdmin):
     """Admin class for the ServiceSubscription model"""

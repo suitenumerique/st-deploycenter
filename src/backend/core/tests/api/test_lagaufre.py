@@ -1,3 +1,5 @@
+# pylint: disable=too-many-public-methods
+
 """
 Test Lagaufre API endpoints in the deploycenter core app.
 """
@@ -21,7 +23,9 @@ class TestLagaufreServicesEndpoint:
         service1 = factories.ServiceFactory(
             name="Service Alpha", maturity="alpha", is_active=True
         )
-        factories.ServiceFactory(name="Service Beta", maturity="beta", is_active=True)
+        service2 = factories.ServiceFactory(
+            name="Service Beta", maturity="beta", is_active=True
+        )
         service3 = factories.ServiceFactory(
             name="Service Stable", maturity="stable", is_active=True
         )
@@ -34,12 +38,24 @@ class TestLagaufreServicesEndpoint:
             organization=organization, service=service3
         )
 
+        operator = factories.OperatorFactory()
+
+        factories.OperatorServiceConfigFactory(
+            operator=operator, service=service1, display_priority=1
+        )
+        factories.OperatorServiceConfigFactory(
+            operator=operator, service=service2, display_priority=3
+        )
+        factories.OperatorServiceConfigFactory(
+            operator=operator, service=service3, display_priority=2
+        )
+
         # No authentication required for anonymous API
 
         # Test request
         response = api_client.get(
             "/api/v1.0/lagaufre/services/",
-            {"siret": organization.siret},
+            {"siret": organization.siret, "operator": operator.id},
         )
 
         assert response.status_code == 200
@@ -71,17 +87,19 @@ class TestLagaufreServicesEndpoint:
 
     def test_get_services_with_siren_success(self, api_client):
         """Test successful retrieval of services with SIREN."""
+        operator = factories.OperatorFactory()
         # Create test data
         organization = factories.OrganizationFactory()
         service = factories.ServiceFactory(is_active=True)
         factories.ServiceSubscriptionFactory(organization=organization, service=service)
+        factories.OperatorServiceConfigFactory(operator=operator, service=service)
 
         # No authentication required for anonymous API
 
         # Test request
         response = api_client.get(
             "/api/v1.0/lagaufre/services/",
-            {"siren": organization.siren},
+            {"siren": organization.siren, "operator": operator.id},
         )
 
         assert response.status_code == 200
@@ -93,17 +111,19 @@ class TestLagaufreServicesEndpoint:
 
     def test_get_services_with_insee_success(self, api_client):
         """Test successful retrieval of services with INSEE code."""
+        operator = factories.OperatorFactory()
         # Create test data
         organization = factories.OrganizationFactory()
         service = factories.ServiceFactory(is_active=True)
         factories.ServiceSubscriptionFactory(organization=organization, service=service)
+        factories.OperatorServiceConfigFactory(operator=operator, service=service)
 
         # No authentication required for anonymous API
 
         # Test request
         response = api_client.get(
             "/api/v1.0/lagaufre/services/",
-            {"insee": organization.code_insee},
+            {"insee": organization.code_insee, "operator": operator.id},
         )
 
         assert response.status_code == 200
@@ -115,16 +135,18 @@ class TestLagaufreServicesEndpoint:
 
     def test_get_services_no_subscriptions(self, api_client):
         """Test retrieval when organization has no subscriptions."""
+        operator = factories.OperatorFactory()
         # Create test data
         organization = factories.OrganizationFactory()
-        factories.ServiceFactory(is_active=True)
+        service = factories.ServiceFactory(is_active=True)
+        factories.OperatorServiceConfigFactory(operator=operator, service=service)
 
         # No authentication required for anonymous API
 
         # Test request
         response = api_client.get(
             "/api/v1.0/lagaufre/services/",
-            {"siret": organization.siret},
+            {"siret": organization.siret, "operator": operator.id},
         )
 
         assert response.status_code == 200
@@ -137,6 +159,7 @@ class TestLagaufreServicesEndpoint:
         """Test that only active services are returned."""
         # Create test data
         organization = factories.OrganizationFactory()
+        operator = factories.OperatorFactory()
 
         # Create active and inactive services
         active_service = factories.ServiceFactory(is_active=True)
@@ -149,12 +172,17 @@ class TestLagaufreServicesEndpoint:
             organization=organization, service=inactive_service
         )
 
+        # Create operator config only for active service
+        factories.OperatorServiceConfigFactory(
+            operator=operator, service=active_service
+        )
+
         # No authentication required for anonymous API
 
         # Test request
         response = api_client.get(
             "/api/v1.0/lagaufre/services/",
-            {"siret": organization.siret},
+            {"siret": organization.siret, "operator": operator.id},
         )
 
         assert response.status_code == 200
@@ -168,6 +196,7 @@ class TestLagaufreServicesEndpoint:
         """Test that logo URLs are properly generated."""
         # Create test data
         organization = factories.OrganizationFactory()
+        operator = factories.OperatorFactory()
 
         # Create services with and without logos
         svg_content = b'<svg xmlns="http://www.w3.org/2000/svg"><circle/></svg>'
@@ -176,12 +205,20 @@ class TestLagaufreServicesEndpoint:
         )
         service_without_logo = factories.ServiceFactory(is_active=True, logo_svg=None)
 
+        # Create operator configs for both services
+        factories.OperatorServiceConfigFactory(
+            operator=operator, service=service_with_logo
+        )
+        factories.OperatorServiceConfigFactory(
+            operator=operator, service=service_without_logo
+        )
+
         # No authentication required for anonymous API
 
         # Test request
         response = api_client.get(
             "/api/v1.0/lagaufre/services/",
-            {"siret": organization.siret},
+            {"siret": organization.siret, "operator": operator.id},
         )
 
         assert response.status_code == 200
@@ -205,13 +242,14 @@ class TestLagaufreServicesEndpoint:
     def test_get_services_organization_not_found(self, api_client):
         """Test 404 when organization doesn't exist."""
         # Create test data
+        operator = factories.OperatorFactory()
 
         # No authentication required for anonymous API
 
         # Test request with non-existent SIRET
         response = api_client.get(
             "/api/v1.0/lagaufre/services/",
-            {"siret": "99999999999999"},
+            {"siret": "99999999999999", "operator": operator.id},
         )
 
         assert response.status_code == 404
@@ -223,13 +261,14 @@ class TestLagaufreServicesEndpoint:
     def test_get_services_invalid_siret_format(self, api_client):
         """Test 400 with invalid SIRET format."""
         # Create test data
+        operator = factories.OperatorFactory()
 
         # No authentication required for anonymous API
 
         # Test request with invalid SIRET format
         response = api_client.get(
             "/api/v1.0/lagaufre/services/",
-            {"siret": "12345"},  # Too short
+            {"siret": "12345", "operator": operator.id},  # Too short
         )
 
         assert response.status_code == 400
@@ -242,13 +281,14 @@ class TestLagaufreServicesEndpoint:
     def test_get_services_invalid_siren_format(self, api_client):
         """Test 400 with invalid SIREN format."""
         # Create test data
+        operator = factories.OperatorFactory()
 
         # No authentication required for anonymous API
 
         # Test request with invalid SIREN format
         response = api_client.get(
             "/api/v1.0/lagaufre/services/",
-            {"siren": "123"},  # Too short
+            {"siren": "123", "operator": operator.id},  # Too short
         )
 
         assert response.status_code == 400
@@ -261,13 +301,14 @@ class TestLagaufreServicesEndpoint:
     def test_get_services_invalid_insee_format(self, api_client):
         """Test 400 with invalid INSEE format."""
         # Create test data
+        operator = factories.OperatorFactory()
 
         # No authentication required for anonymous API
 
         # Test request with invalid INSEE format
         response = api_client.get(
             "/api/v1.0/lagaufre/services/",
-            {"insee": "123"},  # Too short
+            {"insee": "123", "operator": operator.id},  # Too short
         )
 
         assert response.status_code == 400
@@ -280,13 +321,14 @@ class TestLagaufreServicesEndpoint:
     def test_get_services_multiple_identifiers(self, api_client):
         """Test 400 when multiple identifiers are provided."""
         # Create test data
+        operator = factories.OperatorFactory()
 
         # No authentication required for anonymous API
 
         # Test request with multiple identifiers
         response = api_client.get(
             "/api/v1.0/lagaufre/services/",
-            {"siret": "12345678901234", "siren": "123456789"},
+            {"siret": "12345678901234", "siren": "123456789", "operator": operator.id},
         )
 
         assert response.status_code == 400
@@ -302,14 +344,16 @@ class TestLagaufreServicesEndpoint:
     def test_get_services_no_identifiers(self, api_client):
         """Test organization-less mode when no identifiers are provided."""
         # Create test data
-        factories.ServiceFactory(is_active=True)
+        operator = factories.OperatorFactory()
+        service = factories.ServiceFactory(is_active=True)
+        factories.OperatorServiceConfigFactory(operator=operator, service=service)
 
         # No authentication required for anonymous API
 
-        # Test request with no identifiers (should work in organization-less mode)
+        # Test request with no identifiers (organization-less mode)
         response = api_client.get(
             "/api/v1.0/lagaufre/services/",
-            {},
+            {"operator": operator.id},
         )
 
         assert response.status_code == 200
@@ -323,14 +367,16 @@ class TestLagaufreServicesEndpoint:
     def test_get_services_anonymous_access(self, api_client):
         """Test that anonymous users can access the API."""
         # Create test data
+        operator = factories.OperatorFactory()
         organization = factories.OrganizationFactory()
         service = factories.ServiceFactory(is_active=True)
         factories.ServiceSubscriptionFactory(organization=organization, service=service)
+        factories.OperatorServiceConfigFactory(operator=operator, service=service)
 
         # Test request without authentication (should work now)
         response = api_client.get(
             "/api/v1.0/lagaufre/services/",
-            {"siret": organization.siret},
+            {"siret": organization.siret, "operator": operator.id},
         )
 
         assert response.status_code == 200
@@ -341,14 +387,16 @@ class TestLagaufreServicesEndpoint:
     def test_get_services_empty_string_identifiers(self, api_client):
         """Test organization-less mode with empty string identifiers."""
         # Create test data
-        factories.ServiceFactory(is_active=True)
+        operator = factories.OperatorFactory()
+        service = factories.ServiceFactory(is_active=True)
+        factories.OperatorServiceConfigFactory(operator=operator, service=service)
 
         # No authentication required for anonymous API
 
         # Test request with empty string identifiers (should work in organization-less mode)
         response = api_client.get(
             "/api/v1.0/lagaufre/services/",
-            {"siret": "", "siren": "", "insee": ""},
+            {"siret": "", "siren": "", "insee": "", "operator": operator.id},
         )
 
         assert response.status_code == 200
@@ -363,14 +411,16 @@ class TestLagaufreServicesEndpoint:
         """Test that whitespace in identifiers is handled correctly."""
         # Create test data
         organization = factories.OrganizationFactory()
-        factories.ServiceFactory(is_active=True)
+        operator = factories.OperatorFactory()
+        service = factories.ServiceFactory(is_active=True)
+        factories.OperatorServiceConfigFactory(operator=operator, service=service)
 
         # No authentication required for anonymous API
 
         # Test request with whitespace around SIRET
         response = api_client.get(
             "/api/v1.0/lagaufre/services/",
-            {"siret": f"  {organization.siret}  "},
+            {"siret": f"  {organization.siret}  ", "operator": operator.id},
         )
 
         assert response.status_code == 200
@@ -383,12 +433,13 @@ class TestLagaufreServicesEndpoint:
         """Test that services are properly ordered by subscription status."""
         # Create test data
         organization = factories.OrganizationFactory()
+        operator = factories.OperatorFactory()
 
         # Create services with specific names for predictable ordering
         service_a = factories.ServiceFactory(name="Service A", is_active=True)
-        factories.ServiceFactory(name="Service B", is_active=True)
+        service_b = factories.ServiceFactory(name="Service B", is_active=True)
         service_c = factories.ServiceFactory(name="Service C", is_active=True)
-        factories.ServiceFactory(name="Service D", is_active=True)
+        service_d = factories.ServiceFactory(name="Service D", is_active=True)
 
         # Subscribe to services A and C (not B and D)
         factories.ServiceSubscriptionFactory(
@@ -398,12 +449,26 @@ class TestLagaufreServicesEndpoint:
             organization=organization, service=service_c
         )
 
+        # Create operator configs with display priorities
+        factories.OperatorServiceConfigFactory(
+            operator=operator, service=service_a, display_priority=4
+        )
+        factories.OperatorServiceConfigFactory(
+            operator=operator, service=service_b, display_priority=3
+        )
+        factories.OperatorServiceConfigFactory(
+            operator=operator, service=service_c, display_priority=2
+        )
+        factories.OperatorServiceConfigFactory(
+            operator=operator, service=service_d, display_priority=1
+        )
+
         # No authentication required for anonymous API
 
         # Test request
         response = api_client.get(
             "/api/v1.0/lagaufre/services/",
-            {"siret": organization.siret},
+            {"siret": organization.siret, "operator": operator.id},
         )
 
         assert response.status_code == 200
@@ -412,41 +477,56 @@ class TestLagaufreServicesEndpoint:
         services = data["services"]
         assert len(services) == 4
 
-        # First two should be subscribed (A and C)
-        assert services[0]["subscribed"] is True
-        assert services[1]["subscribed"] is True
+        # Services should be ordered by display priority (descending)
+        assert services[0]["name"] == "Service A"
+        assert services[1]["name"] == "Service C"
+        assert services[2]["name"] == "Service B"
+        assert services[3]["name"] == "Service D"
 
-        # Last two should be unsubscribed (B and D)
-        assert services[2]["subscribed"] is False
-        assert services[3]["subscribed"] is False
-
-        # Within each group, they should be ordered by name
-        subscribed_names = [s["name"] for s in services[:2]]
-        unsubscribed_names = [s["name"] for s in services[2:]]
-
-        assert subscribed_names == ["Service A", "Service C"]
-        assert unsubscribed_names == ["Service B", "Service D"]
+        # Check subscription status
+        for service_data in services:
+            service_name = service_data["name"]
+            if service_name in ["Service A", "Service C"]:
+                assert service_data["subscribed"] is True
+            else:
+                assert service_data["subscribed"] is False
 
     def test_get_services_organization_less_mode(self, api_client):
         """Test organization-less mode returns all services without subscription info."""
         # Create test data
+        operator = factories.OperatorFactory()
 
         # Create services with different maturities
-        factories.ServiceFactory(name="Service Alpha", maturity="alpha", is_active=True)
-        factories.ServiceFactory(name="Service Beta", maturity="beta", is_active=True)
-        factories.ServiceFactory(
+        service_alpha = factories.ServiceFactory(
+            name="Service Alpha", maturity="alpha", is_active=True
+        )
+        service_beta = factories.ServiceFactory(
+            name="Service Beta", maturity="beta", is_active=True
+        )
+        service_stable = factories.ServiceFactory(
             name="Service Stable", maturity="stable", is_active=True
         )
 
         # Create an inactive service (should not be returned)
         factories.ServiceFactory(name="Inactive Service", is_active=False)
 
+        # Create operator configs for active services only
+        factories.OperatorServiceConfigFactory(
+            operator=operator, service=service_alpha, display_priority=3
+        )
+        factories.OperatorServiceConfigFactory(
+            operator=operator, service=service_beta, display_priority=2
+        )
+        factories.OperatorServiceConfigFactory(
+            operator=operator, service=service_stable, display_priority=1
+        )
+
         # No authentication required for anonymous API
 
-        # Test request with no organization identifier
+        # Test request with no organization identifier but with deploycenter
         response = api_client.get(
             "/api/v1.0/lagaufre/services/",
-            {},
+            {"operator": operator.id},
         )
 
         assert response.status_code == 200
@@ -477,17 +557,45 @@ class TestLagaufreServicesEndpoint:
         service_names = [s["name"] for s in services]
         assert "Inactive Service" not in service_names
 
+    def test_get_services_missing_operator_parameter(self, api_client):
+        """Test that missing operator parameter returns 400 error."""
+        # Create test data
+        organization = factories.OrganizationFactory()
+
+        # Test request without operator parameter
+        response = api_client.get(
+            "/api/v1.0/lagaufre/services/",
+            {"siret": organization.siret},
+        )
+
+        assert response.status_code == 400
+
+    def test_get_services_invalid_operator_id(self, api_client):
+        """Test that invalid operator ID returns 400 error."""
+        # Create test data
+        organization = factories.OrganizationFactory()
+
+        # Test request with invalid operator ID
+        response = api_client.get(
+            "/api/v1.0/lagaufre/services/",
+            {"siret": organization.siret, "operator": "invalid-uuid"},
+        )
+
+        assert response.status_code == 400
+
     def test_get_services_organization_less_mode_with_empty_strings(self, api_client):
         """Test organization-less mode with empty string identifiers."""
         # Create test data
-        factories.ServiceFactory(is_active=True)
+        operator = factories.OperatorFactory()
+        service = factories.ServiceFactory(is_active=True)
+        factories.OperatorServiceConfigFactory(operator=operator, service=service)
 
         # No authentication required for anonymous API
 
         # Test request with empty string identifiers
         response = api_client.get(
             "/api/v1.0/lagaufre/services/",
-            {"siret": "", "siren": "", "insee": ""},
+            {"siret": "", "siren": "", "insee": "", "operator": operator.id},
         )
 
         assert response.status_code == 200
@@ -501,14 +609,16 @@ class TestLagaufreServicesEndpoint:
     def test_get_services_organization_less_mode_with_whitespace(self, api_client):
         """Test organization-less mode with whitespace-only identifiers."""
         # Create test data
-        factories.ServiceFactory(is_active=True)
+        operator = factories.OperatorFactory()
+        service = factories.ServiceFactory(is_active=True)
+        factories.OperatorServiceConfigFactory(operator=operator, service=service)
 
         # No authentication required for anonymous API
 
         # Test request with whitespace-only identifiers
         response = api_client.get(
             "/api/v1.0/lagaufre/services/",
-            {"siret": "   ", "siren": "  ", "insee": " "},
+            {"siret": "   ", "siren": "  ", "insee": " ", "operator": operator.id},
         )
 
         assert response.status_code == 200
