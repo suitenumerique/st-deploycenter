@@ -1,0 +1,27 @@
+.dc__operators__list {
+  display: flex;
+  gap: 1rem;
+}
+
+.dc__organizations__list {
+  &__item {
+    &__services {
+      display: flex;
+      gap: 0.5rem;
+    }
+  }
+
+  td:first-child {
+    display: flex;
+    align-items: center;
+
+    a {
+      text-decoration: none;
+      color: inherit;
+      flex-grow: 1;
+      height: 100%;
+      display: flex;
+      align-items: center;
+    }
+  }
+}
