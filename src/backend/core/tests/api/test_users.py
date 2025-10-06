@@ -39,4 +39,5 @@ def test_api_users_retrieve_me_authenticated():
         "id": str(user.id),
         "email": user.email,
         "full_name": user.full_name,
+        "language": user.language,
     }
