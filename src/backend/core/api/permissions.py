@@ -4,6 +4,8 @@ from django.core import exceptions
 
 from rest_framework import permissions
 
+from core import models
+
 ACTION_FOR_METHOD_TO_PERMISSION = {
     "versions_detail": {"DELETE": "versions_destroy", "GET": "versions_retrieve"},
     "children": {"GET": "children_list", "POST": "children_create"},
@@ -65,3 +67,51 @@ class IsOwnedOrPublic(IsAuthenticated):
             return obj.user == request.user
         except exceptions.ObjectDoesNotExist:
             return False
+
+
+class OperatorAccessPermission(permissions.BasePermission):
+    """
+    Allows access only to authenticated users with a role in a operators's parent organization.
+    Used for nested /operators/<operator_id>/* endpoints.
+    """
+
+    def has_permission(self, request, view):
+        operator = models.Operator.objects.get(id=view.kwargs["operator_id"])
+        has_role = models.UserOperatorRole.objects.filter(
+            operator=operator, user=request.user
+        )
+        return has_role
+
+
+def user_has_role_in_organization(request, organization_id):
+    organization = models.Organization.objects.get(id=organization_id)
+    has_role = models.OperatorOrganizationRole.objects.filter(
+        organization=organization, operator__user_roles__user=request.user
+    ).exists()
+    return has_role
+
+
+class OrganizationAccessPermission(permissions.BasePermission):
+    """
+    Allows access only to authenticated users with a role in a organizations's operator.
+    """
+
+    def has_object_permission(self, request, view, obj):
+        """
+        Check if the user has a role in a organizations's operator.
+        """
+        has_role = user_has_role_in_organization(request, obj.id)
+        return has_role
+
+
+class ParentOrganizationAccessPermission(permissions.BasePermission):
+    """
+    Allows access only to authenticated users with a role in a organizations's parent operator.
+    Used for nested /organizations/<organization_id>/* endpoints.
+    """
+
+    def has_permission(self, request, view):
+        has_role = user_has_role_in_organization(
+            request, view.kwargs["organization_id"]
+        )
+        return has_role
