@@ -1,10 +1,12 @@
+"""Utils for testing."""
+
 import json
 
 
 def assert_equals_partial(actual, expected, debug=False):
+    """Assert that the expected dictionary is a subset of the actual dictionary."""
     if debug:
         print(json.dumps(actual, indent=4), json.dumps(expected, indent=4))  # noqa: T201
-    """Assert that the expected dictionary is a subset of the actual dictionary."""
     if isinstance(actual, list):
         assert len(actual) == len(expected)
         for i, item in enumerate(actual):
@@ -15,7 +17,7 @@ def assert_equals_partial(actual, expected, debug=False):
                 print(f"Asserting {key}: {value}")  # noqa: T201
                 print(actual[key])  # noqa: T201
             assert key in actual
-            if isinstance(value, dict) or isinstance(value, list):
+            if isinstance(value, (dict, list)):
                 assert_equals_partial(actual[key], value, debug)
             else:
                 assert actual[key] == value

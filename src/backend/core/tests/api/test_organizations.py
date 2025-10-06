@@ -30,7 +30,10 @@ def test_api_organizations_list_anonymous():
 
 
 def test_api_organizations_list_authenticated():
-    """Authenticated users should be able to list organizations of an operator for which they have a UserOperatorRole."""
+    """
+    Authenticated users should be able to list organizations of an
+    operator for which they have a UserOperatorRole.
+    """
     user = factories.UserFactory()
     user2 = factories.UserFactory()
     client = APIClient()
@@ -79,7 +82,10 @@ def test_api_organizations_list_authenticated():
 
 
 def test_api_organizations_retrieve_authenticated():
-    """Authenticated users should be able to retrieve organizations of an operator for which they have a UserOperatorRole."""
+    """
+    Authenticated users should be able to retrieve organizations of an operator
+    for which they have a UserOperatorRole.
+    """
     user = factories.UserFactory()
     user2 = factories.UserFactory()
     client = APIClient()
@@ -121,7 +127,10 @@ def test_api_organizations_retrieve_authenticated():
 
 
 def test_api_organizations_retrieve_authenticated_no_role():
-    """Authenticated users should not be able to retrieve organizations for which they have no UserOperatorRole."""
+    """
+    Authenticated users should not be able to retrieve organizations for which
+    they have no UserOperatorRole.
+    """
     user = factories.UserFactory()
     user2 = factories.UserFactory()
     client = APIClient()

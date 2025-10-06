@@ -11,7 +11,6 @@ from core.authentication.urls import urlpatterns as oidc_urls
 
 from .api.viewsets.config import ConfigView
 from .api.viewsets.lagaufre import LagaufreViewSet
-from .api.viewsets.service import ServiceLogoViewSet, ServiceViewSet
 from .api.viewsets.operator import OperatorViewSet
 from .api.viewsets.organization import OperatorOrganizationViewSet, OrganizationViewSet
 from .api.viewsets.service import (

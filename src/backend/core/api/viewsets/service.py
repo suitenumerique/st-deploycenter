@@ -12,7 +12,6 @@ from rest_framework.response import Response
 from rest_framework.serializers import ValidationError
 
 from core import models
-from core.api import serializers
 
 from .. import permissions, serializers
 

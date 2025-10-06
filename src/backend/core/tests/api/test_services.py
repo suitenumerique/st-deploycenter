@@ -30,7 +30,10 @@ def test_api_organizations_services_list_anonymous():
 
 
 def test_api_organizations_services_list_authenticated():
-    """Authenticated users should be able to retrieve organization services of an operator for which they have a UserOperatorRole."""
+    """
+    Authenticated users should be able to retrieve organization services of an operator
+    for which they have a UserOperatorRole.
+    """
     user = factories.UserFactory()
     user2 = factories.UserFactory()
     client = APIClient()
@@ -189,8 +192,10 @@ def test_api_organization_service_enable_disable():
 
 
 def test_api_organization_service_enable_disable_no_role():
-    """Authenticated users should not be able to enable and disable a service for an organization for which they have no UserOperatorRole."""
-    """Authenticated users should be able to enable and disable a service for an organization."""
+    """
+    Authenticated users should not be able to enable and disable a service for an
+    organization for which they have no UserOperatorRole.
+    """
     user = factories.UserFactory()
     user2 = factories.UserFactory()
     client = APIClient()
