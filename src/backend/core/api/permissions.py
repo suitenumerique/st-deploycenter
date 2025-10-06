@@ -84,6 +84,7 @@ class OperatorAccessPermission(permissions.BasePermission):
 
 
 def user_has_role_in_organization(request, organization_id):
+    """Check if the user has a role in a organization's operator."""
     organization = models.Organization.objects.get(id=organization_id)
     has_role = models.OperatorOrganizationRole.objects.filter(
         organization=organization, operator__user_roles__user=request.user

@@ -290,6 +290,7 @@ class OperatorSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_user_role(self, obj):
+        """Get the user role for the operator."""
         roles = obj.user_roles.all()
         if roles.count() > 0:
             return roles[0].role
