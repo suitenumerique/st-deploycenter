@@ -6,4 +6,4 @@ _dc_run \
     -e DJANGO_CONFIGURATION=Test \
     --build \
     backend-dev \
-    pytest "$@"
+    pytest "$@" -s
