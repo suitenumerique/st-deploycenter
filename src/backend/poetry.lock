@@ -807,6 +807,23 @@ pyuca = ["pyuca"]
 test = ["djangorestframework", "graphene-django", "pytest", "pytest-cov", "pytest-django"]
 
 [[package]]
+name = "django-debug-toolbar"
+version = "6.0.0"
+description = "A configurable set of panels that display various debug information about the current request/response."
+optional = true
+python-versions = ">=3.9"
+groups = ["main"]
+markers = "extra == \"dev\""
+files = [
+    {file = "django_debug_toolbar-6.0.0-py3-none-any.whl", hash = "sha256:0cf2cac5c307b77d6e143c914e5c6592df53ffe34642d93929e5ef095ae56841"},
+    {file = "django_debug_toolbar-6.0.0.tar.gz", hash = "sha256:6eb9fa6f4a5884bf04004700ffb5a44043f1fff38784447fc52c1633448c8c14"},
+]
+
+[package.dependencies]
+django = ">=4.2.9"
+sqlparse = ">=0.2"
+
+[[package]]
 name = "django-extensions"
 version = "4.1"
 description = "Extensions for Django"
@@ -2590,9 +2607,9 @@ files = [
 brotli = ["brotli"]
 
 [extras]
-dev = ["django-extensions", "drf-spectacular-sidecar", "factory_boy", "flower", "pip-audit", "pylint", "pylint-django", "pytest", "pytest-cov", "pytest-django", "pytest-icdiff", "pytest-repeat", "pytest-xdist", "responses", "ruff"]
+dev = ["django-debug-toolbar", "django-extensions", "drf-spectacular-sidecar", "factory_boy", "flower", "pip-audit", "pylint", "pylint-django", "pytest", "pytest-cov", "pytest-django", "pytest-icdiff", "pytest-repeat", "pytest-xdist", "responses", "ruff"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<4.0"
-content-hash = "35c96217ad0eb1feb6a1c9605b64ff5ea398c73c8512d670e1b96526faf2a39a"
+content-hash = "d851c52f347d0d48f8341428ccf5383bee72859ca9247b757a732d362b16eac9"
