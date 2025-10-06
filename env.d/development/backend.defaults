@@ -40,7 +40,7 @@ MEDIA_BASE_URL=http://localhost:8902
 
 # OIDC
 OIDC_OP_JWKS_ENDPOINT=http://keycloak:8802/realms/deploycenter/protocol/openid-connect/certs
-OIDC_OP_AUTHORIZATION_ENDPOINT=http://localhost:8902/realms/deploycenter/protocol/openid-connect/auth
+OIDC_OP_AUTHORIZATION_ENDPOINT=http://localhost:8962/realms/deploycenter/protocol/openid-connect/auth
 OIDC_OP_TOKEN_ENDPOINT=http://keycloak:8802/realms/deploycenter/protocol/openid-connect/token
 OIDC_OP_USER_ENDPOINT=http://keycloak:8802/realms/deploycenter/protocol/openid-connect/userinfo
 
@@ -49,11 +49,11 @@ OIDC_RP_CLIENT_SECRET=ThisIsAnExampleKeyForDevPurposeOnly
 OIDC_RP_SIGN_ALGO=RS256
 OIDC_RP_SCOPES="openid email"
 
-LOGIN_REDIRECT_URL=http://localhost:8960
-LOGIN_REDIRECT_URL_FAILURE=http://localhost:8960
-LOGOUT_REDIRECT_URL=http://localhost:8960
+LOGIN_REDIRECT_URL=http://localhost:3000
+LOGIN_REDIRECT_URL_FAILURE=http://localhost:3000
+LOGOUT_REDIRECT_URL=http://localhost:3000
 
-OIDC_REDIRECT_ALLOWED_HOSTS=["http://localhost:8962", "http://localhost:8960"]
+OIDC_REDIRECT_ALLOWED_HOSTS=["http://localhost:8962"]
 OIDC_AUTH_REQUEST_EXTRA_PARAMS={"acr_values": "eidas1"}
 
 # Frontend
