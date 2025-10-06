@@ -45,10 +45,10 @@ def test_api_organizations_list_authenticated():
     factories.UserOperatorRoleFactory(user=user2, operator=operator2)
     factories.UserOperatorRoleFactory(user=user2, operator=operator3)
 
-    organization_ok1 = factories.OrganizationFactory()
-    organization_ok2 = factories.OrganizationFactory()
-    organization_nok1 = factories.OrganizationFactory()
-    organization_nok2 = factories.OrganizationFactory()
+    organization_ok1 = factories.OrganizationFactory(name="A")
+    organization_ok2 = factories.OrganizationFactory(name="B")
+    organization_nok1 = factories.OrganizationFactory(name="C")
+    organization_nok2 = factories.OrganizationFactory(name="D")
     factories.OperatorOrganizationRoleFactory(
         operator=operator, organization=organization_ok1
     )
