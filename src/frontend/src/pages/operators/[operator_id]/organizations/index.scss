@@ -1,0 +1,31 @@
+.dc__services__list {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  overflow: hidden;
+}
+
+.dc__service__block {
+  border: 1px solid var(--c--theme--colors--greyscale-200);
+  padding: 1rem;
+  border-radius: 0.5rem;
+
+  &__name {
+    font-size: 1.2rem;
+    font-weight: 700;
+  }
+
+  &__description {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--c--theme--colors--greyscale-600);
+    margin-bottom: 16px;
+
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__status {
+    margin-top: 1rem;
+  }
+}

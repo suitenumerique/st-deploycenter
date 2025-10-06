@@ -1,0 +1,74 @@
+{
+  "en": {
+    "translation": {
+      "app_title": "Operator Space",
+      "home": {
+        "title": "Operator Space",
+        "subtitle": "Where the magic operates"
+      },
+      "login": "Login",
+      "logout": "Logout",
+      "my_account": "My account",
+      "operators": {
+        "title": "Operators",
+        "subtitle": "Choose the operator to access the communities"
+      },
+      "organizations": {
+        "title": "Organizations of {{operator}}",
+        "subtitle": "List of organizations in your scope",
+        "empty": "No organization found",
+        "rpnt": {
+          "yes": "Yes"
+        },
+        "services": {
+          "title": "Services",
+          "subtitle": "List of services available for this organization",
+          "status": "Active"
+        }
+      },
+      "api": {
+        "error": {
+          "unexpected": "An unexpected error occurred"
+        }
+      }
+    }
+  },
+  "fr": {
+    "translation": {
+      "app_title": "Espace Opérateur",
+      "home": {
+        "title": "Espace Opérateur",
+        "subtitle": "Là où la magie opère"
+      },
+      "login": "Connexion",
+      "logout": "Déconnexion",
+      "my_account": "Mon compte",
+      "operators": {
+        "title": "Opérateurs",
+        "subtitle": "Choisissez l'opérateur afin de pouvoir accéder aux collectivités"
+      },
+      "organizations": {
+        "title": "Collectivités de {{operator}}",
+        "subtitle": "Liste des collectivités de votre périmètre",
+        "empty": "Aucune collectivité trouvée",
+        "rpnt": {
+          "yes": "Oui"
+        },
+        "services": {
+          "title": "Services",
+          "subtitle": "Liste des services disponibles pour cette collectivité",
+          "status": "Activé",
+          "disable_modal": {
+            "title": "Désactivation du service",
+            "content": "Êtes-vous sûr de vouloir désactiver le service {{service}} ?"
+          }
+        }
+      },
+      "api": {
+        "error": {
+          "unexpected": "Une erreur inattendue est survenue"
+        }
+      }
+    }
+  }
+}
