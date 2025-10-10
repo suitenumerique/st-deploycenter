@@ -32,38 +32,8 @@ $tablet: map.get($themes, "default", "theme", "breakpoints", "tablet");
   .c__hero {
     height: calc(100vh - var(--header-height));
 
-    &__display {
-      &__captions {
-        align-items: flex-start;
-        max-width: 600px;
-
-        > h2 {
-          text-align: left;
-          font-size: 48px;
-          line-height: 50px;
-        }
-
-        > span {
-          color: var(--c--theme--colors--greyscale-500);
-          text-align: left;
-        }
-      }
-
-      > img {
-        @media (max-width: $tablet) {
-          display: none;
-        }
-      }
-    }
-
-    &__buttons {
-      display: flex;
-      gap: 1rem;
-      width: 100%;
-
-      @media (max-width: $tablet) {
-        flex-direction: column;
-      }
+    h2 {
+      font-size: 48px;
     }
   }
 
@@ -89,7 +59,7 @@ $tablet: map.get($themes, "default", "theme", "breakpoints", "tablet");
 .drive__header__left {
   display: flex;
   align-items: center;
-  gap: 2rem;
+  
 }
 
 .c__modal__content__text {
@@ -112,7 +82,7 @@ $tablet: map.get($themes, "default", "theme", "breakpoints", "tablet");
 }
 
 .drive__logo-icon {
-  background-image: var(--c--components--logo-icon--src);
+  background-image: url("/assets/logo-small.svg");
   width: 64px;
   height: 64px;
   background-size: contain;

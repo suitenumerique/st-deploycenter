@@ -10,12 +10,20 @@ $tablet: map.get($themes, "default", "theme", "breakpoints", "tablet");
 }
 
 .drive__header__logo {
-  background-image: url("/assets/logo_bg.png");
-  width: 112px;
-  height: 42px;
+  background-image: url("/assets/logo.svg");
+  width: 151px;
+  height: 40px;
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
+}
+
+.drive__header__operator {
+  font-size: 22px;
+  font-weight: 400;
+  color: #2845c1;
+  position: relative;
+  top: 1px;
 }
 
 .c__header__right {

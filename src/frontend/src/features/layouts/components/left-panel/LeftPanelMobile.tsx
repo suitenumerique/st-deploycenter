@@ -1,4 +1,3 @@
-import { LanguagePicker } from "../header/Header";
 import { LogoutButton } from "@/features/auth/components/LogoutButton";
 import { useAuth } from "@/features/auth/Auth";
 import { LoginButton } from "@/features/auth/components/LoginButton";
