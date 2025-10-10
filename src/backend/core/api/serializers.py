@@ -1,5 +1,7 @@
 """Client serializers for the deploycenter core app."""
 
+from django.conf import settings
+
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
@@ -300,6 +302,8 @@ class OperatorSerializer(serializers.ModelSerializer):
 class ServiceSerializer(serializers.ModelSerializer):
     """Serialize services."""
 
+    logo = serializers.CharField(source="get_logo_url", read_only=True)
+
     class Meta:
         model = models.Service
         fields = [
@@ -312,6 +316,7 @@ class ServiceSerializer(serializers.ModelSerializer):
             "launch_date",
             "is_active",
             "created_at",
+            "logo",
         ]
         read_only_fields = fields
 
