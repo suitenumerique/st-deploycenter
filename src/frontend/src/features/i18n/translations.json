@@ -14,7 +14,7 @@
         "subtitle": "Choose the operator to access the communities"
       },
       "organizations": {
-        "title": "Organizations of {{operator}}",
+        "title": "Organizations",
         "subtitle": "List of organizations in your scope",
         "empty": "No organization found",
         "rpnt": {
@@ -23,8 +23,16 @@
         "services": {
           "title": "Services",
           "subtitle": "List of services available for this organization",
-          "status": "Active"
-        }
+          "status": "Active",
+          "goto": "Access service",
+          "values": {
+            "users": "Users"
+          }
+        },
+        "details": {
+          "population": "Population"
+        },
+        "search": "Search for an organization or a territory"
       },
       "api": {
         "error": {
@@ -37,8 +45,8 @@
     "translation": {
       "app_title": "Espace Opérateur",
       "home": {
-        "title": "Espace Opérateur",
-        "subtitle": "Là où la magie opère"
+        "title": "La centrale d'administration",
+        "subtitle": "Activez et gérez simplement les services de tous vos adhérents."
       },
       "login": "Connexion",
       "logout": "Déconnexion",
@@ -48,7 +56,7 @@
         "subtitle": "Choisissez l'opérateur afin de pouvoir accéder aux collectivités"
       },
       "organizations": {
-        "title": "Collectivités de {{operator}}",
+        "title": "Adhérents",
         "subtitle": "Liste des collectivités de votre périmètre",
         "empty": "Aucune collectivité trouvée",
         "rpnt": {
@@ -61,8 +69,16 @@
           "disable_modal": {
             "title": "Désactivation du service",
             "content": "Êtes-vous sûr de vouloir désactiver le service {{service}} ?"
+          },
+          "goto": "Accéder au service",
+          "values": {
+            "users": "Utilisateurs"
           }
-        }
+        },
+        "details": {
+          "population": "Population"
+        },
+        "search": "Rechercher une organisation adhérente ou un territoire"
       },
       "api": {
         "error": {

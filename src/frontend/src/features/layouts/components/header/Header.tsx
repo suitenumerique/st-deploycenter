@@ -1,15 +1,23 @@
-import { DropdownMenu } from "@gouvfr-lasuite/ui-kit";
+import { DropdownMenu, Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Button } from "@openfun/cunningham-react";
 import { useAuth, logout } from "@/features/auth/Auth";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { LoginButton } from "@/features/auth/components/LoginButton";
 import { fetchAPI } from "@/features/api/fetchApi";
+import { useOperatorContext } from "../GlobalLayout";
 
 export const HeaderIcon = () => {
+  const {
+    operator,
+    operatorQuery: { isLoading: isOperatorLoading },
+  } = useOperatorContext();
   return (
     <div className="drive__header__left">
       <div className="drive__header__logo" />
+      <div className="drive__header__operator">
+        {operator?.name}
+        {isOperatorLoading && <Spinner />}
+      </div>
     </div>
   );
 };
@@ -46,9 +54,11 @@ export const HeaderRight = () => {
           </Button>
         </DropdownMenu>
       ) : (
-        <LoginButton />
+        <>
+          {/* <LoginButton /> */}
+          {/* <LanguagePicker /> */}
+        </>
       )}
-      {/* <LanguagePicker /> */}
     </>
   );
 };

@@ -25,7 +25,6 @@ export default function Operators() {
     if (data.count === 1) {
       router.push(`/operators/${data.results[0].id}`);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
   if (isLoading || data?.count === 1) {
