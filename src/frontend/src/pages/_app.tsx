@@ -68,6 +68,7 @@ export default function App({ Component, pageProps }: AppPropsWithLayout) {
     <>
       <Head>
         <title>{t("app_title")}</title>
+        <link rel="icon" href="/assets/favicon.svg" sizes="any" />
       </Head>
       <QueryClientProvider client={queryClient}>
         <CunninghamProvider

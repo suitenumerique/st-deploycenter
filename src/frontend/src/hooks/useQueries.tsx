@@ -23,10 +23,18 @@ export const useOrganization = (organizationId: string) => {
   });
 };
 
-export const useOperatorOrganizations = (operatorId: string, page: number) => {
+export const useOperatorOrganizations = (
+  operatorId: string,
+  params: Parameters<typeof getOperatorOrganizations>[1]
+) => {
   return useQuery({
-    queryKey: ["operators", operatorId, "organizations", page],
-    queryFn: () => getOperatorOrganizations(operatorId, page),
+    queryKey: [
+      "operators",
+      operatorId,
+      "organizations",
+      JSON.stringify(params),
+    ],
+    queryFn: () => getOperatorOrganizations(operatorId, params),
   });
 };
 

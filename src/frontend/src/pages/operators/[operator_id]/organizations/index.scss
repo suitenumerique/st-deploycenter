@@ -1,25 +1,102 @@
 .dc__services__list {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 1rem;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2rem;
   overflow: hidden;
+  padding: 12px 8px;
+}
+
+.dc__organization__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 24px 32px;
+
+  &__top {
+    display: flex;
+    align-items: center;
+
+    &__name {
+      font-size: 36px;
+      font-weight: 700;
+      line-height: 36px;
+    }
+
+    &__code_postal {
+      font-size: 20px;
+      font-weight: 400;
+      color: var(--c--theme--colors--greyscale-600);
+      position: relative;
+      bottom: 2px;
+    }
+  }
+
+  &__details {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-top: 20px;
+
+    &__item {
+      display: flex;
+      flex-direction: column;
+
+      &__label {
+        order: 2;
+        font-size: 14px;
+        font-weight: 400;
+        color: var(--c--theme--colors--greyscale-600);
+      }
+
+      &__value {
+        order: 1;
+        font-size: 22px;
+        font-weight: 700;
+      }
+    }
+  }
+
+  &__image {
+    width: 248px;
+    height: 152px;
+    background-image: url("/assets/organization.svg");
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
 }
 
 .dc__service__block {
   border: 1px solid var(--c--theme--colors--greyscale-200);
-  padding: 1rem;
-  border-radius: 0.5rem;
+  box-shadow: 0 4px 10px 0 rgba(0, 0, 0, 0.05);
+  padding: 16px;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
 
-  &__name {
-    font-size: 1.2rem;
-    font-weight: 700;
+  &__header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    justify-content: space-between;
+    height: 48px;
+    border-bottom: 1px solid var(--c--theme--colors--greyscale-200);
+    padding-bottom: 8px;
+    margin-bottom: 16px;
+
+    .c__checkbox {
+      flex-shrink: 0;
+    }
+    &__name {
+      font-size: 1.2rem;
+      font-weight: 700;
+    }
   }
 
   &__description {
-    font-size: 12px;
-    font-weight: 400;
+    font-size: 14px;
+    font-weight: 500;
     color: var(--c--theme--colors--greyscale-600);
-    margin-bottom: 16px;
 
     overflow: hidden;
     text-overflow: ellipsis;
@@ -27,5 +104,50 @@
 
   &__status {
     margin-top: 1rem;
+  }
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    flex-grow: 1;
+    gap: 16px;
+    padding: 8px;
+
+    &__content {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+  }
+
+  &__values {
+    &__item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 30px;
+      color: var(--c--theme--colors--greyscale-600);
+      font-size: 14px;
+      font-weight: 400;
+
+      &__value {
+        color: var(--c--theme--colors--greyscale-900);
+        font-weight: 500;
+      }
+    }
+  }
+
+  &__goto {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    a:first-child {
+      text-decoration: underline;
+      color: var(--c--theme--colors--greyscale-600);
+      font-size: 14px;
+      font-weight: 400;
+    }
   }
 }

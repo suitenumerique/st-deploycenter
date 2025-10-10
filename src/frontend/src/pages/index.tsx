@@ -5,15 +5,11 @@ import {
   Footer,
   Hero,
   HomeGutter,
-  Icon,
-  IconType,
   MainLayout,
   ProConnectButton,
 } from "@gouvfr-lasuite/ui-kit";
-import { Button } from "@openfun/cunningham-react";
 import { useTranslation } from "react-i18next";
-import banner from "@/assets/home/banner.png";
-import { LogoutButton } from "@/features/auth/components/LogoutButton";
+import banner from "@/assets/home/banner.svg";
 import { Toaster } from "@/features/ui/components/toaster/Toaster";
 import { LeftPanelMobile } from "@/features/layouts/components/left-panel/LeftPanelMobile";
 import { HeaderRight } from "@/features/layouts/components/header/Header";
