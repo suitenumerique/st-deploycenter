@@ -3,7 +3,7 @@ API endpoints for Organization model.
 """
 
 import rest_framework as drf
-from rest_framework import viewsets
+from rest_framework import filters, viewsets
 
 from core import models
 
@@ -23,13 +23,47 @@ class OperatorOrganizationViewSet(viewsets.ReadOnlyModelViewSet):
         permissions.IsAuthenticated,
         permissions.OperatorAccessPermission,
     ]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ["name", "departement_code_insee", "epci_libelle"]
 
     def get_queryset(self):
-        return (
+        queryset = (
             models.Organization.objects.filter(operators__id=self.kwargs["operator_id"])
             .prefetch_related("service_subscriptions__service")
             .all()
         )
+
+        if self.request.query_params.get("search"):
+            search_query = self.request.query_params.get("search")
+
+            # Use ILIKE for partial word matching with accent-insensitive search
+            queryset = queryset.extra(
+                where=[
+                    """
+                    unaccent_immutable(name) ILIKE unaccent_immutable(%s) OR
+                    unaccent_immutable(departement_code_insee) ILIKE unaccent_immutable(%s) OR
+                    unaccent_immutable(epci_libelle) ILIKE unaccent_immutable(%s)
+                    """
+                ],
+                params=[f"%{search_query}%"] * 3,
+            )
+
+            # Order by match priority: name first, then departement_code_insee, then epci_libelle
+            queryset = queryset.extra(
+                select={
+                    "match_priority": """
+                        CASE 
+                            WHEN unaccent_immutable(name) ILIKE unaccent_immutable(%s) THEN 1
+                            WHEN unaccent_immutable(departement_code_insee) ILIKE unaccent_immutable(%s) THEN 2
+                            WHEN unaccent_immutable(epci_libelle) ILIKE unaccent_immutable(%s) THEN 3
+                            ELSE 4
+                        END
+                    """
+                },
+                select_params=[f"%{search_query}%"] * 3,
+                order_by=["match_priority", "name"],
+            )
+        return queryset
 
 
 class OrganizationViewSet(viewsets.ReadOnlyModelViewSet):
