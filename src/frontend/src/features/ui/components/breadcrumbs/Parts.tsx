@@ -5,7 +5,7 @@ import { Operator } from "@/features/api/Repository";
 
 export const useBreadcrumbOperator = (
   operatorId: string,
-  operator?: Operator,
+  operator?: Operator | null,
   isOperatorLoading?: boolean
 ) => {
   const { t } = useTranslation();
@@ -17,7 +17,8 @@ export const useBreadcrumbOperator = (
         data-testid="breadcrumb-button"
         onClick={() => router.push(`/operators/${operatorId}`)}
       >
-        {t("organizations.title", { operator: operator?.name })}
+        <img src="/assets/icons/organization.svg" alt="Logo" />
+        {t("organizations.title")}
         {isOperatorLoading && <Spinner />}
       </button>
     ),

@@ -1,3 +1,4 @@
+import { SortModel } from "@openfun/cunningham-react";
 import { fetchAPI } from "./fetchApi";
 
 type PaginatedResponse<T> = {
@@ -18,9 +19,12 @@ export type Operator = {
 type Organization = {
   id: string;
   name: string;
+  code_postal: string;
   url: string;
   service_subscriptions: ServiceSubscription[];
   population: number;
+  departement_code_insee: string;
+  epci_libelle: string;
 };
 
 export type ServiceSubscription = {
@@ -38,6 +42,24 @@ export type Service = {
   url: string;
   description: string;
   subscription: ServiceSubscription;
+  logo: string | null;
+};
+
+export const sortModelToOrdering = (sortModel: SortModel): string => {
+  return sortModel
+    .map((sort) => {
+      if (sort.sort === "asc") return `${sort.field}`;
+      if (sort.sort === "desc") return `-${sort.field}`;
+      return "";
+    })
+    .join(",");
+};
+
+export const orderingToSortModel = (ordering: string): SortModel => {
+  return ordering.split(",").map((order) => {
+    if (order.startsWith("-")) return { field: order.slice(1), sort: "desc" };
+    return { field: order, sort: "asc" };
+  });
 };
 
 export const getOperators = async (): Promise<PaginatedResponse<Operator>> => {
@@ -54,10 +76,18 @@ export const getOperator = async (operatorId: string): Promise<Operator> => {
 
 export const getOperatorOrganizations = async (
   operatorId: string,
-  page: number
+  params: {
+    page?: number;
+    search?: string;
+    ordering?: string;
+  }
 ): Promise<PaginatedResponse<Organization>> => {
+  const url = new URL(`/`, window.location.origin);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value) url.searchParams.append(key, value.toString());
+  });
   const response = await fetchAPI(
-    `operators/${operatorId}/organizations/?page=${page}`
+    `operators/${operatorId}/organizations/` + url.search
   );
   const data = (await response.json()) as PaginatedResponse<Organization>;
   return data;

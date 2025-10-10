@@ -44,6 +44,19 @@ server {
     }
 
     # Frontend export
+
+    location ~ "^/operators/?$" {
+        try_files $uri /operators.html;
+    }
+
+    location ~ "^/operators/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/?$" {
+        try_files $uri /operators/[operator_id].html;
+    }
+
+    location ~ "^/operators/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/organizations/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/?$" {
+        try_files $uri /operators/[operator_id]/organizations/[id].html;
+    }
+
     location / {
         try_files $uri index.html $uri/ =404;
     }
