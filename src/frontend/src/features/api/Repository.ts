@@ -25,6 +25,7 @@ type Organization = {
   population: number;
   departement_code_insee: string;
   epci_libelle: string;
+  rpnt: string[];
 };
 
 export type ServiceSubscription = {

@@ -115,7 +115,7 @@ update:  ## Update the project with latest changes
 	@$(MAKE) build
 	@$(MAKE) collectstatic
 	@$(MAKE) migrate
-	# @$(MAKE) front-install-frozen
+	@$(MAKE) front-install-frozen
 	# @$(MAKE) back-i18n-compile
 .PHONY: update
 
@@ -133,7 +133,7 @@ logs: ## display all services logs (follow mode)
 .PHONY: logs
 
 start: ## start all development services
-	@$(COMPOSE) up --force-recreate --build -d backend-dev celery-dev
+	@$(COMPOSE) up --force-recreate --build -d backend-dev celery-dev frontend-dev
 .PHONY: start
 
 start-minimal: ## start minimal services (backend, frontend, keycloak and DB)
@@ -165,8 +165,8 @@ restart-minimal: \
 lint: ## run all linters
 lint: \
   back-lint \
-  #front-lint \
-  #front-ts-check
+  front-lint \
+  front-ts-check
 .PHONY: lint
 
 lint-check:  ## run all linters in check mode
@@ -196,13 +196,13 @@ back-pylint: ## lint back-end python sources with pylint
 	@$(COMPOSE_RUN_APP_TOOLS) sh -c "pylint ."
 .PHONY: back-pylint
 
-# front-ts-check: ## run the frontend type checker
-# 	@$(COMPOSE) run --rm frontend-tools npm run ts:check
-# .PHONY: front-ts-check
+front-ts-check: ## run the frontend type checker
+	@$(COMPOSE) run --rm frontend-tools npm run ts:check
+.PHONY: front-ts-check
 
-# front-lint: ## run the frontend linter
-# 	@$(COMPOSE) run --rm frontend-tools npm run lint
-# .PHONY: front-lint
+front-lint: ## run the frontend linter
+	@$(COMPOSE) run --rm frontend-tools npm run lint
+.PHONY: front-lint
 
 # -- Tests
 
@@ -385,51 +385,24 @@ help:
 
 # Front
 
-# front-shell: ## open a shell in the frontend container
-# 	@$(COMPOSE) run --rm frontend-tools /bin/sh
-# .PHONY: front-shell
+front-shell: ## open a shell in the frontend container
+	@$(COMPOSE) run --rm frontend-tools /bin/sh
+.PHONY: front-shell
 
-# front-install: ## install the frontend locally
-# 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
-# 	$(COMPOSE) run --rm frontend-tools npm install $${args:-${1}}
-# .PHONY: front-install
+front-install: ## install the frontend locally
+	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
+	$(COMPOSE) run --rm frontend-tools npm install $${args:-${1}}
+.PHONY: front-install
 
-# front-install-frozen: ## install the frontend locally, following the frozen lockfile
-# 	@echo "Installing frontend dependencies, this might take a few minutes..."
-# 	@$(COMPOSE) run --rm frontend-tools npm ci
-# .PHONY: front-install-frozen
+front-install-frozen: ## install the frontend locally, following the frozen lockfile
+	@echo "Installing frontend dependencies, this might take a few minutes..."
+	@$(COMPOSE) run --rm frontend-tools npm ci
+.PHONY: front-install-frozen
 
-# front-install-frozen-amd64: ## install the frontend locally, following the frozen lockfile
-# 	@$(COMPOSE) run --rm frontend-tools-amd64 npm ci
-# .PHONY: front-install-frozen-amd64
+front-install-frozen-amd64: ## install the frontend locally, following the frozen lockfile
+	@$(COMPOSE) run --rm frontend-tools-amd64 npm ci
+.PHONY: front-install-frozen-amd64
 
-# front-build: ## build the frontend locally
-# 	@$(COMPOSE) run --rm frontend-tools npm run build
-# .PHONY: front-build
-
-# front-i18n-extract: ## Extract the frontend translation inside a json to be used for crowdin
-# 	@$(COMPOSE) run --rm frontend-tools npm run i18n:extract
-# .PHONY: front-i18n-extract
-
-# front-i18n-generate: ## Generate the frontend json files used for crowdin
-# 	crowdin-download-sources \
-# 	front-i18n-extract
-# .PHONY: front-i18n-generate
-
-# front-i18n-compile: ## Format the crowin json files used deploy to the apps
-# 	@$(COMPOSE) run --rm frontend-tools npm run i18n:deploy
-# .PHONY: front-i18n-compile
-
-# back-api-update: ## Update the OpenAPI schema
-# 	bin/update_openapi_schema
-# .PHONY: back-api-update
-
-# front-api-update: ## Update the frontend API client
-# 	@$(COMPOSE) run --rm frontend-tools npm run api:update
-# .PHONY: front-api-update
-
-# api-update: ## Update the OpenAPI schema then frontend API client
-# api-update: \
-# 	back-api-update \
-# 	front-api-update
-# .PHONY: api-update
+front-build: ## build the frontend locally
+	@$(COMPOSE) run --rm frontend-tools npm run build
+.PHONY: front-build

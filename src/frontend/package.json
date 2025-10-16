@@ -7,6 +7,7 @@
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint",
+    "ts:check": "tsc --noEmit",
     "build-theme": "cunningham -g css,scss,ts -o src/styles && mv src/styles/cunningham-tokens.scss src/styles/cunningham-tokens-sass.scss"
   },
   "dependencies": {

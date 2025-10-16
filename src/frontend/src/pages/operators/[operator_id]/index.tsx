@@ -263,13 +263,26 @@ export default function Operator() {
             headerName: "RPNT",
             size: 100,
             enableSorting: false,
-            renderCell: () => {
-              // TODO: Implement RPNT logic.
-              return (
-                <Badge type="success">
-                  <Icon name="check" size={IconSize.SMALL} />
-                </Badge>
-              );
+            renderCell: (params) => {
+              if ((params.row.rpnt || []).includes("a")) {
+                return (
+                  <Badge type="success">
+                    <Icon name="check" size={IconSize.SMALL} />
+                  </Badge>
+                );
+              } else if ((params.row.rpnt || []).includes("1.a") || (params.row.rpnt || []).includes("2.a")) {
+                return (
+                  <Badge type="warning">
+                    <Icon name="warning" size={IconSize.SMALL} />
+                  </Badge>
+                );
+              } else {
+                return (
+                  <Badge type="danger">
+                    <Icon name="close" size={IconSize.SMALL} />
+                  </Badge>
+                );
+              }
             },
           },
         ]}

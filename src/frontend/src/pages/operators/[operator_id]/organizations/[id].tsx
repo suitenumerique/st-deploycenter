@@ -184,23 +184,27 @@ const ServiceBlock = ({
           {service.description}
         </div>
         <div className="dc__service__block__body__content">
+
+          {/*
           <div className="dc__service__block__values">
             <div className="dc__service__block__values__item">
               <span className="dc__service__block__values__item__label">
                 {t("organizations.services.values.users")}
               </span>
               <span className="dc__service__block__values__item__value">
-                {Math.floor(Math.random() * (500 - 50 + 1)) + 50}
+                0
               </span>
             </div>
           </div>
+          */}
           {service.url && (
             <div className="dc__service__block__goto">
-              <a href={service.url}>{t("organizations.services.goto")}</a>
+              <a target="_blank" href={service.url}>{t("organizations.services.goto")}</a>
               <Button
                 color="tertiary"
                 size="nano"
                 href={service.url}
+                target="_blank"
                 icon={<Icon name="open_in_new" size={IconSize.X_SMALL} />}
               ></Button>
             </div>

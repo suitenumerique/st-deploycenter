@@ -19,29 +19,29 @@ services:
     ports:
       - "8966:6379"
 
-  # mailcatcher:
-  #   image: maildev/maildev:2.2.1
-  #   ports:
-  #     - "8904:1080"
+  frontend-dev:
+    user: "${DOCKER_USER:-1000}"
+    build:
+      context: ./src/frontend
+      dockerfile: Dockerfile
+    env_file:
+      - env.d/development/frontend.defaults
+      - env.d/development/frontend.local
+    command: ["npm", "run", "dev"]
+    volumes:
+      - ./src/frontend/:/home/frontend/
+    ports:
+      - "8960:3000"
 
-  # minio:
-  #   user: ${DOCKER_USER:-1000}
-  #   image: minio/minio
-  #   environment:
-  #     - MINIO_ROOT_USER=st-deploycenter
-  #     - MINIO_ROOT_PASSWORD=password
-  #   ports:
-  #     - "9000:9000"
-  #     - "9001:9001"
-  #   healthcheck:
-  #     test: ["CMD", "mc", "ready", "local"]
-  #     interval: 1s
-  #     timeout: 20s
-  #     retries: 300
-  #   entrypoint: ""
-  #   command: minio server --console-address :9001 /data
-  #   volumes:
-  #     - ./data/media:/data
+  frontend-tools:
+    user: "${DOCKER_USER:-1000}"
+    profiles:
+      - frontend-tools
+    build:
+      context: ./src/frontend
+      dockerfile: Dockerfile
+    volumes:
+      - ./src/frontend/:/home/frontend/
 
   backend-dev:
     build:
