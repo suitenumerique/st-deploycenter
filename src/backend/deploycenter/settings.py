@@ -460,6 +460,18 @@ class Base(Configuration):
         None, environ_name="API_PUBLIC_URL", environ_prefix=None
     )
 
+    OPERATOR_CONTRIBUTION_POPULATION_THRESHOLD = values.IntegerValue(
+        3500,
+        environ_name="OPERATOR_CONTRIBUTION_POPULATION_THRESHOLD",
+        environ_prefix=None,
+    )
+    OPERATOR_CONTRIBUTION_PER_POPULATION = values.FloatValue(
+        0.01, environ_name="OPERATOR_CONTRIBUTION_PER_POPULATION", environ_prefix=None
+    )
+    OPERATOR_CONTRIBUTION_MAXIMUM_BASE = values.FloatValue(
+        10000, environ_name="OPERATOR_CONTRIBUTION_MAXIMUM_BASE", environ_prefix=None
+    )
+
     # pylint: disable=invalid-name
     @property
     def ENVIRONMENT(self):

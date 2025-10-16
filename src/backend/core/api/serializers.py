@@ -1,7 +1,5 @@
 """Client serializers for the deploycenter core app."""
 
-from django.conf import settings
-
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 

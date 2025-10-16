@@ -222,6 +222,48 @@ class Operator(BaseModel):
     def __str__(self):
         return self.name
 
+    def compute_contribution(self):
+        """Compute the financial contribution of the operator."""
+
+        # Get all the organizations managed by the operator, above a population threshold
+        all_organizations = Organization.objects.filter(operators=self)
+
+        organizations = all_organizations.filter(
+            population__gt=settings.OPERATOR_CONTRIBUTION_POPULATION_THRESHOLD
+        )
+
+        # Compute the total population of the organizations
+        total_population = organizations.aggregate(
+            total_population=models.Sum("population")
+        )["total_population"]
+
+        all_population = all_organizations.aggregate(
+            total_population=models.Sum("population")
+        )["total_population"]
+
+        # Compute the financial contribution of the operator
+        base_contribution = (
+            total_population * settings.OPERATOR_CONTRIBUTION_PER_POPULATION
+        )
+
+        # Ensure the contribution is not greater than the maximum base
+        if base_contribution > settings.OPERATOR_CONTRIBUTION_MAXIMUM_BASE:
+            contribution = settings.OPERATOR_CONTRIBUTION_MAXIMUM_BASE
+        else:
+            contribution = base_contribution
+
+        # TODO: add usage-based contribution
+
+        return {
+            "base_contribution": base_contribution,
+            "usage_contribution": {"2025-01": 0},
+            "organizations": organizations.count(),
+            "all_organizations": all_organizations.count(),
+            "population": total_population,
+            "all_population": all_population,
+            "contribution": contribution,
+        }
+
 
 class UserOperatorRole(BaseModel):
     """

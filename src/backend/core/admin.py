@@ -1,8 +1,13 @@
 """Admin classes and registrations for core app."""
 
 from django import forms
-from django.contrib import admin
+from django.conf import settings
+from django.contrib import admin, messages
 from django.contrib.auth import admin as auth_admin
+from django.db import transaction
+from django.http import HttpResponseRedirect
+from django.shortcuts import render
+from django.urls import path, reverse
 from django.utils.translation import gettext_lazy as _
 
 from . import models
@@ -47,6 +52,79 @@ class ServiceForm(forms.ModelForm):
         if commit:
             instance.save()
         return instance
+
+
+class BulkSiretImportForm(forms.ModelForm):
+    """Form for bulk importing SIRETs to create OperatorOrganizationRole entries."""
+
+    siret_list = forms.CharField(
+        widget=forms.Textarea(
+            attrs={
+                "rows": 15,
+                "cols": 50,
+                "placeholder": _(
+                    "Enter one SIRET per line:\n12345678901234\n98765432109876\n..."
+                ),
+            }
+        ),
+        label=_("SIRET List"),
+        help_text=_(
+            "Enter one SIRET per line. Only 14-digit SIRET codes will be processed."
+        ),
+    )
+
+    class Meta:
+        model = models.OperatorOrganizationRole
+        fields = ["operator", "role"]
+        widgets = {
+            "operator": forms.Select(attrs={"class": "form-control"}),
+            "role": forms.Select(attrs={"class": "form-control"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Only show active operators
+        self.fields["operator"].queryset = models.Operator.objects.filter(
+            is_active=True
+        )
+        self.fields["operator"].empty_label = _("Select an operator...")
+
+        # Set default role
+        self.fields["role"].initial = "admin"
+
+    def clean_siret_list(self):
+        """Clean and validate the SIRET list."""
+        siret_list = self.cleaned_data.get("siret_list", "")
+        if not siret_list.strip():
+            raise forms.ValidationError(_("Please enter at least one SIRET."))
+
+        # Split by lines and clean
+        siret_lines = [line.strip() for line in siret_list.split("\n") if line.strip()]
+
+        if not siret_lines:
+            raise forms.ValidationError(_("Please enter at least one valid SIRET."))
+
+        # Validate SIRET format (14 digits)
+        valid_sirets = []
+        invalid_sirets = []
+
+        for siret in siret_lines:
+            # Remove any spaces or dashes
+            clean_siret = siret.replace(" ", "").replace("-", "")
+            if clean_siret.isdigit() and len(clean_siret) == 14:
+                valid_sirets.append(clean_siret)
+            else:
+                invalid_sirets.append(siret)
+
+        if invalid_sirets:
+            raise forms.ValidationError(
+                _("Invalid SIRET format: {}. SIRETs must be exactly 14 digits.").format(
+                    ", ".join(invalid_sirets[:5])
+                    + ("..." if len(invalid_sirets) > 5 else "")
+                )
+            )
+
+        return valid_sirets
 
 
 class OperatorUsersInline(admin.TabularInline):
@@ -163,14 +241,29 @@ class OperatorAdmin(admin.ModelAdmin):
     list_filter = ("is_active", "created_at")
     search_fields = ("name", "url")
     ordering = ("name",)
-    readonly_fields = ("id", "created_at", "updated_at")
+    readonly_fields = ("id", "computed_contribution", "created_at", "updated_at")
 
     fieldsets = (
         (None, {"fields": ("name", "url", "is_active")}),
+        (_("Financial Information"), {"fields": ("computed_contribution",)}),
         (_("Metadata"), {"fields": ("created_at", "updated_at")}),
     )
     autocomplete_fields = ["users"]
     inlines = [OperatorUsersInline]
+
+    def computed_contribution(self, obj):
+        """Display the computed financial contribution of the operator."""
+        if obj.pk:
+            details = obj.compute_contribution()
+            return f"""Organisations: {details["organizations"]} / {details["all_organizations"]}
+            Population: {details["population"]:,.0f} / {details["all_population"]:,.0f}
+            Base: {details["contribution"]:,.2f} €
+            Usage: N/A
+            Total: {details["contribution"]:,.2f} €
+            """
+        return "N/A"
+
+    computed_contribution.short_description = _("Computed Contribution")
 
 
 @admin.register(models.UserOperatorRole)
@@ -285,12 +378,68 @@ class ServiceAdmin(admin.ModelAdmin):
     )
 
 
+class OperatorFilter(admin.SimpleListFilter):
+    """Custom filter for operators."""
+
+    title = _("Operator")
+    parameter_name = "operator"
+
+    def lookups(self, request, model_admin):
+        # Get all operators that have organization roles
+        operators = (
+            models.Operator.objects.filter(organization_roles__isnull=False)
+            .distinct()
+            .order_by("name")
+        )
+
+        return [(op.id, op.name) for op in operators]
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(operator_id=self.value())
+        return queryset
+
+
+class AboveContributionThresholdFilter(admin.SimpleListFilter):
+    """Filter to show only organizations above the contribution threshold."""
+
+    title = _("Above Contribution Threshold")
+    parameter_name = "above_threshold"
+
+    def lookups(self, request, model_admin):
+        return (
+            ("yes", _("Yes")),
+            ("no", _("No")),
+        )
+
+    def queryset(self, request, queryset):
+        threshold = settings.OPERATOR_CONTRIBUTION_POPULATION_THRESHOLD
+
+        if self.value() == "yes":
+            return queryset.filter(organization__population__gt=threshold)
+        if self.value() == "no":
+            return queryset.filter(organization__population__lte=threshold)
+        return queryset
+
+
 @admin.register(models.OperatorOrganizationRole)
 class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
     """Admin class for the OperatorOrganizationRole model"""
 
-    list_display = ("operator", "organization", "role", "created_at")
-    list_filter = ("role", "operator", "organization__type", "created_at")
+    list_display = (
+        "operator",
+        "organization",
+        "organization_population",
+        "role",
+        "created_at",
+    )
+    list_filter = (
+        "role",
+        OperatorFilter,
+        "organization__type",
+        "created_at",
+        AboveContributionThresholdFilter,
+    )
     search_fields = ("operator__name", "organization__name")
     ordering = ("operator__name", "organization__name")
     readonly_fields = ("id", "created_at", "updated_at")
@@ -301,6 +450,171 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
         (None, {"fields": ("operator", "organization", "role")}),
         (_("Metadata"), {"fields": ("created_at", "updated_at")}),
     )
+
+    def organization_population(self, obj):
+        """Display the organization's population."""
+        if obj.organization and obj.organization.population:
+            return f"{obj.organization.population:,}"
+        return "N/A"
+
+    organization_population.short_description = _("Population")
+    organization_population.admin_order_field = "organization__population"
+
+    def get_form(self, request, obj=None, change=False, **kwargs):
+        """Return the form class for the admin view."""
+        if (
+            request.resolver_match.url_name
+            == "core_operatororganizationrole_bulk_import"
+        ):
+            return BulkSiretImportForm
+        return super().get_form(request, obj, change, **kwargs)
+
+    def get_fieldsets(self, request, obj=None):
+        """Define fieldsets for the bulk import form."""
+        if (
+            request.resolver_match.url_name
+            == "core_operatororganizationrole_bulk_import"
+        ):
+            return (
+                (None, {"fields": ("operator", "role")}),
+                (_("SIRET Import"), {"fields": ("siret_list",)}),
+            )
+        return self.fieldsets
+
+    def get_urls(self):
+        """Add custom URLs for bulk import functionality."""
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "bulk-import/",
+                self.admin_site.admin_view(self.bulk_import_view),
+                name="core_operatororganizationrole_bulk_import",
+            ),
+            path(
+                "bulk-import-results/",
+                self.admin_site.admin_view(self.bulk_import_results_view),
+                name="core_operatororganizationrole_bulk_import_results",
+            ),
+        ]
+        return custom_urls + urls
+
+    def bulk_import_view(self, request):
+        """View for bulk importing SIRETs using native admin form rendering."""
+        if request.method == "POST":
+            form = BulkSiretImportForm(request.POST)
+            if form.is_valid():
+                operator = form.cleaned_data["operator"]
+                role = form.cleaned_data["role"]
+                siret_list = form.cleaned_data["siret_list"]
+
+                # Process SIRETs
+                created_count = 0
+                not_found_sirets = []
+                already_exists_count = 0
+
+                with transaction.atomic():
+                    for siret in siret_list:
+                        try:
+                            organization = models.Organization.objects.get(siret=siret)
+
+                            # Check if the relationship already exists
+                            if models.OperatorOrganizationRole.objects.filter(
+                                operator=operator, organization=organization
+                            ).exists():
+                                already_exists_count += 1
+                                continue
+
+                            # Create the relationship
+                            models.OperatorOrganizationRole.objects.create(
+                                operator=operator, organization=organization, role=role
+                            )
+                            created_count += 1
+
+                        except models.Organization.DoesNotExist:
+                            not_found_sirets.append(siret)
+
+                # Show success message with detailed results
+                message_parts = [
+                    _("Bulk import completed:"),
+                    _("{created} created").format(created=created_count),
+                    _("{already_exists} already existed").format(
+                        already_exists=already_exists_count
+                    ),
+                    _("{not_found} not found").format(not_found=len(not_found_sirets)),
+                ]
+
+                if not_found_sirets:
+                    message_parts.append(
+                        _("SIRETs not found: {sirets}").format(
+                            sirets=", ".join(not_found_sirets[:10])
+                            + ("..." if len(not_found_sirets) > 10 else "")
+                        )
+                    )
+
+                # Store results in session for results page
+                request.session["bulk_import_results"] = {
+                    "created_count": created_count,
+                    "not_found_sirets": not_found_sirets,
+                    "already_exists_count": already_exists_count,
+                    "operator_name": operator.name,
+                    "role": role,
+                    "total_processed": len(siret_list),
+                }
+
+                # Show success message
+                messages.success(
+                    request,
+                    _(
+                        "Bulk import completed: {created} created, "
+                        + "{already_exists} already existed, {not_found} not found."
+                    ).format(
+                        created=created_count,
+                        already_exists=already_exists_count,
+                        not_found=len(not_found_sirets),
+                    ),
+                )
+
+                return HttpResponseRedirect(
+                    reverse("admin:core_operatororganizationrole_bulk_import_results")
+                )
+        else:
+            form = BulkSiretImportForm()
+
+        # Use Django's native admin add_view method with custom form
+        return self.add_view(request, extra_context={"title": _("Bulk Import SIRETs")})
+
+    def bulk_import_results_view(self, request):
+        """View for displaying bulk import results."""
+        results = request.session.get("bulk_import_results")
+        if not results:
+            messages.error(request, _("No bulk import results found."))
+            return HttpResponseRedirect(
+                reverse("admin:core_operatororganizationrole_changelist")
+            )
+
+        # Clear the session data after displaying
+        del request.session["bulk_import_results"]
+
+        context = {
+            "results": results,
+            "title": _("Bulk Import Results"),
+            "opts": self.model._meta,  # pylint: disable=protected-access # noqa: SLF001
+            "has_view_permission": self.has_view_permission(request),
+        }
+
+        return render(
+            request,
+            "admin/core/operatororganizationrole/bulk_import_results.html",
+            context,
+        )
+
+    def changelist_view(self, request, extra_context=None):
+        """Add bulk import link to changelist view."""
+        extra_context = extra_context or {}
+        extra_context["bulk_import_url"] = reverse(
+            "admin:core_operatororganizationrole_bulk_import"
+        )
+        return super().changelist_view(request, extra_context)
 
 
 @admin.register(models.OperatorServiceConfig)
