@@ -255,12 +255,16 @@ class OperatorAdmin(admin.ModelAdmin):
         """Display the computed financial contribution of the operator."""
         if obj.pk:
             details = obj.compute_contribution()
-            return f"""Organisations: {details["organizations"]} / {details["all_organizations"]}
-            Population: {details["population"]:,.0f} / {details["all_population"]:,.0f}
-            Base: {details["contribution"]:,.2f} €
-            Usage: N/A
-            Total: {details["contribution"]:,.2f} €
-            """
+            return (
+                f"""{details["communes"]} communes >3500 (parmi {details["all_communes"]} communes) :"""
+                + f""" {details["population_in_communes"]:,.0f} habitants\n"""
+                + f""" {details["communes_in_epcis"]} communes >3500 dans {details["all_epcis"]} EPCIs :"""
+                + f""" {details["population_in_epcis"]:,.0f} habitants\n"""
+                + f""" Total : {details["population"]:,.0f} habitants\n"""
+                + f""" Base: {details["base_contribution"]:,.2f} €\n"""
+                + """ Usage: N/A\n"""
+                + f""" Contribution finale: {details["contribution"]:,.2f} €\n"""
+            )
         return "N/A"
 
     computed_contribution.short_description = _("Computed Contribution")

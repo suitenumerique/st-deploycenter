@@ -225,21 +225,37 @@ class Operator(BaseModel):
     def compute_contribution(self):
         """Compute the financial contribution of the operator."""
 
-        # Get all the organizations managed by the operator, above a population threshold
-        all_organizations = Organization.objects.filter(operators=self)
+        # Get all the communes & epcis managed by the operator.
+        # Other types don't influence the contribution.
+        all_communes = Organization.objects.filter(operators=self, type="commune")
+        all_epcis = Organization.objects.filter(operators=self, type="epci")
+        all_communes_in_epcis = all_communes.filter(
+            epci_siren__in=all_epcis.values_list("siren", flat=True)
+        )
 
-        organizations = all_organizations.filter(
+        communes_above_threshold = all_communes.filter(
             population__gt=settings.OPERATOR_CONTRIBUTION_POPULATION_THRESHOLD
         )
 
-        # Compute the total population of the organizations
-        total_population = organizations.aggregate(
-            total_population=models.Sum("population")
-        )["total_population"]
+        communes_above_threshold_in_epcis = all_communes_in_epcis.filter(
+            population__gt=settings.OPERATOR_CONTRIBUTION_POPULATION_THRESHOLD
+        )
 
-        all_population = all_organizations.aggregate(
-            total_population=models.Sum("population")
-        )["total_population"]
+        population_communes = (
+            communes_above_threshold.aggregate(
+                total_population=models.Sum("population")
+            )["total_population"]
+            or 0
+        )
+
+        population_communes_in_epcis = (
+            communes_above_threshold_in_epcis.aggregate(
+                total_population=models.Sum("population")
+            )["total_population"]
+            or 0
+        )
+
+        total_population = population_communes + population_communes_in_epcis
 
         # Compute the financial contribution of the operator
         base_contribution = (
@@ -257,10 +273,14 @@ class Operator(BaseModel):
         return {
             "base_contribution": base_contribution,
             "usage_contribution": {"2025-01": 0},
-            "organizations": organizations.count(),
-            "all_organizations": all_organizations.count(),
+            "all_communes": all_communes.count(),
+            "all_epcis": all_epcis.count(),
+            "all_communes_in_epcis": all_communes_in_epcis.count(),
+            "communes": communes_above_threshold.count(),
+            "communes_in_epcis": communes_above_threshold_in_epcis.count(),
             "population": total_population,
-            "all_population": all_population,
+            "population_in_communes": population_communes,
+            "population_in_epcis": population_communes_in_epcis,
             "contribution": contribution,
         }
 
