@@ -4,6 +4,7 @@ Handles ServiceSubscription lifecycle events with configurable templates and con
 """
 
 import logging
+import re
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -121,26 +122,56 @@ class WebhookConfig:
                 if isinstance(context_key, str):
                     # Direct access to flat context
                     return context_data.get(context_key)
-                else:
-                    # If not a string, return as-is
-                    return context_key
-            else:
-                # Regular dict - render each key-value pair
-                return {
-                    key: self._render_template_object(value, context_data)
-                    for key, value in template_obj.items()
-                }
-        elif isinstance(template_obj, list):
+                # If not a string, raise an error
+                raise ValueError(
+                    f"$val must be a string, got {type(context_key).__name__}: {context_key}"
+                )
+            if "$tpl" in template_obj and len(template_obj) == 1:
+                # This is a template string: {"$tpl": "Hello {{name}}"}
+                template_string = template_obj["$tpl"]
+                if isinstance(template_string, str):
+                    return self._render_template_string(template_string, context_data)
+                # If not a string, raise an error
+                raise ValueError(
+                    f"$tpl must be a string, got {type(template_string).__name__}: {template_string}"
+                )
+            # Regular dict - render each key-value pair
+            return {
+                key: self._render_template_object(value, context_data)
+                for key, value in template_obj.items()
+            }
+        if isinstance(template_obj, list):
             return [
                 self._render_template_object(item, context_data)
                 for item in template_obj
             ]
-        elif isinstance(template_obj, str):
+        if isinstance(template_obj, str):
             # Plain strings are returned as-is (no automatic template rendering)
             return template_obj
-        else:
-            # For numbers, booleans, None, etc., return as-is
-            return template_obj
+
+        # For numbers, booleans, None, etc., return as-is
+        return template_obj
+
+    def _render_template_string(
+        self, template_string: str, context_data: Dict[str, Any]
+    ) -> str:
+        """
+        Render a template string with simple {{variable}} substitution.
+
+        Args:
+            template_string: Template string with {{variable}} placeholders
+            context_data: Data to use for template rendering
+
+        Returns:
+            Rendered string with variables replaced
+        """
+
+        def replace_var(match):
+            var_name = match.group(1)
+            return str(context_data.get(var_name, ""))
+
+        # Replace {{variable}} with values from context
+        return re.sub(r"\{\{(\w+)\}\}", replace_var, template_string)
 
 
 class WebhookClient:
@@ -212,7 +243,7 @@ class WebhookClient:
             try:
                 result = self._send_single_webhook(webhook_config, context_data)
                 results.append(result)
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.error(
                     "Failed to send webhook to %s: %s", webhook_config.url, str(e)
                 )
@@ -282,10 +313,9 @@ class WebhookClient:
                 webhook_config.url,
             )
 
-            response = requests.request(
+            response = requests.request(  # noqa: S113
                 webhook_config.method,
                 webhook_config.url,
-                timeout=webhook_config.timeout,
                 **request_kwargs,
             )
 

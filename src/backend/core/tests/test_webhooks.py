@@ -1,3 +1,4 @@
+# pylint: disable=invalid-name
 """
 Tests for webhook functionality in ServiceSubscription lifecycle events.
 """
@@ -17,9 +18,6 @@ class MockWebhookServer(BaseHTTPRequestHandler):
     """Mock HTTP server for testing webhook delivery."""
 
     requests_received = []  # Class variable to store all requests
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
 
     def do_GET(self):
         """Handle GET requests."""
@@ -70,7 +68,6 @@ class MockWebhookServer(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):  # pylint: disable=redefined-builtin
         """Suppress log messages during testing."""
-        pass
 
 
 class SlowWebhookServer(MockWebhookServer):
@@ -93,8 +90,8 @@ class FailingWebhookServer(MockWebhookServer):
         self.wfile.write(b'{"error": "Internal Server Error"}')
 
 
-@pytest.fixture
-def webhook_server():
+@pytest.fixture(name="webhook_server")
+def fixture_webhook_server():
     """Fixture providing a mock webhook server."""
     # Clear any previous requests
     MockWebhookServer.requests_received = []
@@ -110,8 +107,8 @@ def webhook_server():
     server.server_close()
 
 
-@pytest.fixture
-def slow_webhook_server():
+@pytest.fixture(name="slow_webhook_server")
+def fixture_slow_webhook_server():
     """Fixture providing a slow mock webhook server."""
     server = HTTPServer(("localhost", 0), SlowWebhookServer)
     server_thread = threading.Thread(target=server.serve_forever)
@@ -124,8 +121,8 @@ def slow_webhook_server():
     server.server_close()
 
 
-@pytest.fixture
-def failing_webhook_server():
+@pytest.fixture(name="failing_webhook_server")
+def fixture_failing_webhook_server():
     """Fixture providing a failing mock webhook server."""
     server = HTTPServer(("localhost", 0), FailingWebhookServer)
     server_thread = threading.Thread(target=server.serve_forever)
@@ -138,8 +135,8 @@ def failing_webhook_server():
     server.server_close()
 
 
-@pytest.fixture
-def sample_organization():
+@pytest.fixture(name="sample_organization")
+def fixture_sample_organization():
     """Create a sample organization for testing."""
     return Organization.objects.create(
         name="Test Organization",
@@ -149,8 +146,8 @@ def sample_organization():
     )
 
 
-@pytest.fixture
-def sample_service():
+@pytest.fixture(name="sample_service")
+def fixture_sample_service():
     """Create a sample service for testing."""
     return Service.objects.create(
         name="Test Service",
@@ -165,8 +162,8 @@ def sample_service():
                     "body": {
                         "message": {"$val": "event_type"},
                         "data": {
-                            "subscription_id": {"$val": "subscription.id"},
-                            "organization_name": {"$val": "organization.name"},
+                            "subscription_id": {"$val": "subscription_id"},
+                            "organization_name": {"$val": "organization_name"},
                             "static_field": "This is static",
                         },
                     },
@@ -177,8 +174,8 @@ def sample_service():
     )
 
 
-@pytest.fixture
-def sample_subscription(sample_organization, sample_service):
+@pytest.fixture(name="sample_subscription")
+def fixture_sample_subscription(sample_organization, sample_service):
     """Create a sample subscription for testing."""
     return ServiceSubscription.objects.create(
         organization=sample_organization,
@@ -198,7 +195,7 @@ class TestWebhookConfig:
             "body": {
                 "message": {"$val": "event_type"},
                 "data": {
-                    "subscription_id": {"$val": "subscription.id"},
+                    "subscription_id": {"$val": "subscription_id"},
                     "static_value": "This is static",
                 },
             },
@@ -211,7 +208,7 @@ class TestWebhookConfig:
         assert webhook_config.body_template == {
             "message": {"$val": "event_type"},
             "data": {
-                "subscription_id": {"$val": "subscription.id"},
+                "subscription_id": {"$val": "subscription_id"},
                 "static_value": "This is static",
             },
         }
@@ -328,7 +325,7 @@ class TestWebhookConfig:
         config = {
             "url": "https://example.com/webhook",
             "body": {
-                "static_string": "This is {{ not a template }}",
+                "static_string": "This is {{ not a template }} {{organization_name}}",
                 "template_string": {"$val": "event_type"},
                 "mixed": {
                     "static": "Static value",
@@ -342,29 +339,9 @@ class TestWebhookConfig:
         rendered = webhook_config.render_body(context)
 
         expected = {
-            "static_string": "This is {{ not a template }}",  # Should remain unchanged
+            "static_string": "This is {{ not a template }} {{organization_name}}",  # Should remain unchanged
             "template_string": "created",
             "mixed": {"static": "Static value", "template": "Test Org"},
-        }
-        assert rendered == expected
-
-    def test_non_template_dollar_val(self):
-        """Test that $val without string key returns the value as-is."""
-        config = {
-            "url": "https://example.com/webhook",
-            "body": {
-                "plain_value": {"$val": 123},
-                "template_string": {"$val": "event_type"},
-            },
-        }
-        webhook_config = WebhookConfig(config)
-
-        context = {"event_type": "created"}
-        rendered = webhook_config.render_body(context)
-
-        expected = {
-            "plain_value": 123,  # Non-string value, returned as-is
-            "template_string": "created",
         }
         assert rendered == expected
 
@@ -417,6 +394,81 @@ class TestWebhookConfig:
 
         expected = {"existing": "Test City", "missing": None, "deep_missing": None}
         assert rendered == expected
+
+    def test_invalid_val_type(self):
+        """Test that $val with non-string value raises an error."""
+        config = {
+            "url": "https://example.com/webhook",
+            "body": {
+                "invalid_val": {"$val": 123},
+            },
+        }
+        webhook_config = WebhookConfig(config)
+
+        context = {"test": "value"}
+
+        with pytest.raises(WebhookError, match="\\$val must be a string"):
+            webhook_config.render_body(context)
+
+    def test_template_string_rendering(self):
+        """Test template string rendering with $tpl syntax."""
+        config = {
+            "url": "https://example.com/webhook",
+            "body": {
+                "message": {
+                    "$tpl": "Hello {{organization_name}}, event: {{event_type}}"
+                },
+                "details": {
+                    "$tpl": "Subscription {{subscription_id}} for {{service_name}}"
+                },
+            },
+        }
+        webhook_config = WebhookConfig(config)
+
+        context = {
+            "organization_name": "Test City",
+            "event_type": "created",
+            "subscription_id": "123",
+            "service_name": "Test Service",
+        }
+        rendered = webhook_config.render_body(context)
+
+        expected = {
+            "message": "Hello Test City, event: created",
+            "details": "Subscription 123 for Test Service",
+        }
+        assert rendered == expected
+
+    def test_template_string_missing_variables(self):
+        """Test template string with missing variables."""
+        config = {
+            "url": "https://example.com/webhook",
+            "body": {
+                "message": {"$tpl": "Hello {{missing_var}}, event: {{event_type}}"},
+            },
+        }
+        webhook_config = WebhookConfig(config)
+
+        context = {"event_type": "created"}
+        rendered = webhook_config.render_body(context)
+
+        expected = {"message": "Hello , event: created"}
+        assert rendered == expected
+
+    def test_invalid_tpl_type(self):
+        """Test that $tpl with non-string value raises an error."""
+        config = {
+            "url": "https://example.com/webhook",
+            "body": {
+                "invalid_tpl": {"$tpl": 123},
+            },
+        }
+        webhook_config = WebhookConfig(config)
+
+        context = {"test": "value"}
+
+        with pytest.raises(WebhookError, match="\\$tpl must be a string"):
+            webhook_config.render_body(context)
 
 
 class TestWebhookClient:
