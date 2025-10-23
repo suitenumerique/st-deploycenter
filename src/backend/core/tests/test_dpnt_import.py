@@ -27,8 +27,10 @@ def test_import_real_dpnt_data():
     ).get()
 
     # Verify import results
-    assert result["total_processed"] == 100  # Should be limited by max_rows
-    assert result["created"] == 100, "No organizations were created"
+    assert result["total_processed"] >= 100  # Should be limited by max_rows, by type
+    assert result["created"] == result["total_processed"], (
+        "No organizations were created"
+    )
     assert result["errors"] == 0, "Unexpected error count"
 
     logger.info(
@@ -40,12 +42,14 @@ def test_import_real_dpnt_data():
 
     # Verify organizations were created in the database
     created_orgs = Organization.objects.all()
-    assert created_orgs.count() == 100, "No organizations found in database"
+    assert created_orgs.count() == result["total_processed"], (
+        "No organizations found in database"
+    )
 
     logger.info("Found %d organizations in database", created_orgs.count())
 
     # Check a sample organizations to verify field mapping
-    sample_org = created_orgs.first()
+    sample_org = created_orgs.filter(type="commune").first()
     logger.info(
         "Sample organization: %s (INSEE: %s)", sample_org.name, sample_org.code_insee
     )
@@ -87,9 +91,9 @@ def test_import_real_dpnt_data():
     ).get()
 
     # Verify import results
-    assert result["total_processed"] == 100  # Should be limited by max_rows
+    assert result["total_processed"] >= 100  # Should be limited by max_rows
     assert result["created"] == 0, "No organizations were created"
-    assert result["updated"] == 100, "No organization was updated"
+    assert result["updated"] == result["total_processed"], "No organization was updated"
 
     sample_org_2 = Organization.objects.get(code_insee=sample_org.code_insee)
 
@@ -97,4 +101,4 @@ def test_import_real_dpnt_data():
     assert sample_org_2.population == sample_org.population - 1
 
     # Make sure no new orgs were created in the update
-    assert Organization.objects.count() == 100
+    assert Organization.objects.count() == result["total_processed"]

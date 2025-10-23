@@ -360,7 +360,6 @@ class Organization(BaseModel):
         blank=True,
         null=True,
         help_text=_("INSEE administrative code"),
-        unique=True,
     )
 
     # Population data

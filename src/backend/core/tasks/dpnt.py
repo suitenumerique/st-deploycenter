@@ -7,6 +7,7 @@ This module handles downloading and importing the DPNT dataset from data.gouv.fr
 import gzip
 import json
 import logging
+from collections import defaultdict
 from typing import Any, Dict
 
 from django.core.exceptions import ValidationError
@@ -27,7 +28,7 @@ def import_dpnt_dataset(self, force_update: bool = False, max_rows: int = None):
 
     Args:
         force_update: If True, updates existing organizations. If False, only creates new ones.
-        max_rows: Maximum number of rows to process (None for all rows)
+        max_rows: Maximum number of rows to process, for each type (None for all rows)
 
     Returns:
         Dict with import statistics
@@ -43,13 +44,9 @@ def import_dpnt_dataset(self, force_update: bool = False, max_rows: int = None):
 
     data = download_result["data"]
 
-    # Limit rows if max_rows is specified
-    if max_rows is not None:
-        data = data[:max_rows]
-        logger.info(
-            "Limited to %d rows from %d total", max_rows, len(download_result["data"])
-        )
-    elif len(data) < 30000:
+    row_count_by_type = defaultdict(int)
+
+    if len(data) < 30000:
         raise ValueError("DPNT dataset has less than 30000 rows, which is not expected")
 
     logger.info("Processing %d organizations from DPNT dataset", len(data))
@@ -58,46 +55,55 @@ def import_dpnt_dataset(self, force_update: bool = False, max_rows: int = None):
         "total_processed": 0,
         "created": 0,
         "updated": 0,
+        "existing": 0,
         "errors": 0,
         "errors_details": [],
     }
 
     with transaction.atomic():
         for item in data:
-            try:
-                # Map DPNT fields to our model fields
-                org_data = {
-                    "name": item.get("libelle"),
-                    "type": item.get("type", "commune"),
-                    "siret": item.get("siret"),
-                    "siren": item.get("siren"),
-                    "population": item.get("population"),
-                    "code_postal": item.get("code_postal"),
-                    "code_insee": item.get("code_insee"),
-                    "epci_libelle": item.get("epci_libelle"),
-                    "epci_siren": item.get("epci_siren"),
-                    "epci_population": item.get("epci_population"),
-                    "departement_code_insee": item.get("departement_code_insee"),
-                    "region_code_insee": item.get("region_code_insee"),
-                    "adresse_messagerie": item.get("adresse_messagerie"),
-                    "site_internet": item.get("site_internet"),
-                    "telephone": item.get("telephone"),
-                    "rpnt": item.get("rpnt"),
-                    "service_public_url": item.get("service_public_url"),
-                }
-
-                if not org_data.get("siret"):
-                    logger.info(
-                        "Skipped organization without SIRET: %s", org_data["code_insee"]
-                    )
+            # Limit rows if max_rows is specified for this type
+            if max_rows is not None:
+                if row_count_by_type[item["type"]] >= max_rows:
                     continue
+                row_count_by_type[item["type"]] += 1
 
-                # Remove None values
-                org_data = {k: v for k, v in org_data.items() if v is not None}
+            # Map DPNT fields to our model fields
+            org_data = {
+                "name": item.get("libelle"),
+                "type": item["type"],
+                "siret": item.get("siret"),
+                "siren": item.get("siren"),
+                "population": item.get("population"),
+                "code_postal": item.get("code_postal"),
+                "code_insee": item.get("code_insee")
+                if item["type"] == "commune"
+                else None,
+                "epci_libelle": item.get("epci_libelle"),
+                "epci_siren": item.get("epci_siren"),
+                "epci_population": item.get("epci_population"),
+                "departement_code_insee": item.get("departement_code_insee"),
+                "region_code_insee": item.get("region_code_insee"),
+                "adresse_messagerie": item.get("adresse_messagerie"),
+                "site_internet": item.get("site_internet"),
+                "telephone": (item.get("telephone") or "")[0:20] or None,
+                "rpnt": item.get("rpnt"),
+                "service_public_url": item.get("service_public_url"),
+            }
 
+            if not org_data.get("siret"):
+                logger.info(
+                    "Skipped organization without SIRET: %s", org_data["code_insee"]
+                )
+                continue
+
+            # Remove None values
+            org_data = {k: v for k, v in org_data.items() if v is not None}
+
+            try:
                 # Try to find existing organization by INSEE code or SIREN
                 existing_org = None
-                if org_data.get("code_insee"):
+                if org_data.get("code_insee") and org_data["type"] == "commune":
                     existing_org = Organization.objects.filter(
                         code_insee=org_data["code_insee"]
                     ).first()
@@ -119,7 +125,8 @@ def import_dpnt_dataset(self, force_update: bool = False, max_rows: int = None):
                     stats["created"] += 1
                     logger.debug("Created organization: %s", org_data["name"])
                 else:
-                    logger.debug("Skipped existing organization: %s", org_data["name"])
+                    logger.info("Skipped existing organization: %s", org_data["name"])
+                    stats["existing"] += 1
 
                 stats["total_processed"] += 1
 
