@@ -22,7 +22,9 @@ def test_api_organizations_services_list_anonymous():
         operator=operator, organization=organization
     )
 
-    response = client.get(f"/api/v1.0/organizations/{organization.id}/services/")
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/"
+    )
     assert response.status_code == 401
     assert response.json() == {
         "detail": "Informations d'authentification non fournies."
@@ -65,13 +67,15 @@ def test_api_organizations_services_list_authenticated():
     service1 = factories.ServiceFactory()
     service2 = factories.ServiceFactory()
     subscription = factories.ServiceSubscriptionFactory(
-        organization=organization_ok1, service=service1
+        organization=organization_ok1, service=service1, operator=operator
     )
     factories.ServiceSubscriptionFactory(
-        organization=organization_nok1, service=service2
+        organization=organization_nok1, service=service2, operator=operator2
     )
 
-    response = client.get(f"/api/v1.0/organizations/{organization_ok1.id}/services/")
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/services/"
+    )
     content = response.json()
     results = content["results"]
     assert len(results) == 2
@@ -150,18 +154,18 @@ def test_api_organization_service_enable_disable():
     service1 = factories.ServiceFactory()
     service2 = factories.ServiceFactory()
     factories.ServiceSubscriptionFactory(
-        organization=organization_nok1, service=service2
+        organization=organization_nok1, service=service2, operator=operator2
     )
 
     # Test that no subscription exists
     response = client.get(
-        f"/api/v1.0/organizations/{organization_ok1.id}/services/{service1.id}/subscription/"
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/services/{service1.id}/subscription/"
     )
     assert response.status_code == 404
 
     # Test that the subscription can be created
     response = client.post(
-        f"/api/v1.0/organizations/{organization_ok1.id}/services/{service1.id}/subscription/",
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/services/{service1.id}/subscription/",
         {},
     )
     assert response.status_code == 201
@@ -172,21 +176,24 @@ def test_api_organization_service_enable_disable():
 
     # Test that the subscription exists
     response = client.get(
-        f"/api/v1.0/organizations/{organization_ok1.id}/services/{service1.id}/subscription/"
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/services/{service1.id}/subscription/"
     )
     assert response.status_code == 200
     content_retrieved = response.json()
     assert_equals_partial(content_retrieved, content_created)
 
     # Test that the subscription can be deleted
-    response = client.delete(
-        f"/api/v1.0/organizations/{organization_ok1.id}/services/{service1.id}/subscription/{content_created['id']}/"
+    url = (
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/"
+        f"services/{service1.id}/subscription/{content_created['id']}/"
     )
+    response = client.delete(url)
     assert response.status_code == 204
 
     # Test that the subscription does not exist
     response = client.get(
-        f"/api/v1.0/organizations/{organization_ok1.id}/services/{service1.id}/subscription/"
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/"
+        f"services/{service1.id}/subscription/"
     )
     assert response.status_code == 404
 
@@ -227,24 +234,25 @@ def test_api_organization_service_enable_disable_no_role():
     service1 = factories.ServiceFactory()
     factories.ServiceFactory()
     subscription = factories.ServiceSubscriptionFactory(
-        organization=organization_ok1, service=service1
+        organization=organization_ok1, service=service1, operator=operator
     )
 
     # Test that it cannot be retrieved
     response = client.get(
-        f"/api/v1.0/organizations/{organization_ok1.id}/services/{service1.id}/subscription/"
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/services/{service1.id}/subscription/"
     )
     assert response.status_code == 403
 
     # Test that the subscription cannot be created
     response = client.post(
-        f"/api/v1.0/organizations/{organization_ok1.id}/services/{service1.id}/subscription/",
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/services/{service1.id}/subscription/",
         {},
     )
     assert response.status_code == 403
 
     # Test that the subscription cannot be deleted
     response = client.delete(
-        f"/api/v1.0/organizations/{organization_ok1.id}/services/{service1.id}/subscription/{subscription.id}/"
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}"
+        f"/services/{service1.id}/subscription/{subscription.id}/"
     )
     assert response.status_code == 403

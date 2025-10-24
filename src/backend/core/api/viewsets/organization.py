@@ -2,7 +2,8 @@
 API endpoints for Organization model.
 """
 
-import rest_framework as drf
+from django.db.models import Prefetch
+
 from rest_framework import filters, viewsets
 
 from core import models
@@ -27,9 +28,15 @@ class OperatorOrganizationViewSet(viewsets.ReadOnlyModelViewSet):
     ordering_fields = ["name", "departement_code_insee", "epci_libelle"]
 
     def get_queryset(self):
+        subscriptions_queryset = models.ServiceSubscription.objects.filter(
+            operator=self.kwargs["operator_id"]
+        )
+
         queryset = (
             models.Organization.objects.filter(operators__id=self.kwargs["operator_id"])
-            .prefetch_related("service_subscriptions__service")
+            .prefetch_related(
+                Prefetch("service_subscriptions", queryset=subscriptions_queryset)
+            )
             .all()
         )
 
@@ -64,24 +71,3 @@ class OperatorOrganizationViewSet(viewsets.ReadOnlyModelViewSet):
                 order_by=["match_priority", "name"],
             )
         return queryset
-
-
-class OrganizationViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet for Organization model.
-
-    GET /api/v1.0/organizations/<organization_id>
-        Return the organization with the given id based on the user's permissions.
-    """
-
-    queryset = models.Organization.objects.all()
-    serializer_class = serializers.OrganizationSerializer
-    permission_classes = [
-        permissions.IsAuthenticated,
-        permissions.OrganizationAccessPermission,
-    ]
-
-    def get_queryset(self):
-        return models.Organization.objects.all()
-
-    def list(self, request, *args, **kwargs):
-        raise drf.exceptions.NotFound

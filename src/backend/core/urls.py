@@ -12,7 +12,7 @@ from core.authentication.urls import urlpatterns as oidc_urls
 from .api.viewsets.config import ConfigView
 from .api.viewsets.lagaufre import LagaufreViewSet
 from .api.viewsets.operator import OperatorViewSet
-from .api.viewsets.organization import OperatorOrganizationViewSet, OrganizationViewSet
+from .api.viewsets.organization import OperatorOrganizationViewSet
 from .api.viewsets.service import (
     OrganizationServiceSubscriptionViewSet,
     OrganizationServiceViewSet,
@@ -28,7 +28,6 @@ router.register(r"services", ServiceViewSet)
 router.register(r"servicelogo", ServiceLogoViewSet, basename="servicelogo")
 router.register(r"users", UserViewSet, basename="user")
 router.register(r"operators", OperatorViewSet)
-router.register(r"organizations", OrganizationViewSet)
 
 operator_organization_router = DefaultRouter()
 operator_organization_router.register(r"organizations", OperatorOrganizationViewSet)
@@ -52,15 +51,25 @@ urlpatterns = [
                 path("config/", ConfigView.as_view(), name="api-config"),
                 re_path(
                     r"^operators/(?P<operator_id>[0-9a-z-]*)/",
-                    include(operator_organization_router.urls),
-                ),
-                re_path(
-                    r"^organizations/(?P<organization_id>[0-9a-z-]*)/",
-                    include(organization_service_router.urls),
-                ),
-                re_path(
-                    r"^organizations/(?P<organization_id>[0-9a-z-]*)/services/(?P<service_id>[0-9a-z-]*)/",
-                    include(organization_service_subscription_router.urls),
+                    include(
+                        [
+                            *operator_organization_router.urls,
+                            re_path(
+                                r"^organizations/(?P<organization_id>[0-9a-z-]*)/",
+                                include(
+                                    [
+                                        *organization_service_router.urls,
+                                        re_path(
+                                            r"^services/(?P<service_id>[0-9a-z-]*)/",
+                                            include(
+                                                organization_service_subscription_router.urls
+                                            ),
+                                        ),
+                                    ]
+                                ),
+                            ),
+                        ]
+                    ),
                 ),
             ]
         ),
