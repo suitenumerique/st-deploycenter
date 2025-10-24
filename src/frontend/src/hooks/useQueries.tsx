@@ -16,10 +16,10 @@ export const useOperator = (operatorId: string) => {
   });
 };
 
-export const useOrganization = (organizationId: string) => {
+export const useOrganization = (operatorId: string, organizationId: string) => {
   return useQuery({
-    queryKey: ["organizations", organizationId],
-    queryFn: () => getOrganization(organizationId),
+    queryKey: ["operators", operatorId, "organizations", organizationId],
+    queryFn: () => getOrganization(operatorId, organizationId),
   });
 };
 
@@ -38,10 +38,10 @@ export const useOperatorOrganizations = (
   });
 };
 
-export const useOrganizationServices = (organizationId: string) => {
+export const useOrganizationServices = (operatorId: string, organizationId: string) => {
   return useQuery({
-    queryKey: ["organizations", organizationId, "services"],
-    queryFn: () => getOrganizationServices(organizationId),
+    queryKey: ["operators", operatorId, "organizations", organizationId, "services"],
+    queryFn: () => getOrganizationServices(operatorId, organizationId),
   });
 };
 
@@ -49,15 +49,18 @@ export const useMutationDeleteOrganizationServiceSubscription = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({
+      operatorId,
       organizationId,
       serviceId,
       subscriptionId,
     }: {
+      operatorId: string;
       organizationId: string;
       serviceId: string;
       subscriptionId: string;
     }) => {
       return deleteOrganizationServiceSubscription(
+        operatorId,
         organizationId,
         serviceId,
         subscriptionId
@@ -78,13 +81,19 @@ export const useMutationCreateOrganizationServiceSubscription = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({
+      operatorId,
       organizationId,
       serviceId,
     }: {
+      operatorId: string;
       organizationId: string;
       serviceId: string;
     }) => {
-      return createOrganizationServiceSubscription(organizationId, serviceId);
+      return createOrganizationServiceSubscription(
+        operatorId,
+        organizationId,
+        serviceId
+      );
     },
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({

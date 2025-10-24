@@ -28,9 +28,9 @@ export default function Organization() {
     operatorQuery: { isLoading: isOperatorLoading },
   } = useOperatorContext();
   const { data: organization, isLoading: isOrganizationLoading } =
-    useOrganization(organizationId);
+    useOrganization(operatorId, organizationId);
   const { data: services, isLoading: isServicesLoading } =
-    useOrganizationServices(organizationId);
+    useOrganizationServices(operatorId, organizationId);
   const breadcrumbOperator = useBreadcrumbOperator(
     operatorId,
     operator,
@@ -124,6 +124,7 @@ const ServiceBlock = ({
   const { mutate: createOrganizationServiceSubscription } =
     useMutationCreateOrganizationServiceSubscription();
   const modals = useModals();
+  const { operatorId } = useOperatorContext();
   return (
     <div className="dc__service__block">
       <div className="dc__service__block__header">
@@ -143,6 +144,7 @@ const ServiceBlock = ({
               if (decision === "yes") {
                 createOrganizationServiceSubscription(
                   {
+                    operatorId,
                     organizationId,
                     serviceId: service.id,
                   },
@@ -164,6 +166,7 @@ const ServiceBlock = ({
               if (decision === "delete") {
                 deleteOrganizationServiceSubscription(
                   {
+                    operatorId,
                     organizationId,
                     serviceId: service.id,
                     subscriptionId: service.subscription.id,
