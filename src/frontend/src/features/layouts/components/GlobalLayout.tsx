@@ -45,9 +45,11 @@ export const GlobalExplorerLayout = ({
 };
 
 export const OperatorContext = createContext<{
+  operatorId: string;
   operator?: Operator | null;
   operatorQuery: UseQueryResult<Operator, Error>;
 }>({
+  operatorId: "",
   operator: null,
   operatorQuery: undefined as unknown as UseQueryResult<Operator, Error>,
 });
@@ -70,7 +72,11 @@ const OperatorContextProvider = ({
   const operatorQuery = useOperator(operatorId);
   return (
     <OperatorContext.Provider
-      value={{ operator: operatorQuery.data ?? null, operatorQuery }}
+      value={{
+        operatorId,
+        operator: operatorQuery.data ?? null,
+        operatorQuery,
+      }}
     >
       {children}
     </OperatorContext.Provider>
