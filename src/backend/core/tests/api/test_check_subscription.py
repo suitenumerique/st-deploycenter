@@ -20,7 +20,7 @@ class TestServiceSubscriptionCheck:
         organization = factories.OrganizationFactory()
         service = factories.ServiceFactory()
         subscription = factories.ServiceSubscriptionFactory(
-            organization=organization, service=service
+            organization=organization, service=service, operator=operator
         )
 
         # Link operator to organization
@@ -57,7 +57,7 @@ class TestServiceSubscriptionCheck:
         organization = factories.OrganizationFactory()
         service = factories.ServiceFactory()
         subscription = factories.ServiceSubscriptionFactory(
-            organization=organization, service=service
+            organization=organization, service=service, operator=operator
         )
 
         # Link operator to organization

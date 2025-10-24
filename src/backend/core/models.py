@@ -702,6 +702,14 @@ class ServiceSubscription(BaseModel):
         help_text=_("Organization subscribing to the service"),
     )
 
+    operator = models.ForeignKey(
+        Operator,
+        on_delete=models.CASCADE,
+        related_name="service_subscriptions",
+        verbose_name=_("operator"),
+        help_text=_("Operator managing the organization"),
+    )
+
     service = models.ForeignKey(
         Service,
         on_delete=models.CASCADE,

@@ -18,7 +18,7 @@ class TestLagaufreServicesEndpoint:
         """Test successful retrieval of services with SIRET."""
         # Create test data
         organization = factories.OrganizationFactory()
-
+        operator = factories.OperatorFactory()
         # Create services with different maturities
         service1 = factories.ServiceFactory(
             name="Service Alpha", maturity="alpha", is_active=True
@@ -32,10 +32,10 @@ class TestLagaufreServicesEndpoint:
 
         # Create subscriptions for some services
         factories.ServiceSubscriptionFactory(
-            organization=organization, service=service1
+            organization=organization, service=service1, operator=operator
         )
         factories.ServiceSubscriptionFactory(
-            organization=organization, service=service3
+            organization=organization, service=service3, operator=operator
         )
 
         operator = factories.OperatorFactory()
@@ -91,7 +91,9 @@ class TestLagaufreServicesEndpoint:
         # Create test data
         organization = factories.OrganizationFactory()
         service = factories.ServiceFactory(is_active=True)
-        factories.ServiceSubscriptionFactory(organization=organization, service=service)
+        factories.ServiceSubscriptionFactory(
+            organization=organization, service=service, operator=operator
+        )
         factories.OperatorServiceConfigFactory(operator=operator, service=service)
 
         # No authentication required for anonymous API
@@ -115,7 +117,9 @@ class TestLagaufreServicesEndpoint:
         # Create test data
         organization = factories.OrganizationFactory()
         service = factories.ServiceFactory(is_active=True)
-        factories.ServiceSubscriptionFactory(organization=organization, service=service)
+        factories.ServiceSubscriptionFactory(
+            organization=organization, service=service, operator=operator
+        )
         factories.OperatorServiceConfigFactory(operator=operator, service=service)
 
         # No authentication required for anonymous API
@@ -166,10 +170,10 @@ class TestLagaufreServicesEndpoint:
         inactive_service = factories.ServiceFactory(is_active=False)
 
         factories.ServiceSubscriptionFactory(
-            organization=organization, service=active_service
+            organization=organization, service=active_service, operator=operator
         )
         factories.ServiceSubscriptionFactory(
-            organization=organization, service=inactive_service
+            organization=organization, service=inactive_service, operator=operator
         )
 
         # Create operator config only for active service
@@ -370,7 +374,9 @@ class TestLagaufreServicesEndpoint:
         operator = factories.OperatorFactory()
         organization = factories.OrganizationFactory()
         service = factories.ServiceFactory(is_active=True)
-        factories.ServiceSubscriptionFactory(organization=organization, service=service)
+        factories.ServiceSubscriptionFactory(
+            organization=organization, service=service, operator=operator
+        )
         factories.OperatorServiceConfigFactory(operator=operator, service=service)
 
         # Test request without authentication (should work now)
@@ -443,10 +449,10 @@ class TestLagaufreServicesEndpoint:
 
         # Subscribe to services A and C (not B and D)
         factories.ServiceSubscriptionFactory(
-            organization=organization, service=service_a
+            organization=organization, service=service_a, operator=operator
         )
         factories.ServiceSubscriptionFactory(
-            organization=organization, service=service_c
+            organization=organization, service=service_c, operator=operator
         )
 
         # Create operator configs with display priorities

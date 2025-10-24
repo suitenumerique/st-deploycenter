@@ -643,16 +643,16 @@ class OperatorServiceConfigAdmin(admin.ModelAdmin):
 class ServiceSubscriptionAdmin(admin.ModelAdmin):
     """Admin class for the ServiceSubscription model"""
 
-    list_display = ("organization", "service", "created_at")
+    list_display = ("organization", "operator", "service", "created_at")
     list_filter = ("organization__operator_roles__operator", "created_at")
     search_fields = ("organization__name", "service__name", "service__type")
     ordering = ("organization__name", "service__name")
     readonly_fields = ("id", "created_at", "updated_at")
 
-    autocomplete_fields = ["organization", "service"]
+    autocomplete_fields = ["organization", "operator", "service"]
 
     fieldsets = (
-        (None, {"fields": ("organization", "service")}),
+        (None, {"fields": ("organization", "operator", "service")}),
         (_("Subscription Data"), {"fields": ("metadata",)}),
         (_("Metadata"), {"fields": ("created_at", "updated_at")}),
     )

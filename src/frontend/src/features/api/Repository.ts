@@ -95,27 +95,34 @@ export const getOperatorOrganizations = async (
 };
 
 export const getOrganization = async (
+  operatorId: string,
   organizationId: string
 ): Promise<Organization> => {
-  const response = await fetchAPI(`organizations/${organizationId}/`);
+  const response = await fetchAPI(
+    `operators/${operatorId}/organizations/${organizationId}/`
+  );
   const data = (await response.json()) as Organization;
   return data;
 };
 
 export const getOrganizationServices = async (
+  operatorId: string,
   organizationId: string
 ): Promise<PaginatedResponse<Service>> => {
-  const response = await fetchAPI(`organizations/${organizationId}/services/`);
+  const response = await fetchAPI(
+    `operators/${operatorId}/organizations/${organizationId}/services/`
+  );
   const data = (await response.json()) as PaginatedResponse<Service>;
   return data;
 };
 
 export const createOrganizationServiceSubscription = async (
+  operatorId: string,
   organizationId: string,
   serviceId: string
 ): Promise<ServiceSubscription> => {
   const response = await fetchAPI(
-    `organizations/${organizationId}/services/${serviceId}/subscription/`,
+    `operators/${operatorId}/organizations/${organizationId}/services/${serviceId}/subscription/`,
     {
       method: "POST",
     }
@@ -125,12 +132,13 @@ export const createOrganizationServiceSubscription = async (
 };
 
 export const deleteOrganizationServiceSubscription = async (
+  operatorId: string,
   organizationId: string,
   serviceId: string,
   subscriptionId: string
 ): Promise<void> => {
   await fetchAPI(
-    `organizations/${organizationId}/services/${serviceId}/subscription/${subscriptionId}/`,
+    `operators/${operatorId}/organizations/${organizationId}/services/${serviceId}/subscription/${subscriptionId}/`,
     {
       method: "DELETE",
     }
