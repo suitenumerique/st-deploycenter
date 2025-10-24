@@ -366,7 +366,9 @@ def test_api_organizations_retrieve_authenticated():
         operator=operator2, organization=organization_nok2
     )
 
-    response = client.get(f"/api/v1.0/organizations/{organization_ok1.id}/")
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/"
+    )
     content = response.json()
     results = content
     assert_equals_partial(
@@ -411,7 +413,9 @@ def test_api_organizations_retrieve_authenticated_no_role():
         operator=operator2, organization=organization_nok2
     )
 
-    response = client.get(f"/api/v1.0/organizations/{organization_nok1.id}/")
+    response = client.get(
+        f"/api/v1.0/operators/{operator2.id}/organizations/{organization_nok1.id}/"
+    )
     assert response.status_code == 403
     assert response.json() == {
         "detail": "Vous n'avez pas la permission d'effectuer cette action."

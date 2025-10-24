@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
+from core.factories import OperatorFactory
 from core.models import Organization, Service, ServiceSubscription
 from core.webhooks import WebhookClient, WebhookConfig, WebhookError
 
@@ -146,6 +147,12 @@ def fixture_sample_organization():
     )
 
 
+@pytest.fixture(name="sample_operator")
+def fixture_sample_operator():
+    """Create a sample operator for testing."""
+    return OperatorFactory.create()
+
+
 @pytest.fixture(name="sample_service")
 def fixture_sample_service():
     """Create a sample service for testing."""
@@ -175,11 +182,12 @@ def fixture_sample_service():
 
 
 @pytest.fixture(name="sample_subscription")
-def fixture_sample_subscription(sample_organization, sample_service):
+def fixture_sample_subscription(sample_organization, sample_service, sample_operator):
     """Create a sample subscription for testing."""
     return ServiceSubscription.objects.create(
         organization=sample_organization,
         service=sample_service,
+        operator=sample_operator,
         metadata={"test": "data"},
     )
 
@@ -739,10 +747,13 @@ class TestWebhookIntegration:
             },
         )
 
+        operator = OperatorFactory.create()
+
         # Create subscription (this should trigger the webhook)
         ServiceSubscription.objects.create(
             organization=sample_organization,
             service=service,
+            operator=operator,
             metadata={"test": "data"},
         )
 
@@ -860,10 +871,13 @@ class TestWebhookIntegration:
             config={},  # No webhooks configured
         )
 
+        operator = OperatorFactory.create()
+
         # Create subscription (should not trigger any webhooks)
         subscription = ServiceSubscription.objects.create(
             organization=sample_organization,
             service=service,
+            operator=operator,
         )
 
         # Give the signal handler time to execute
@@ -892,10 +906,13 @@ class TestWebhookIntegration:
             },
         )
 
+        operator = OperatorFactory.create()
+
         # Create subscription (should not fail even if webhook fails)
         subscription = ServiceSubscription.objects.create(
             organization=sample_organization,
             service=service,
+            operator=operator,
         )
 
         # Give the signal handler time to execute
@@ -922,10 +939,13 @@ class TestWebhookIntegration:
             },
         )
 
+        operator = OperatorFactory.create()
+
         # Create subscription (should not fail even if webhook times out)
         subscription = ServiceSubscription.objects.create(
             organization=sample_organization,
             service=service,
+            operator=operator,
         )
 
         # Give the signal handler time to execute

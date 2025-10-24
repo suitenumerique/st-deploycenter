@@ -156,7 +156,7 @@ class ServiceLogoViewSet(viewsets.ReadOnlyModelViewSet):
 class OrganizationServiceViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for OrganizationService model.
 
-    GET /api/v1.0/organizations/<organization_id>/services/
+    GET /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/
         Return the list of services including the subscription for the given organization
         based on the user's permissions.
     """
@@ -173,7 +173,7 @@ class OrganizationServiceViewSet(viewsets.ReadOnlyModelViewSet):
             id=self.kwargs["organization_id"]
         )
         prefetch_queryset = models.ServiceSubscription.objects.filter(
-            organization=organization
+            organization=organization, operator=self.kwargs["operator_id"]
         )
         return (
             models.Service.objects.all()
@@ -185,10 +185,10 @@ class OrganizationServiceViewSet(viewsets.ReadOnlyModelViewSet):
 class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
     """ViewSet for OrganizationServiceSubscription model.
 
-    POST /api/v1.0/organizations/<organization_id>/services/<service_id>/subscription/
+    POST /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/
         Create a new subscription for the given organization and service.
 
-    DELETE /api/v1.0/organizations/<organization_id>/services/<service_id>/subscription/
+    DELETE /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/
         Delete the given subscription for the given organization and service.
     """
 
@@ -203,6 +203,7 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
         return models.ServiceSubscription.objects.filter(
             organization=self.kwargs["organization_id"],
             service=self.kwargs["service_id"],
+            operator=self.kwargs["operator_id"],
         )
 
     def list(self, request, *args, **kwargs):
@@ -246,9 +247,10 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
             id=self.kwargs["organization_id"]
         )
         service = models.Service.objects.get(id=self.kwargs["service_id"])
+        operator = models.Operator.objects.get(id=self.kwargs["operator_id"])
 
         subscription = models.ServiceSubscription.objects.create(
-            organization=organization, service=service
+            organization=organization, service=service, operator=operator
         )
 
         serializer = self.get_serializer(subscription)
