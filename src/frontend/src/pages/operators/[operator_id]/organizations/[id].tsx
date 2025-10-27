@@ -127,13 +127,14 @@ const ServiceBlock = ({
   return (
     <div className="dc__service__block">
       <div className="dc__service__block__header">
-        {service.logo ? (
-          <div className="dc__service__block__header__logo">
-            <img src={service.logo} alt={service.name} />
-          </div>
-        ) : (
+        <div className="dc__service__block__header__title">
+          {service.logo && (
+            <div className="dc__service__block__header__logo">
+              <img src={service.logo} alt={service.name} />
+            </div>
+          )}
           <div className="dc__service__block__header__name">{service.name}</div>
-        )}
+        </div>
         <Switch
           checked={checked}
           onChange={async (e) => {
@@ -184,7 +185,6 @@ const ServiceBlock = ({
           {service.description}
         </div>
         <div className="dc__service__block__body__content">
-
           {/*
           <div className="dc__service__block__values">
             <div className="dc__service__block__values__item">
@@ -199,7 +199,9 @@ const ServiceBlock = ({
           */}
           {service.url && (
             <div className="dc__service__block__goto">
-              <a target="_blank" href={service.url}>{t("organizations.services.goto")}</a>
+              <a target="_blank" href={service.url}>
+                {t("organizations.services.goto")}
+              </a>
               <Button
                 color="tertiary"
                 size="nano"
