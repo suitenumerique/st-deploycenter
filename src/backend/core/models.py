@@ -735,7 +735,7 @@ class ServiceSubscription(BaseModel):
         indexes = []
 
     def __str__(self):
-        return f"{self.organization.name} → {self.service.name}"
+        return f"{self.operator.name} → {self.organization.name} → {self.service.name}"
 
 
 class Metric(models.Model):
@@ -797,3 +797,61 @@ class Metric(models.Model):
     def __str__(self):
         org_name = self.organization.name if self.organization else "Unknown"
         return f"{self.key}: {self.value} for {self.service.name} - {org_name}"
+
+class Entitlement(BaseModel):
+
+    class EntitlementType(models.TextChoices):
+        DRIVE_STORAGE = "drive_storage"
+
+    service_subscription = models.ForeignKey(
+        ServiceSubscription,
+        on_delete=models.CASCADE,
+        related_name="entitlements",
+        verbose_name=_("service subscription"),
+        help_text=_("Service subscription this entitlement is associated with"),
+    )
+
+    type = models.CharField(
+        _("type"),
+        max_length=50,
+        choices=EntitlementType.choices,
+        help_text=_("Type of entitlement"),
+    )
+
+    config = models.JSONField(
+        _("configuration"),
+        default=dict,
+        blank=True,
+        null=True,
+        help_text=_(
+            "Base configuration data for metrics scraping and service operation"
+        ),
+    )
+
+    account_type = models.CharField(
+        _("account type"),
+        max_length=50,
+        help_text=_("Type of account"),
+        null=True,
+        blank=True,
+    )
+
+    account_id = models.CharField(
+        _("account ID"),
+        max_length=255,
+        help_text=_("ID of the account"),
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        db_table = "deploycenter_entitlement"
+        verbose_name = _("entitlement")
+        verbose_name_plural = _("entitlements")
+        unique_together = ["service_subscription", "type", "account_type", "account_id"]
+        indexes = [
+            models.Index(fields=["service_subscription"]),
+        ]
+
+    def __str__(self):
+        return f"{self.service_subscription.organization.name} - {self.type} - {self.account_type} - {self.account_id}"
