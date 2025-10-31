@@ -20,6 +20,7 @@ from .api.viewsets.service import (
     ServiceViewSet,
 )
 from .api.viewsets.user import UserViewSet
+from .api.viewsets.entitlements import EntitlementView
 
 # Create router and register viewsets
 router = DefaultRouter()
@@ -48,6 +49,7 @@ urlpatterns = [
             [
                 *router.urls,
                 *oidc_urls,
+                path("entitlements/", EntitlementView.as_view(), name="api-entitlements"),
                 path("config/", ConfigView.as_view(), name="api-config"),
                 re_path(
                     r"^operators/(?P<operator_id>[0-9a-z-]*)/",
