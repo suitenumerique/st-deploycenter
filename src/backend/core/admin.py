@@ -1,5 +1,6 @@
 """Admin classes and registrations for core app."""
 
+import secrets
 from django import forms
 from django.conf import settings
 from django.contrib import admin, messages
@@ -355,6 +356,7 @@ class ServiceAdmin(admin.ModelAdmin):
     """Admin class for the Service model"""
 
     form = ServiceForm
+    change_form_template = "admin/core/service/change_form.html"
     list_display = ("name", "type", "url", "description", "is_active", "created_at")
     list_filter = ("is_active", "created_at")
     search_fields = ("name", "type", "description")
@@ -380,6 +382,31 @@ class ServiceAdmin(admin.ModelAdmin):
         (_("Configuration"), {"fields": ("config",)}),
         (_("Metadata"), {"fields": ("created_at", "updated_at", "api_key")}),
     )
+
+    def response_change(self, request, obj):
+        """Handle the response after a change has been posted."""
+        # Check if the "Generate API Key" button was clicked
+        if "_generate_api_key" in request.POST:
+            # Generate a secure 64-character random string
+            # Using token_hex(32) generates exactly 64 hex characters (32 bytes * 2)
+            api_key = secrets.token_hex(32)
+            
+            # Save the API key (overwrites any existing key)
+            obj.api_key = api_key
+            obj.save(update_fields=["api_key"])
+            
+            messages.success(
+                request,
+                _("API key generated successfully: {}").format(api_key),
+            )
+            
+            # Redirect to the same page to show the updated API key
+            return HttpResponseRedirect(
+                reverse("admin:core_service_change", args=[obj.pk])
+            )
+        
+        # For normal form submissions, call the parent method
+        return super().response_change(request, obj)
 
 
 class OperatorFilter(admin.SimpleListFilter):

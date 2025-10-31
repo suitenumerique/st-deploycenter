@@ -29,12 +29,23 @@ class EntitlementView(APIView):
     Entitlement view.
     """
 
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.ServiceAuthenticationPermission]
     
     def get(self, request):
         """
         Get entitlements.
         """
+
+        # # Authentication.
+        # api_key_header = request.headers.get("X-Service-Auth")
+        # if not api_key_header:
+        #     raise drf.exceptions.AuthenticationFailed("API key is required.")
+
+        # api_key = api_key_header.split(" ")[1]
+
+        # service_auth = models.Service.objects.filter(api_key=api_key).first()
+        # if not service_auth:
+        #     raise drf.exceptions.AuthenticationFailed("Invalid API key.")
 
         serializer = EntitlementViewSerializer(data=request.query_params)
         serializer.is_valid(raise_exception=True)
