@@ -116,3 +116,31 @@ class ParentOrganizationAccessPermission(permissions.BasePermission):
             request, view.kwargs["organization_id"]
         )
         return has_role
+
+class ServiceAuthenticationPermission(permissions.BasePermission):
+    """
+    Allows access only to authenticated users with a service authentication.
+    """
+
+    def has_permission(self, request, view):
+
+        api_key_header = request.headers.get("X-Service-Auth")
+        if not api_key_header:
+            return False
+
+        api_key = api_key_header.split(" ")[1]
+
+        # Check if the API key is valid.
+        service_auth = models.Service.objects.filter(api_key=api_key).first()
+        if not service_auth:
+            return False
+
+        # Check if the service match.
+        target_service = models.Service.objects.filter(id=request.query_params.get("service_id")).first()
+        if not target_service:
+            return False
+
+        if target_service != service_auth:
+            return False
+
+        return True
