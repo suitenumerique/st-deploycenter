@@ -359,7 +359,7 @@ class ServiceAdmin(admin.ModelAdmin):
     list_filter = ("is_active", "created_at")
     search_fields = ("name", "type", "description")
     ordering = ("name", "type", "url")
-    readonly_fields = ("id", "created_at", "updated_at")
+    readonly_fields = ("id", "created_at", "updated_at", "api_key")
 
     fieldsets = (
         (
@@ -378,7 +378,7 @@ class ServiceAdmin(admin.ModelAdmin):
         ),
         (_("Logo"), {"fields": ("logo_svg_file",)}),
         (_("Configuration"), {"fields": ("config",)}),
-        (_("Metadata"), {"fields": ("created_at", "updated_at")}),
+        (_("Metadata"), {"fields": ("created_at", "updated_at", "api_key")}),
     )
 
 
