@@ -55,7 +55,7 @@ class ServiceForm(forms.ModelForm):
 
 
 class BulkSiretImportForm(forms.ModelForm):
-    """Form for bulk importing SIRETs to create OperatorOrganizationRole entries."""
+    """Form for bulk importing SIRETs or SIRENs to create OperatorOrganizationRole entries."""
 
     siret_list = forms.CharField(
         widget=forms.Textarea(
@@ -63,13 +63,13 @@ class BulkSiretImportForm(forms.ModelForm):
                 "rows": 15,
                 "cols": 50,
                 "placeholder": _(
-                    "Enter one SIRET per line:\n12345678901234\n98765432109876\n..."
+                    "Enter one SIRET (14 digits) or SIREN (9 digits) per line:\n12345678901234\n987654321\n..."
                 ),
             }
         ),
-        label=_("SIRET List"),
+        label=_("SIRET/SIREN List"),
         help_text=_(
-            "Enter one SIRET per line. Only 14-digit SIRET codes will be processed."
+            "Enter one SIRET (14 digits) or SIREN (9 digits) per line. Both formats are accepted."
         ),
     )
 
@@ -93,38 +93,43 @@ class BulkSiretImportForm(forms.ModelForm):
         self.fields["role"].initial = "admin"
 
     def clean_siret_list(self):
-        """Clean and validate the SIRET list."""
+        """Clean and validate the SIRET/SIREN list."""
         siret_list = self.cleaned_data.get("siret_list", "")
         if not siret_list.strip():
-            raise forms.ValidationError(_("Please enter at least one SIRET."))
+            raise forms.ValidationError(_("Please enter at least one SIRET or SIREN."))
 
         # Split by lines and clean
         siret_lines = [line.strip() for line in siret_list.split("\n") if line.strip()]
 
         if not siret_lines:
-            raise forms.ValidationError(_("Please enter at least one valid SIRET."))
-
-        # Validate SIRET format (14 digits)
-        valid_sirets = []
-        invalid_sirets = []
-
-        for siret in siret_lines:
-            # Remove any spaces or dashes
-            clean_siret = siret.replace(" ", "").replace("-", "")
-            if clean_siret.isdigit() and len(clean_siret) == 14:
-                valid_sirets.append(clean_siret)
-            else:
-                invalid_sirets.append(siret)
-
-        if invalid_sirets:
             raise forms.ValidationError(
-                _("Invalid SIRET format: {}. SIRETs must be exactly 14 digits.").format(
-                    ", ".join(invalid_sirets[:5])
-                    + ("..." if len(invalid_sirets) > 5 else "")
+                _("Please enter at least one valid SIRET or SIREN.")
+            )
+
+        # Validate SIRET (14 digits) or SIREN (9 digits) format
+        valid_codes = []
+        invalid_codes = []
+
+        for code in siret_lines:
+            # Remove any spaces or dashes
+            clean_code = code.replace(" ", "").replace("-", "")
+            if clean_code.isdigit() and len(clean_code) in (9, 14):
+                valid_codes.append(clean_code)
+            else:
+                invalid_codes.append(code)
+
+        if invalid_codes:
+            raise forms.ValidationError(
+                _(
+                    "Invalid format: {}. SIRETs must be exactly 14 digits, "
+                    "SIRENs must be exactly 9 digits."
+                ).format(
+                    ", ".join(invalid_codes[:5])
+                    + ("..." if len(invalid_codes) > 5 else "")
                 )
             )
 
-        return valid_sirets
+        return valid_codes
 
 
 class OperatorUsersInline(admin.TabularInline):
@@ -511,15 +516,50 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
                 role = form.cleaned_data["role"]
                 siret_list = form.cleaned_data["siret_list"]
 
-                # Process SIRETs
+                # Process SIRETs and SIRENs
                 created_count = 0
-                not_found_sirets = []
+                not_found_codes = []
                 already_exists_count = 0
 
                 with transaction.atomic():
-                    for siret in siret_list:
-                        try:
-                            organization = models.Organization.objects.get(siret=siret)
+                    for code in siret_list:
+                        # Determine if it's a SIRET (14 digits) or SIREN (9 digits)
+                        is_siren = len(code) == 9
+
+                        if is_siren:
+                            # Look up by SIREN (may match multiple organizations)
+                            organizations = models.Organization.objects.filter(
+                                siren=code
+                            )
+                            if not organizations.exists():
+                                not_found_codes.append(code)
+                                continue
+
+                            # Create relationships for all organizations with this SIREN
+                            for organization in organizations:
+                                # Check if the relationship already exists
+                                if models.OperatorOrganizationRole.objects.filter(
+                                    operator=operator, organization=organization
+                                ).exists():
+                                    already_exists_count += 1
+                                    continue
+
+                                # Create the relationship
+                                models.OperatorOrganizationRole.objects.create(
+                                    operator=operator,
+                                    organization=organization,
+                                    role=role,
+                                )
+                                created_count += 1
+                        else:
+                            try:
+                                # Look up by SIRET (exact match, one organization)
+                                organization = models.Organization.objects.get(
+                                    siret=code
+                                )
+                            except models.Organization.DoesNotExist:
+                                not_found_codes.append(code)
+                                continue
 
                             # Check if the relationship already exists
                             if models.OperatorOrganizationRole.objects.filter(
@@ -534,9 +574,6 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
                             )
                             created_count += 1
 
-                        except models.Organization.DoesNotExist:
-                            not_found_sirets.append(siret)
-
                 # Show success message with detailed results
                 message_parts = [
                     _("Bulk import completed:"),
@@ -544,21 +581,21 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
                     _("{already_exists} already existed").format(
                         already_exists=already_exists_count
                     ),
-                    _("{not_found} not found").format(not_found=len(not_found_sirets)),
+                    _("{not_found} not found").format(not_found=len(not_found_codes)),
                 ]
 
-                if not_found_sirets:
+                if not_found_codes:
                     message_parts.append(
-                        _("SIRETs not found: {sirets}").format(
-                            sirets=", ".join(not_found_sirets[:10])
-                            + ("..." if len(not_found_sirets) > 10 else "")
+                        _("Codes not found: {codes}").format(
+                            codes=", ".join(not_found_codes[:10])
+                            + ("..." if len(not_found_codes) > 10 else "")
                         )
                     )
 
                 # Store results in session for results page
                 request.session["bulk_import_results"] = {
                     "created_count": created_count,
-                    "not_found_sirets": not_found_sirets,
+                    "not_found_codes": not_found_codes,
                     "already_exists_count": already_exists_count,
                     "operator_name": operator.name,
                     "role": role,
@@ -574,7 +611,7 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
                     ).format(
                         created=created_count,
                         already_exists=already_exists_count,
-                        not_found=len(not_found_sirets),
+                        not_found=len(not_found_codes),
                     ),
                 )
 
@@ -585,7 +622,9 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
             form = BulkSiretImportForm()
 
         # Use Django's native admin add_view method with custom form
-        return self.add_view(request, extra_context={"title": _("Bulk Import SIRETs")})
+        return self.add_view(
+            request, extra_context={"title": _("Bulk Import SIRETs/SIRENs")}
+        )
 
     def bulk_import_results_view(self, request):
         """View for displaying bulk import results."""

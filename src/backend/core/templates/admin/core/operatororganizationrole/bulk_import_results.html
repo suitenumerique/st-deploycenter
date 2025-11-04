@@ -27,7 +27,7 @@
             <td>{{ results.role|capfirst }}</td>
         </tr>
         <tr>
-            <th>{% trans 'Total SIRETs processed' %}:</th>
+            <th>{% trans 'Total codes processed' %}:</th>
             <td>{{ results.total_processed }}</td>
         </tr>
         <tr>
@@ -40,27 +40,27 @@
         </tr>
         <tr>
             <th>{% trans 'Not found in database' %}:</th>
-            <td><strong style="color: red;">{{ results.not_found_sirets|length }}</strong></td>
+            <td><strong style="color: red;">{{ results.not_found_codes|length }}</strong></td>
         </tr>
     </table>
 </div>
 
-{% if results.not_found_sirets %}
+{% if results.not_found_codes %}
 <div class="not-found-sirets">
-    <h2>{% trans 'SIRETs Not Found in Organization Database' %}</h2>
-    <p>{% trans 'The following SIRETs were not found in the Organization database and could not be processed:' %}</p>
+    <h2>{% trans 'Codes Not Found in Organization Database' %}</h2>
+    <p>{% trans 'The following SIRETs or SIRENs were not found in the Organization database and could not be processed:' %}</p>
     
     <div class="siret-list">
-        <textarea readonly rows="10" cols="20" style="font-family: monospace; font-size: 12px;">{% for siret in results.not_found_sirets %}{{ siret }}
+        <textarea readonly rows="10" cols="20" style="font-family: monospace; font-size: 12px;">{% for code in results.not_found_codes %}{{ code }}
 {% endfor %}</textarea>
     </div>
     
-    <p><strong>{% trans 'Note' %}:</strong> {% trans 'These SIRETs may need to be added to the Organization database first, or they may be invalid.' %}</p>
+    <p><strong>{% trans 'Note' %}:</strong> {% trans 'These codes may need to be added to the Organization database first, or they may be invalid.' %}</p>
 </div>
 {% endif %}
 
 <div class="actions">
-    <a href="{% url 'admin:core_operatororganizationrole_bulk_import' %}" class="button">{% trans 'Import More SIRETs' %}</a>
+    <a href="{% url 'admin:core_operatororganizationrole_bulk_import' %}" class="button">{% trans 'Import More SIRETs/SIRENs' %}</a>
     <a href="{% url 'admin:core_operatororganizationrole_changelist' %}" class="button">{% trans 'View All Operator Organization Roles' %}</a>
 </div>
 
