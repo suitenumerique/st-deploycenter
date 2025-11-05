@@ -167,3 +167,13 @@ class MetricFactory(factory.django.DjangoModelFactory):
     service = factory.SubFactory(ServiceFactory)
     organization = factory.SubFactory(OrganizationFactory)
     timestamp = factory.Faker("date_time_this_year")
+
+
+class EntitlementFactory(factory.django.DjangoModelFactory):
+    """Factory for Entitlement model."""
+
+    class Meta:
+        model = models.Entitlement
+
+    service_subscription = factory.SubFactory(ServiceSubscriptionFactory)
+    type = models.Entitlement.EntitlementType.DRIVE_STORAGE

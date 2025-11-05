@@ -838,7 +838,12 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
 
     list_display = ("organization", "operator", "service", "created_at")
     list_filter = ("organization__operator_roles__operator", "created_at")
-    search_fields = ("organization__name", "service__name", "service__type")
+    search_fields = (
+        "organization__name",
+        "service__name",
+        "service__type",
+        "operator__name",
+    )
     ordering = ("organization__name", "service__name")
     readonly_fields = ("id", "created_at", "updated_at")
 
@@ -868,3 +873,26 @@ class MetricAdmin(admin.ModelAdmin):
         (_("Relationships"), {"fields": ("service", "organization")}),
         (_("Metadata"), {"fields": ("timestamp",)}),
     )
+
+
+@admin.register(models.Entitlement)
+class EntitlementAdmin(admin.ModelAdmin):
+    """Admin class for the Entitlement model"""
+
+    list_display = ("service_subscription", "type", "account_type", "account_id")
+    list_filter = ("type", "account_type", "created_at")
+    search_fields = (
+        "service_subscription__organization__name",
+        "type",
+        "account_type",
+        "account_id",
+    )
+    ordering = (
+        "service_subscription__organization__name",
+        "type",
+        "account_type",
+        "account_id",
+    )
+    readonly_fields = ("id", "created_at", "updated_at")
+
+    autocomplete_fields = ["service_subscription"]
