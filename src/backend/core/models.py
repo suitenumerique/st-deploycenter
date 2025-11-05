@@ -653,6 +653,14 @@ class Service(BaseModel):
         help_text=_("Operators with a configuration for this service"),
     )
 
+    api_key = models.CharField(
+        _("API key"),
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text=_("API key for the service"),
+    )
+
     class Meta:
         db_table = "deploycenter_service"
         verbose_name = _("service")
@@ -721,7 +729,7 @@ class ServiceSubscription(BaseModel):
         indexes = []
 
     def __str__(self):
-        return f"{self.organization.name} → {self.service.name}"
+        return f"{self.operator.name} → {self.organization.name} → {self.service.name}"
 
 
 class Metric(models.Model):
