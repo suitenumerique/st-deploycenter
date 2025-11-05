@@ -1,5 +1,6 @@
 """Permission handlers for the deploycenter core app."""
 
+import secrets
 from django.core import exceptions
 
 from rest_framework import permissions
@@ -116,3 +117,35 @@ class ParentOrganizationAccessPermission(permissions.BasePermission):
             request, view.kwargs["organization_id"]
         )
         return has_role
+
+
+class ServiceAuthenticationPermission(permissions.BasePermission):
+    """
+    Allows access only to authenticated users with a service authentication.
+    """
+
+    def has_permission(self, request, view):
+        api_key_header = request.headers.get("X-Service-Auth")
+        if not api_key_header:
+            return False
+
+        api_key = api_key_header.split(" ")[1]
+
+        # Check if the API key is valid.
+        service_auth = models.Service.objects.filter(api_key=api_key).first()
+        if not service_auth:
+            return False
+
+        # Check if the service matches.
+        target_service = models.Service.objects.filter(
+            id=request.query_params.get("service_id")
+        ).first()
+        if not target_service:
+            return False
+
+        # Check if the API key is valid.
+        service_api_key = target_service.config.get("entitlements_api_key", "")
+        if not secrets.compare_digest(service_api_key, api_key):
+            return False
+
+        return True
