@@ -767,19 +767,46 @@ class Metric(models.Model):
         help_text=_("Organization this metric is associated with"),
     )
 
+    account_type = models.CharField(
+        _("account type"),
+        max_length=50,
+        help_text=_("Type of account"),
+        default="",
+        blank=True,
+    )
+
+    account_id = models.CharField(
+        _("account ID"),
+        max_length=255,
+        help_text=_("ID of the account"),
+        default="",
+        blank=True,
+    )
+
     class Meta:
         db_table = "deploycenter_metric"
         verbose_name = _("metric")
         verbose_name_plural = _("metrics")
         ordering = ["-timestamp", "key"]
-        unique_together = [["service", "organization", "key"]]
         indexes = [
             models.Index(fields=["timestamp"]),
             models.Index(fields=["key"]),
             models.Index(fields=["service"]),
             models.Index(fields=["organization"]),
+            models.Index(fields=["account_type"]),
+            models.Index(fields=["account_id"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["service", "organization", "account_type", "account_id", "key"],
+                name="unique_metric_with_account_id",
+            ),
         ]
 
     def __str__(self):
         org_name = self.organization.name if self.organization else "Unknown"
-        return f"{self.key}: {self.value} for {self.service.name} - {org_name}"
+        account_info = ""
+        if self.account_type and self.account_id:
+            account_info = f" with account ({self.account_type},{self.account_id})"
+        return f"{self.key}: {self.value} for {self.service.name} - {org_name}{account_info}"
+
