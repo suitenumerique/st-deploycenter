@@ -832,3 +832,71 @@ class Metric(models.Model):
             account_info = f" with account ({self.account_type},{self.account_id})"
         return f"{self.key}: {self.value} for {self.service.name} - {org_name}{account_info}"
 
+
+class Entitlement(BaseModel):
+    """
+    Entitlement model representing a entitlement for a service subscription.
+    An entitlement is a way to constraints some service usage for an account.
+    For example, a drive storage entitlement can be used to limit the storage
+    space available to an account.
+    """
+
+    class EntitlementType(models.TextChoices):
+        """
+        Types of entitlements.
+        """
+
+        DRIVE_STORAGE = "drive_storage"
+
+    service_subscription = models.ForeignKey(
+        ServiceSubscription,
+        on_delete=models.CASCADE,
+        related_name="entitlements",
+        verbose_name=_("service subscription"),
+        help_text=_("Service subscription this entitlement is associated with"),
+    )
+
+    type = models.CharField(
+        _("type"),
+        max_length=50,
+        choices=EntitlementType.choices,
+        help_text=_("Type of entitlement"),
+    )
+
+    config = models.JSONField(
+        _("configuration"),
+        default=dict,
+        blank=True,
+        null=True,
+        help_text=_(
+            "Base configuration data for metrics scraping and service operation"
+        ),
+    )
+
+    account_type = models.CharField(
+        _("account type"),
+        max_length=50,
+        help_text=_("Type of account"),
+        default="",
+        blank=True,
+    )
+
+    account_id = models.CharField(
+        _("account ID"),
+        max_length=255,
+        help_text=_("ID of the account"),
+        default="",
+        blank=True,
+    )
+
+    class Meta:
+        db_table = "deploycenter_entitlement"
+        verbose_name = _("entitlement")
+        verbose_name_plural = _("entitlements")
+        unique_together = ["service_subscription", "type", "account_type", "account_id"]
+        indexes = [
+            models.Index(fields=["service_subscription"]),
+        ]
+
+    def __str__(self):
+        return f"{self.service_subscription.organization.name} - {self.type} - {self.account_type} - {self.account_id}"
