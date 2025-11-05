@@ -10,6 +10,7 @@ import json
 import logging
 import time
 from typing import Any, Dict, List
+from urllib.parse import urlencode
 
 from django.utils import timezone
 
@@ -123,6 +124,46 @@ def scrape_service_metrics(service_id: int):
     except (requests.RequestException, ValueError, KeyError) as e:
         logger.error("Error scraping metrics for service %s: %s", service_id, str(e))
         return {"status": "error", "message": str(e)}
+
+
+def scrape_service_usage_metrics(
+    service: Service, filters: Dict[str, Any] = None
+) -> List[Dict[str, Any]]:
+    """
+    Scrape usage metrics for a specific service (Celery task).
+    """
+    if filters is None:
+        filters = {}
+    metrics_data = fetch_usage_metrics_from_service(service, filters)
+    if metrics_data:
+        store_service_usage_metrics(service, metrics_data)
+
+
+def fetch_usage_metrics_from_service(
+    service: Service, filters: Dict[str, Any] = None
+) -> List[Dict[str, Any]]:
+    """
+    Fetch usage metrics from a service's usage metrics endpoint.
+
+    Args:
+        service: Service to fetch usage metrics from
+        filters: Filters to apply to the usage metrics
+    Returns:
+        List of usage metrics data dictionaries
+    """
+    if filters is None:
+        filters = {}
+    logger.info("Fetching usage metrics from service: %s", service.name)
+    usage_metrics_endpoint = service.config.get("usage_metrics_endpoint")
+    if not usage_metrics_endpoint:
+        logger.error(
+            "No usage metrics endpoint configured for service %s", service.name
+        )
+        return []
+
+    usage_metrics_endpoint = usage_metrics_endpoint + "?" + urlencode(filters)
+
+    return fetch_metrics_from_endpoint(service, usage_metrics_endpoint)
 
 
 def fetch_metrics_from_service(service: Service) -> List[Dict[str, Any]]:
@@ -348,6 +389,94 @@ def map_csv_row(row: Dict[str, str], csv_mapping: Dict[str, str]) -> Dict[str, A
     return mapped_row
 
 
+def store_service_usage_metrics(
+    service: Service, metrics_data: List[Dict[str, Any]]
+) -> int:
+    """
+    Store usage metrics data for a service.
+
+    Args:
+        service: Service to store usage metrics for
+        organization: Organization to store usage metrics for
+        metrics_data: List of usage metrics data dictionaries
+    """
+    logger.info("Storing usage metrics for service %s", service.name)
+    metrics_to_create = {}
+    timestamp = timezone.now()
+
+    for item in metrics_data:
+        try:
+            # Extract account information
+            account = item.get("account", {})
+            if not account:
+                logger.warning("No account found in item: %s", item)
+                continue
+
+            account_type = account.get("type")
+            account_id = account.get("id")
+            if not account_type or account_id is None:
+                logger.warning("No account type or account id found in item: %s", item)
+                continue
+
+            account_siret = account.get("siret")
+            if not account_siret:
+                logger.warning("No siret found in account: %s", account)
+                continue
+
+            organization = Organization.objects.filter(siret=account_siret).first()
+            if not organization:
+                logger.warning("Organization not found for siret: %s", account_siret)
+                continue
+
+            # Extract metrics
+            metrics = item.get("metrics", {})
+            if not metrics:
+                logger.warning("No metrics found in item: %s", item)
+                continue
+
+            # Process each metric type
+            for metric_name, value in metrics.items():
+                if value is None:
+                    continue
+
+                metrics_to_create[
+                    (service.id, organization.id, account_type, account_id, metric_name)
+                ] = Metric(
+                    key=metric_name,
+                    value=value,
+                    service=service,
+                    organization=organization,
+                    account_type=account_type,
+                    account_id=account_id,
+                    timestamp=timestamp,
+                )
+
+        except (ValueError, KeyError, TypeError) as e:
+            logger.error("Error processing metrics for %s: %s", item, str(e))
+            continue
+
+    # Bulk operations
+    metrics_stored = 0
+    if metrics_to_create:
+        Metric.objects.bulk_create(
+            metrics_to_create.values(),
+            batch_size=1000,
+            update_conflicts=True,
+            update_fields=["value", "timestamp"],
+            unique_fields=[
+                "service",
+                "organization",
+                "account_type",
+                "account_id",
+                "key",
+            ],
+        )
+        metrics_stored += len(metrics_to_create)
+        logger.info("Bulk created %d new metrics", len(metrics_to_create))
+
+    return metrics_stored
+
+
 def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) -> int:
     """
     Store metrics data for a service.
@@ -446,7 +575,13 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
             batch_size=1000,
             update_conflicts=True,
             update_fields=["value", "timestamp"],
-            unique_fields=["service", "organization", "key"],
+            unique_fields=[
+                "service",
+                "organization",
+                "account_type",
+                "account_id",
+                "key",
+            ],
         )
         metrics_stored += len(metrics_to_create)
         logger.info("Bulk created %d new metrics", len(metrics_to_create))
