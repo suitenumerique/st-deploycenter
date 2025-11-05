@@ -10,6 +10,7 @@ import json
 import logging
 import time
 from typing import Any, Dict, List
+from urllib.parse import urlencode
 
 from django.utils import timezone
 
@@ -125,6 +126,44 @@ def scrape_service_metrics(service_id: int):
         return {"status": "error", "message": str(e)}
 
 
+def scrape_service_usage_metrics(
+    service: Service, filters: Dict[str, Any] = None
+):
+    """
+    Scrape usage metrics for a specific service (Celery task).
+    """
+    if filters is None:
+        filters = {}
+    metrics_data = fetch_usage_metrics_from_service(service, filters)
+    if metrics_data:
+        store_service_metrics(service, metrics_data)
+
+
+def fetch_usage_metrics_from_service(
+    service: Service, filters: Dict[str, Any] = None
+) -> List[Dict[str, Any]]:
+    """
+    Fetch usage metrics from a service's usage metrics endpoint.
+
+    Args:
+        service: Service to fetch usage metrics from
+        filters: Filters to apply to the usage metrics
+    Returns:
+        List of usage metrics data dictionaries
+    """
+    if filters is None:
+        filters = {}
+    logger.info("Fetching usage metrics from service: %s", service.name)
+    usage_metrics_endpoint = service.config.get("usage_metrics_endpoint")
+    if not usage_metrics_endpoint:
+        logger.error(
+            "No usage metrics endpoint configured for service %s", service.name
+        )
+        return []
+
+    return fetch_metrics_from_endpoint(service, usage_metrics_endpoint, filters)
+
+
 def fetch_metrics_from_service(service: Service) -> List[Dict[str, Any]]:
     """
     Fetch metrics from a service's metrics endpoint or CSV file.
@@ -152,7 +191,7 @@ def fetch_metrics_from_service(service: Service) -> List[Dict[str, Any]]:
 
 
 def fetch_metrics_from_endpoint(
-    service: Service, metrics_endpoint: str
+    service: Service, metrics_endpoint: str, filters: Dict[str, Any] = None
 ) -> List[Dict[str, Any]]:
     """
     Fetch metrics from a service's metrics endpoint with pagination support.
@@ -166,11 +205,21 @@ def fetch_metrics_from_endpoint(
     """
     logger.info("Fetching metrics from endpoint: %s", metrics_endpoint)
 
+    if filters is None:
+        filters = {}
+
+
+    query_string = urlencode(filters) if filters else ""
+    if query_string:
+        separator = "&" if "?" in metrics_endpoint else "?"
+        metrics_endpoint = f"{metrics_endpoint}{separator}{query_string}"        
+
     # Get authentication token from service config
     auth_token = service.config.get("metrics_auth_token")
     headers = {}
     if auth_token:
-        headers["Authorization"] = f"Bearer {auth_token}"
+        token_type = service.config.get("metrics_auth_token_type", "Bearer")
+        headers["Authorization"] = f"{token_type} {auth_token}"
 
     all_metrics = []
     offset = 0
@@ -414,6 +463,15 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
                 )
                 continue
 
+            logger.info("Organization found: %s", organization)
+
+            account = item.get("account", {})
+            account_type = ""
+            account_id = ""
+            if account:
+                account_type = account.get("type") or ""
+                account_id = account.get("id") or ""
+
             # Extract metrics
             metrics = item.get("metrics", {})
             if not metrics:
@@ -425,11 +483,13 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
                 if value is None:
                     continue
 
-                metrics_to_create[(service.id, organization.id, metric_name)] = Metric(
+                metrics_to_create[(service.id, organization.id, account_type, account_id, metric_name)] = Metric(
                     key=metric_name,
                     value=value,
                     service=service,
                     organization=organization,
+                    account_type=account_type,
+                    account_id=account_id,
                     timestamp=timestamp,
                 )
 
@@ -446,7 +506,13 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
             batch_size=1000,
             update_conflicts=True,
             update_fields=["value", "timestamp"],
-            unique_fields=["service", "organization", "key"],
+            unique_fields=[
+                "service",
+                "organization",
+                "account_type",
+                "account_id",
+                "key",
+            ],
         )
         metrics_stored += len(metrics_to_create)
         logger.info("Bulk created %d new metrics", len(metrics_to_create))
