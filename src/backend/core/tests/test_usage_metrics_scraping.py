@@ -19,7 +19,7 @@ from core.tasks.metrics import (
     fetch_metrics_from_service,
     fetch_usage_metrics_from_service,
     store_service_metrics,
-    store_service_usage_metrics,
+    store_service_metrics,
 )
 
 
@@ -62,10 +62,10 @@ class MockMetricsServer(BaseHTTPRequestHandler):
                 total_count = 1
                 metrics.append(
                     {
+                        "siret": "12345678900",
                         "account": {
                             "type": account_type,
                             "id": account_id,
-                            "siret": "12345678900",
                         },
                         "metrics": {"storage_used": 2147483648},
                     }
@@ -80,10 +80,10 @@ class MockMetricsServer(BaseHTTPRequestHandler):
                     # Generate realistic metric values
                     metrics.append(
                         {
+                            "siret": "12345678900",
                             "account": {
                                 "type": "user",
                                 "id": org_idx,
-                                "siret": "12345678900",
                             },
                             "metrics": {"storage_used": 214748364 * (org_idx + 1)},
                         }
@@ -187,10 +187,10 @@ def test_fetch_usage_metrics_from_service_with_filters(
 
     assert metrics_data == [
         {
+            "siret": "12345678900",
             "account": {
                 "type": "user",
                 "id": "xyz",
-                "siret": "12345678900",
             },
             "metrics": {"storage_used": 2147483648},
         }
@@ -198,7 +198,7 @@ def test_fetch_usage_metrics_from_service_with_filters(
 
 
 @pytest.mark.django_db
-def test_store_service_usage_metrics(
+def test_store_service_metrics(
     mock_metrics_server, test_service, test_organizations
 ):
     """Test storing fetched metrics in the database."""
@@ -207,7 +207,7 @@ def test_store_service_usage_metrics(
     assert len(metrics_data) == 40
 
     # Store metrics
-    metrics_stored = store_service_usage_metrics(test_service, metrics_data)
+    metrics_stored = store_service_metrics(test_service, metrics_data)
 
     # Verify metrics were stored (40 account * 1 metric = 40 metrics)
     assert metrics_stored == 40
@@ -253,10 +253,10 @@ def test_metrics_storage_with_existing_data(
     # First, store some metrics
     initial_metrics = [
         {
+            "siret": "12345678900",
             "account": {
                 "type": "user",
                 "id": "xyz",
-                "siret": "12345678900",
             },
             "metrics": {
                 "storage_used": 1000,
@@ -264,7 +264,7 @@ def test_metrics_storage_with_existing_data(
         }
     ]
 
-    initial_stored = store_service_usage_metrics(test_service, initial_metrics)
+    initial_stored = store_service_metrics(test_service, initial_metrics)
     assert initial_stored == 1
 
     # Verify initial metrics exist
@@ -280,10 +280,10 @@ def test_metrics_storage_with_existing_data(
     # Now store the same metrics again (should update existing)
     updated_metrics = [
         {
+            "siret": "12345678900",
             "account": {
                 "type": "user",
                 "id": "xyz",
-                "siret": "12345678900",
             },
             "metrics": {
                 "storage_used": 2000,
@@ -291,7 +291,7 @@ def test_metrics_storage_with_existing_data(
         }
     ]
 
-    updated_stored = store_service_usage_metrics(test_service, updated_metrics)
+    updated_stored = store_service_metrics(test_service, updated_metrics)
     assert updated_stored == 1
 
     # Check that the metrics were updated, not duplicated
@@ -314,10 +314,10 @@ def test_metrics_storage_with_existing_non_usage_metrics_data(
     # First, store some metrics
     initial_metrics = [
         {
+            "siret": "12345678900",
             "account": {
                 "type": "user",
                 "id": "xyz",
-                "siret": "12345678900",
             },
             "metrics": {
                 "storage_used": 1000,
@@ -325,7 +325,7 @@ def test_metrics_storage_with_existing_non_usage_metrics_data(
         }
     ]
 
-    initial_stored = store_service_usage_metrics(test_service, initial_metrics)
+    initial_stored = store_service_metrics(test_service, initial_metrics)
     assert initial_stored == 1
 
     # Verify initial metrics exist
@@ -366,17 +366,17 @@ def test_metrics_storage_with_existing_non_usage_metrics_data(
     # Now store usage metrics again.
     updated_metrics = [
         {
+            "siret": "12345678900",
             "account": {
                 "type": "user",
                 "id": "xyz",
-                "siret": "12345678900",
             },
             "metrics": {
                 "storage_used": 3000,
             },
         }
     ]
-    initial_stored = store_service_usage_metrics(test_service, updated_metrics)
+    initial_stored = store_service_metrics(test_service, updated_metrics)
     assert initial_stored == 1
 
     # Check that the usage metrics does not override the normal metrics
