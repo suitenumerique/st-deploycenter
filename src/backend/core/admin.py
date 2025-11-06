@@ -382,7 +382,7 @@ class ServiceAdmin(admin.ModelAdmin):
     list_filter = ("is_active", "created_at")
     search_fields = ("name", "type", "description")
     ordering = ("name", "type", "url")
-    readonly_fields = ("id", "created_at", "updated_at", "api_key")
+    readonly_fields = ("id", "created_at", "updated_at", "entitlements_api_key_display")
 
     fieldsets = (
         (
@@ -401,8 +401,16 @@ class ServiceAdmin(admin.ModelAdmin):
         ),
         (_("Logo"), {"fields": ("logo_svg_file",)}),
         (_("Configuration"), {"fields": ("config",)}),
-        (_("Metadata"), {"fields": ("created_at", "updated_at", "api_key")}),
+        (_("Metadata"), {"fields": ("created_at", "updated_at", "entitlements_api_key_display")}),
     )
+
+    def entitlements_api_key_display(self, obj):
+        """Display the API key from config."""
+        if obj.config and "entitlements_api_key" in obj.config:
+            return obj.config["entitlements_api_key"]
+        return _("No API key set")
+
+    entitlements_api_key_display.short_description = _("API key")
 
     def response_change(self, request, obj):
         """Handle the response after a change has been posted."""
@@ -412,9 +420,13 @@ class ServiceAdmin(admin.ModelAdmin):
             # Using token_hex(32) generates exactly 64 hex characters (32 bytes * 2)
             api_key = secrets.token_hex(32)
 
-            # Save the API key (overwrites any existing key)
-            obj.api_key = api_key
-            obj.save(update_fields=["api_key"])
+            # Ensure config dict exists
+            if obj.config is None:
+                obj.config = {}
+
+            # Save the API key to config (overwrites any existing key)
+            obj.config["entitlements_api_key"] = api_key
+            obj.save(update_fields=["config"])
 
             messages.success(
                 request,

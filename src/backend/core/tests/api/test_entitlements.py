@@ -157,8 +157,8 @@ def test_api_entitlements_list_no_subscription(webhook_server):
     metrics_usage_endpoint = f"http://localhost:{port}/metrics/usage"
 
     service = factories.ServiceFactory(
-        api_key="test_token",
         config={
+            "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
             "metrics_auth_token": "test_token",
         },
@@ -204,10 +204,16 @@ def test_api_entitlements_list_service_token_mismatch(webhook_server):  # pylint
     )
 
     service = factories.ServiceFactory(
-        api_key="test_token",
+        config={
+            "entitlements_api_key": "test_token",
+        },
     )
 
-    factories.ServiceFactory(api_key="test_token2")
+    factories.ServiceFactory(
+        config={
+            "entitlements_api_key": "test_token2",
+        },
+    )
 
     # Test that we can upload to the drive
     response = client.get(
@@ -243,8 +249,8 @@ def test_api_entitlements_list(webhook_server):
     metrics_usage_endpoint = f"http://localhost:{port}/metrics/usage"
 
     service = factories.ServiceFactory(
-        api_key="test_token",
         config={
+            "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
             "metrics_auth_token": "test_token",
         },
@@ -368,8 +374,8 @@ def test_api_entitlements_list_usage_metrics_endpoint_not_reachable():
     metrics_usage_endpoint = f"http://localhost:{not_used_port}/metrics/usage"
 
     service = factories.ServiceFactory(
-        api_key="test_token",
         config={
+            "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
             "metrics_auth_token": "test_token",
         },
@@ -433,8 +439,8 @@ def test_api_entitlements_list_usage_metrics_endpoint_error(buggy_service_server
     metrics_usage_endpoint = f"http://localhost:{port}/metrics/usage"
 
     service = factories.ServiceFactory(
-        api_key="test_token",
         config={
+            "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
             "metrics_auth_token": "test_token",
         },

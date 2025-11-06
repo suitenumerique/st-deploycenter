@@ -131,11 +131,6 @@ class ServiceAuthenticationPermission(permissions.BasePermission):
 
         api_key = api_key_header.split(" ")[1]
 
-        # Check if the API key is valid.
-        service_auth = models.Service.objects.filter(api_key=api_key).first()
-        if not service_auth:
-            return False
-
         # Check if the service matches.
         target_service = models.Service.objects.filter(
             id=request.query_params.get("service_id")

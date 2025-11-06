@@ -654,14 +654,6 @@ class Service(BaseModel):
         help_text=_("Operators with a configuration for this service"),
     )
 
-    api_key = models.CharField(
-        _("API key"),
-        max_length=255,
-        blank=True,
-        null=True,
-        help_text=_("API key for the service"),
-    )
-
     class Meta:
         db_table = "deploycenter_service"
         verbose_name = _("service")
