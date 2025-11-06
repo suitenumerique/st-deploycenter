@@ -73,7 +73,8 @@ class MockServiceServer(BaseHTTPRequestHandler):
             "count": 1,
             "results": [
                 {
-                    "account": {"type": "user", "id": "xyz", "siret": "12345678900001"},
+                    "siret": "12345678900001",
+                    "account": {"type": "user", "id": "xyz", },
                     "metrics": {"storage_used": self.__class__.MOCK_STORAGE_USED},
                 }
             ],
