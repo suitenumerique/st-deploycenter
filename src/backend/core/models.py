@@ -835,8 +835,8 @@ class Metric(models.Model):
 
 class Entitlement(BaseModel):
     """
-    Entitlement model representing a entitlement for a service subscription.
-    An entitlement is a way to constraints some service usage for an account.
+    Entitlement model representing an entitlement for a service subscription.
+    An entitlement is a way to constrain some service usage for an account.
     For example, a drive storage entitlement can be used to limit the storage
     space available to an account.
     """
