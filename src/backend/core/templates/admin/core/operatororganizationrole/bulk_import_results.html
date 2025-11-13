@@ -48,7 +48,7 @@
 {% if results.not_found_codes %}
 <div class="not-found-sirets">
     <h2>{% trans 'Codes Not Found in Organization Database' %}</h2>
-    <p>{% trans 'The following SIRETs or SIRENs were not found in the Organization database and could not be processed:' %}</p>
+    <p>{% trans 'The following SIRETs, SIRENs, or INSEE codes were not found in the Organization database and could not be processed:' %}</p>
     
     <div class="siret-list">
         <textarea readonly rows="10" cols="20" style="font-family: monospace; font-size: 12px;">{% for code in results.not_found_codes %}{{ code }}
@@ -60,7 +60,7 @@
 {% endif %}
 
 <div class="actions">
-    <a href="{% url 'admin:core_operatororganizationrole_bulk_import' %}" class="button">{% trans 'Import More SIRETs/SIRENs' %}</a>
+    <a href="{% url 'admin:core_operatororganizationrole_bulk_import' %}" class="button">{% trans 'Import More SIRETs/SIRENs/INSEE' %}</a>
     <a href="{% url 'admin:core_operatororganizationrole_changelist' %}" class="button">{% trans 'View All Operator Organization Roles' %}</a>
 </div>
 

@@ -229,37 +229,26 @@ class Operator(BaseModel):
         # Other types don't influence the contribution.
         all_communes = Organization.objects.filter(operators=self, type="commune")
         all_epcis = Organization.objects.filter(operators=self, type="epci")
-        all_communes_in_epcis = all_communes.filter(
+        all_communes_in_epcis = Organization.objects.filter(type="commune").filter(
             epci_siren__in=all_epcis.values_list("siren", flat=True)
         )
 
-        communes_above_threshold = all_communes.filter(
-            population__gt=settings.OPERATOR_CONTRIBUTION_POPULATION_THRESHOLD
-        )
+        communes_in_scope = all_communes.union(all_communes_in_epcis)
 
-        communes_above_threshold_in_epcis = all_communes_in_epcis.filter(
-            population__gt=settings.OPERATOR_CONTRIBUTION_POPULATION_THRESHOLD
-        )
+        communes_in_scope_above_threshold = Organization.objects.filter(
+            type="commune", pk__in=communes_in_scope.values_list("pk", flat=True)
+        ).filter(population__gt=settings.OPERATOR_CONTRIBUTION_POPULATION_THRESHOLD)
 
         population_communes = (
-            communes_above_threshold.aggregate(
+            communes_in_scope_above_threshold.aggregate(
                 total_population=models.Sum("population")
             )["total_population"]
             or 0
         )
-
-        population_communes_in_epcis = (
-            communes_above_threshold_in_epcis.aggregate(
-                total_population=models.Sum("population")
-            )["total_population"]
-            or 0
-        )
-
-        total_population = population_communes + population_communes_in_epcis
 
         # Compute the financial contribution of the operator
         base_contribution = (
-            total_population * settings.OPERATOR_CONTRIBUTION_PER_POPULATION
+            population_communes * settings.OPERATOR_CONTRIBUTION_PER_POPULATION
         )
 
         # Ensure the contribution is not greater than the maximum base
@@ -269,18 +258,15 @@ class Operator(BaseModel):
             contribution = base_contribution
 
         # TODO: add usage-based contribution
-
         return {
             "base_contribution": base_contribution,
             "usage_contribution": {"2025-01": 0},
             "all_communes": all_communes.count(),
             "all_epcis": all_epcis.count(),
             "all_communes_in_epcis": all_communes_in_epcis.count(),
-            "communes": communes_above_threshold.count(),
-            "communes_in_epcis": communes_above_threshold_in_epcis.count(),
-            "population": total_population,
-            "population_in_communes": population_communes,
-            "population_in_epcis": population_communes_in_epcis,
+            "communes_in_scope": communes_in_scope.count(),
+            "communes_in_scope_above_threshold": communes_in_scope_above_threshold.count(),
+            "population": population_communes,
             "contribution": contribution,
         }
 
