@@ -32,7 +32,7 @@ class MetricModelTest(TestCase):
         self.assertIsNotNone(metric.id)
         self.assertIsInstance(metric.id, int)  # AutoField
 
-    def test_unique_constraint(self):
+    def test_unique_constraint_without_account(self):
         """Test that the unique constraint works correctly."""
         # Create first metric
         factories.MetricFactory(
@@ -51,6 +51,79 @@ class MetricModelTest(TestCase):
                 key="unique_metric",
                 value="200.00",
             )
+
+    def test_unique_constraint_with_account_type(self):
+        """Test that the unique constraint works correctly."""
+        # Create first metric
+        factories.MetricFactory(
+            organization=self.organization,
+            service=self.service,
+            key="unique_metric",
+            value="100.00",
+            account_type="user",
+        )
+
+        # Try to create another metric with same service, organization, and key
+        # This should fail due to unique constraint
+        with self.assertRaises(IntegrityError):
+            factories.MetricFactory(
+                organization=self.organization,
+                service=self.service,
+                key="unique_metric",
+                value="200.00",
+                account_type="user",
+            )
+
+    def test_unique_constraint_with_account_id(self):
+        """Test that the unique constraint works correctly."""
+        # Create first metric
+        factories.MetricFactory(
+            organization=self.organization,
+            service=self.service,
+            key="unique_metric",
+            value="100.00",
+            account_type="user",
+            account_id="user_123",
+        )
+
+        # Try to create another metric with same service, organization, and key
+        # This should fail due to unique constraint
+        with self.assertRaises(IntegrityError):
+            factories.MetricFactory(
+                organization=self.organization,
+                service=self.service,
+                key="unique_metric",
+                account_type="user",
+                account_id="user_123",
+            )
+
+    def test_unique_constraint_all_at_once(self):
+        """
+        Test that we can have the same key with different account types and ids.
+        """
+        factories.MetricFactory(
+            organization=self.organization,
+            service=self.service,
+            key="unique_metric",
+            value="100.00",
+        )
+
+        factories.MetricFactory(
+            organization=self.organization,
+            service=self.service,
+            key="unique_metric",
+            value="100.00",
+            account_type="user",
+        )
+
+        factories.MetricFactory(
+            organization=self.organization,
+            service=self.service,
+            key="unique_metric",
+            value="100.00",
+            account_type="user",
+            account_id="user_123",
+        )
 
     def test_different_service_allows_duplicate(self):
         """Test that different services allow duplicate metrics."""
