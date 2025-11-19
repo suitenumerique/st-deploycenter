@@ -565,6 +565,7 @@ class Development(Base):
         "http://localhost:8961",
         "http://localhost:8962",
         "http://localhost:3000",
+        "http://localhost:3001",
     ]
     DEBUG = True
 

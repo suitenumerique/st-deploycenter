@@ -115,6 +115,7 @@ class ParentOrganizationAccessPermission(permissions.BasePermission):
         has_role = user_has_role_in_organization(
             request, view.kwargs["organization_id"]
         )
+        print("has_role", has_role)
         return has_role
 
 

@@ -218,7 +218,8 @@ def fetch_metrics_from_endpoint(
     auth_token = service.config.get("metrics_auth_token")
     headers = {}
     if auth_token:
-        headers["Authorization"] = f"Bearer {auth_token}"
+        token_type = service.config.get("metrics_auth_token_type", "Bearer")
+        headers["Authorization"] = f"{token_type} {auth_token}"
 
     all_metrics = []
     offset = 0
@@ -461,6 +462,8 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
                     organization_identifiers,
                 )
                 continue
+
+            logger.info("Organization found: %s", organization)
 
             account = item.get("account", {})
             account_type = ""
