@@ -1,6 +1,8 @@
 # pylint: disable=line-too-long
 """Admin classes and registrations for core app."""
 
+import secrets
+
 from django import forms
 from django.conf import settings
 from django.contrib import admin, messages
@@ -375,11 +377,12 @@ class ServiceAdmin(admin.ModelAdmin):
     """Admin class for the Service model"""
 
     form = ServiceForm
+    change_form_template = "admin/core/service/change_form.html"
     list_display = ("name", "type", "url", "description", "is_active", "created_at")
     list_filter = ("is_active", "created_at")
     search_fields = ("name", "type", "description")
     ordering = ("name", "type", "url")
-    readonly_fields = ("id", "created_at", "updated_at")
+    readonly_fields = ("id", "created_at", "updated_at", "api_key_display")
 
     fieldsets = (
         (
@@ -398,8 +401,45 @@ class ServiceAdmin(admin.ModelAdmin):
         ),
         (_("Logo"), {"fields": ("logo_svg_file",)}),
         (_("Configuration"), {"fields": ("config",)}),
-        (_("Metadata"), {"fields": ("created_at", "updated_at")}),
+        (_("Metadata"), {"fields": ("created_at", "updated_at", "api_key_display")}),
     )
+
+    def api_key_display(self, obj):
+        """Display the API key from config."""
+        if obj.config and "api_key" in obj.config:
+            return obj.config["api_key"]
+        return _("No API key set")
+
+    api_key_display.short_description = _("API key")
+
+    def response_change(self, request, obj):
+        """Handle the response after a change has been posted."""
+        # Check if the "Generate API Key" button was clicked
+        if "_generate_api_key" in request.POST:
+            # Generate a secure 64-character random string
+            # Using token_hex(32) generates exactly 64 hex characters (32 bytes * 2)
+            api_key = secrets.token_hex(32)
+
+            # Ensure config dict exists
+            if obj.config is None:
+                obj.config = {}
+
+            # Save the API key to config (overwrites any existing key)
+            obj.config["api_key"] = api_key
+            obj.save(update_fields=["config"])
+
+            messages.success(
+                request,
+                _("API key generated successfully: {}").format(api_key),
+            )
+
+            # Redirect to the same page to show the updated API key
+            return HttpResponseRedirect(
+                reverse("admin:core_service_change", args=[obj.pk])
+            )
+
+        # For normal form submissions, call the parent method
+        return super().response_change(request, obj)
 
 
 class OperatorFilter(admin.SimpleListFilter):
@@ -810,7 +850,12 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
 
     list_display = ("organization", "operator", "service", "created_at")
     list_filter = ("organization__operator_roles__operator", "created_at")
-    search_fields = ("organization__name", "service__name", "service__type")
+    search_fields = (
+        "organization__name",
+        "service__name",
+        "service__type",
+        "operator__name",
+    )
     ordering = ("organization__name", "service__name")
     readonly_fields = ("id", "created_at", "updated_at")
 
@@ -840,3 +885,26 @@ class MetricAdmin(admin.ModelAdmin):
         (_("Relationships"), {"fields": ("service", "organization")}),
         (_("Metadata"), {"fields": ("timestamp",)}),
     )
+
+
+@admin.register(models.Entitlement)
+class EntitlementAdmin(admin.ModelAdmin):
+    """Admin class for the Entitlement model"""
+
+    list_display = ("service_subscription", "type", "account_type", "account_id")
+    list_filter = ("type", "account_type", "created_at")
+    search_fields = (
+        "service_subscription__organization__name",
+        "type",
+        "account_type",
+        "account_id",
+    )
+    ordering = (
+        "service_subscription__organization__name",
+        "type",
+        "account_type",
+        "account_id",
+    )
+    readonly_fields = ("id", "created_at", "updated_at")
+
+    autocomplete_fields = ["service_subscription"]
