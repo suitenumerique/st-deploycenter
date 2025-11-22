@@ -21,7 +21,7 @@ class OperatorViewSet(viewsets.ReadOnlyModelViewSet):
 
     queryset = models.Operator.objects.all()
     serializer_class = serializers.OperatorSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticatedWithAnyMethod]
 
     def get_queryset(self):
         """

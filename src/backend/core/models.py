@@ -214,6 +214,14 @@ class Operator(BaseModel):
         help_text=_("Whether this operator is currently active"),
     )
 
+    config = models.JSONField(
+        _("configuration"),
+        default=dict,
+        blank=True,
+        null=True,
+        help_text=_("Custom configuration data"),
+    )
+
     class Meta:
         db_table = "deploycenter_operator"
         verbose_name = _("operator")
@@ -548,6 +556,13 @@ class OperatorServiceConfig(BaseModel):
         _("display priority"),
         default=0,
         help_text=_("Priority of the operator and service for display"),
+    )
+    externally_managed = models.BooleanField(
+        _("externally managed"),
+        default=False,
+        help_text=_(
+            "Whether the subscriptions to this service are managed in the operator's own system"
+        ),
     )
 
     class Meta:

@@ -25,6 +25,7 @@
           "subtitle": "List of services available for this organization",
           "status": "Active",
           "goto": "Access service",
+          "externally_managed": "This service is managed externally and cannot be modified here.",
           "values": {
             "users": "Users"
           }
@@ -71,6 +72,7 @@
             "content": "Êtes-vous sûr de vouloir désactiver le service {{service}} ?"
           },
           "goto": "Accéder au service",
+          "externally_managed": "Ce service est géré de manière externe et ne peut pas être modifié ici.",
           "values": {
             "users": "Utilisateurs"
           }

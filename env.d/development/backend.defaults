@@ -49,9 +49,9 @@ OIDC_RP_CLIENT_SECRET=ThisIsAnExampleKeyForDevPurposeOnly
 OIDC_RP_SIGN_ALGO=RS256
 OIDC_RP_SCOPES="openid email"
 
-LOGIN_REDIRECT_URL=http://localhost:3000
-LOGIN_REDIRECT_URL_FAILURE=http://localhost:3000
-LOGOUT_REDIRECT_URL=http://localhost:3000
+LOGIN_REDIRECT_URL=http://localhost:8960
+LOGIN_REDIRECT_URL_FAILURE=http://localhost:8960
+LOGOUT_REDIRECT_URL=http://localhost:8960
 
 OIDC_REDIRECT_ALLOWED_HOSTS=["http://localhost:8962"]
 OIDC_AUTH_REQUEST_EXTRA_PARAMS={"acr_values": "eidas1"}

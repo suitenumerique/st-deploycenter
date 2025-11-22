@@ -9,12 +9,13 @@ from drf_spectacular.utils import (
     extend_schema,
     inline_serializer,
 )
-from rest_framework import permissions
 from rest_framework import serializers as drf_serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from deploycenter.celery_app import app as celery_app
+
+from .. import permissions
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ logger = logging.getLogger(__name__)
 class TaskDetailView(APIView):
     """View to retrieve the status of a Celery task."""
 
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticatedWithAnyMethod]
 
     def get(self, request, task_id):
         """Get the status of a Celery task."""

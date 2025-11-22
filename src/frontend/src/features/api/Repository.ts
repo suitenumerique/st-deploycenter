@@ -44,6 +44,10 @@ export type Service = {
   description: string;
   subscription: ServiceSubscription;
   logo: string | null;
+  operator_config?: {
+    display_priority?: number;
+    externally_managed?: boolean;
+  } | null;
 };
 
 export const sortModelToOrdering = (sortModel: SortModel): string => {

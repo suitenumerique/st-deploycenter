@@ -12,9 +12,9 @@ import {
 } from "@/hooks/useQueries";
 import { useTranslation } from "react-i18next";
 import { Service } from "@/features/api/Repository";
-import { Button, Switch, useModals } from "@openfun/cunningham-react";
+import { Button, Switch, Tooltip, useModals } from "@openfun/cunningham-react";
 import { Breadcrumbs } from "@/features/ui/components/breadcrumbs/Breadcrumbs";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useBreadcrumbOperator } from "@/features/ui/components/breadcrumbs/Parts";
 import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
 
@@ -36,6 +36,15 @@ export default function Organization() {
     operator,
     isOperatorLoading
   );
+
+  const sortedServices = useMemo(() => {
+    if (!services?.results) return [];
+    return [...services.results].sort((a, b) => {
+      const priorityA = a.operator_config?.display_priority ?? -Infinity;
+      const priorityB = b.operator_config?.display_priority ?? -Infinity;
+      return priorityB - priorityA; // descending order, nulls at the end
+    });
+  }, [services?.results]);
 
   return (
     <Container
@@ -97,7 +106,7 @@ export default function Organization() {
         {isServicesLoading ? (
           <Spinner />
         ) : (
-          services?.results.map((service) => (
+          sortedServices.map((service) => (
             <ServiceBlock
               key={service.id}
               service={service}
@@ -127,8 +136,14 @@ const ServiceBlock = ({
     useMutationUpdateOrganizationServiceSubscription();
   const modals = useModals();
   const { operatorId } = useOperatorContext();
+  const isExternallyManaged =
+    service.operator_config?.externally_managed === true;
   return (
-    <div className="dc__service__block">
+    <div
+      className={`dc__service__block ${
+        isExternallyManaged ? "dc__service__block--disabled" : ""
+      }`}
+    >
       <div className="dc__service__block__header">
         <div className="dc__service__block__header__title">
           {service.logo && (
@@ -138,69 +153,86 @@ const ServiceBlock = ({
           )}
           <div className="dc__service__block__header__name">{service.name}</div>
         </div>
-        <Switch
-          checked={checked}
-          onChange={async (e) => {
-            if (e.target.checked) {
-              const decision = await modals.confirmationModal();
-              if (decision === "yes") {
-                if (service.subscription) {
+        {isExternallyManaged ? (
+          <Tooltip content={t("organizations.services.externally_managed")}>
+            <div
+              className="dc__service__block__switch-wrapper"
+              role="button"
+              tabIndex={0}
+              aria-label={t("organizations.services.externally_managed")}
+            >
+              <Switch checked={checked} disabled={true} />
+            </div>
+          </Tooltip>
+        ) : (
+          <Switch
+            checked={checked}
+            onChange={async (e) => {
+              if (e.target.checked) {
+                const decision = await modals.confirmationModal();
+                if (decision === "yes") {
+                  if (service.subscription) {
+                    updateOrganizationServiceSubscription(
+                      {
+                        operatorId,
+                        organizationId,
+                        serviceId: service.id,
+                        data: { is_active: true },
+                      },
+                      {
+                        onError: () => {
+                          setChecked(false);
+                        },
+                      }
+                    );
+                  } else {
+                    createOrganizationServiceSubscription(
+                      {
+                        operatorId,
+                        organizationId,
+                        serviceId: service.id,
+                      },
+                      {
+                        onError: () => {
+                          setChecked(false);
+                        },
+                      }
+                    );
+                  }
+
+                  setChecked(true);
+                }
+              } else {
+                const decision = await modals.deleteConfirmationModal({
+                  title: t("organizations.services.disable_modal.title"),
+                  children: t("organizations.services.disable_modal.content", {
+                    service: service.name,
+                  }),
+                });
+                if (decision === "delete") {
                   updateOrganizationServiceSubscription(
                     {
                       operatorId,
                       organizationId,
                       serviceId: service.id,
-                      data: { is_active: true },
+                      data: { is_active: false },
                     },
                     {
                       onError: () => {
-                        setChecked(false);
+                        setChecked(true);
                       },
-                    }
-                  );
-                } else {
-                  createOrganizationServiceSubscription(
-                    {
-                      operatorId,
-                      organizationId,
-                      serviceId: service.id,
-                    },
-                    {
-                      onError: () => {
-                        setChecked(false);
-                      },
-                    }
-                  );
-                }
-
-                setChecked(true);
-              }
-            } else {
-              const decision = await modals.deleteConfirmationModal({
-                title: t("organizations.services.disable_modal.title"),
-                children: t("organizations.services.disable_modal.content", {
-                  service: service.name,
-                }),
-              });
-              if (decision === "delete") {
-                updateOrganizationServiceSubscription(
-                  {
-                    operatorId,
-                    organizationId,
-                    serviceId: service.id,
-                    data: { is_active: false },
-                  },
-                  {
-                    onError: () => {
-                      setChecked(true);
-                    },
+                      {
+                        onError: () => {
+                          setChecked(true);
+                        },
+                      }
+                    );
+                    setChecked(false);
                   }
-                );
-                setChecked(false);
-              }
-            }
-          }}
-        />
+                }
+              }}
+          />
+        )}
       </div>
       <div className="dc__service__block__body">
         <div className="dc__service__block__description">

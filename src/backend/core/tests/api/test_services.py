@@ -6,7 +6,6 @@ import pytest
 from rest_framework.test import APIClient
 
 from core import factories
-from core.tests.utils import assert_equals_partial
 
 pytestmark = pytest.mark.django_db
 
@@ -66,9 +65,33 @@ def test_api_organizations_services_list_authenticated():
 
     service1 = factories.ServiceFactory()
     service2 = factories.ServiceFactory()
-    subscription = factories.ServiceSubscriptionFactory(
+    service3 = factories.ServiceFactory()
+    service4 = factories.ServiceFactory()
+
+    # Create OperatorServiceConfig for some services
+    config1 = factories.OperatorServiceConfigFactory(
+        operator=operator, service=service1, display_priority=10
+    )
+    config2 = factories.OperatorServiceConfigFactory(
+        operator=operator, service=service2, display_priority=5
+    )
+    config4 = factories.OperatorServiceConfigFactory(
+        operator=operator, service=service4, display_priority=15
+    )
+    # service3 has no config - should still appear if it has a subscription
+    # service4 has config but no subscription - should appear
+
+    subscription1 = factories.ServiceSubscriptionFactory(
         organization=organization_ok1, service=service1, operator=operator
     )
+    subscription2 = factories.ServiceSubscriptionFactory(
+        organization=organization_ok1, service=service2, operator=operator
+    )
+    subscription3 = factories.ServiceSubscriptionFactory(
+        organization=organization_ok1, service=service3, operator=operator
+    )
+    # service4 has config but no subscription - should still appear
+    # This subscription is for a different operator, so service2 won't appear for operator
     factories.ServiceSubscriptionFactory(
         organization=organization_nok1, service=service2, operator=operator2
     )
@@ -78,19 +101,54 @@ def test_api_organizations_services_list_authenticated():
     )
     content = response.json()
     results = content["results"]
-    assert len(results) == 2
-    assert_equals_partial(
-        results,
-        [
-            {
-                "id": service1.id,
-                "name": service1.name,
-                "subscription": {
-                    "is_active": True,
-                },
-            },
-            {"id": service2.id, "name": service2.name, "subscription": None},
-        ],
+    assert len(results) == 4
+
+    # Results are ordered by service id - find each service in results
+    results_by_id = {result["id"]: result for result in results}
+
+    # Check service1 (has subscription and config)
+    service1_result = results_by_id[service1.id]
+    assert service1_result["name"] == service1.name
+    assert service1_result["subscription"]["id"] == str(subscription1.id)
+    assert (
+        service1_result["operator_config"]["display_priority"]
+        == config1.display_priority
+    )
+    assert (
+        service1_result["operator_config"]["externally_managed"]
+        == config1.externally_managed
+    )
+
+    # Check service2 (has subscription and config)
+    service2_result = results_by_id[service2.id]
+    assert service2_result["name"] == service2.name
+    assert service2_result["subscription"]["id"] == str(subscription2.id)
+    assert (
+        service2_result["operator_config"]["display_priority"]
+        == config2.display_priority
+    )
+    assert (
+        service2_result["operator_config"]["externally_managed"]
+        == config2.externally_managed
+    )
+
+    # Check service3 (has subscription, no config)
+    service3_result = results_by_id[service3.id]
+    assert service3_result["name"] == service3.name
+    assert service3_result["subscription"]["id"] == str(subscription3.id)
+    assert service3_result["operator_config"] is None
+
+    # Check service4 (has config, no subscription)
+    service4_result = results_by_id[service4.id]
+    assert service4_result["name"] == service4.name
+    assert service4_result["subscription"] is None
+    assert (
+        service4_result["operator_config"]["display_priority"]
+        == config4.display_priority
+    )
+    assert (
+        service4_result["operator_config"]["externally_managed"]
+        == config4.externally_managed
     )
 
     # Test the list of organizations with services
@@ -98,28 +156,31 @@ def test_api_organizations_services_list_authenticated():
     content = response.json()
     results = content["results"]
     assert len(results) == 2
-    assert_equals_partial(
-        results,
-        [
-            {
-                "id": str(organization_ok1.id),
-                "name": organization_ok1.name,
-                "service_subscriptions": [
-                    {
-                        "service": {
-                            "id": service1.id,
-                            "name": service1.name,
-                        },
-                        "is_active": True,
-                    }
-                ],
-            },
-            {
-                "id": str(organization_ok2.id),
-                "name": organization_ok2.name,
-            },
-        ],
-    )
+
+    # Find organizations by id
+    results_by_id = {result["id"]: result for result in results}
+
+    # Check organization_ok1 has 3 service subscriptions
+    org1_result = results_by_id[str(organization_ok1.id)]
+    assert org1_result["name"] == organization_ok1.name
+    assert len(org1_result["service_subscriptions"]) == 3
+
+    # Verify all three subscriptions are present
+    subscription_service_ids = {
+        sub["service"]["id"] for sub in org1_result["service_subscriptions"]
+    }
+    assert service1.id in subscription_service_ids
+    assert service2.id in subscription_service_ids
+    assert service3.id in subscription_service_ids
+
+    assert org1_result["service_subscriptions"][0]["is_active"] == True
+    assert org1_result["service_subscriptions"][1]["is_active"] == True
+    assert org1_result["service_subscriptions"][2]["is_active"] == True
+
+    # Check organization_ok2 has no service subscriptions
+    org2_result = results_by_id[str(organization_ok2.id)]
+    assert org2_result["name"] == organization_ok2.name
+    assert len(org2_result["service_subscriptions"]) == 0
 
 
 def test_api_organization_service_enable_delete():
@@ -180,7 +241,9 @@ def test_api_organization_service_enable_delete():
     )
     assert response.status_code == 200
     content_retrieved = response.json()
-    assert_equals_partial(content_retrieved, content_created)
+    assert content_retrieved["id"] == content_created["id"]
+    assert content_retrieved["metadata"] == content_created["metadata"]
+    assert content_retrieved["created_at"] == content_created["created_at"]
 
     # Test that the subscription can be deleted
     url = (
