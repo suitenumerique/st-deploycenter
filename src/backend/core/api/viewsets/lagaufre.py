@@ -81,9 +81,13 @@ class LagaufreViewSet(viewsets.ViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Get all active & configured services for this operator
+        # Get all active & configured services for this operator, with display priority >= 0
         services = (
-            models.Service.objects.filter(is_active=True, operators=operator)
+            models.Service.objects.filter(
+                is_active=True,
+                operatorserviceconfig__operator=operator,
+                operatorserviceconfig__display_priority__gte=0,
+            )
             .select_related()
             .order_by("-operatorserviceconfig__display_priority")
         )

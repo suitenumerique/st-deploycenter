@@ -20,7 +20,7 @@ class UserViewSet(viewsets.GenericViewSet, drf.mixins.UpdateModelMixin):
         methods=["get"],
         url_name="me",
         url_path="me",
-        permission_classes=[permissions.IsAuthenticated],
+        permission_classes=[permissions.IsAuthenticatedWithAnyMethod],
     )
     def get_me(self, request):
         """
