@@ -85,7 +85,7 @@ class LagaufreViewSet(viewsets.ViewSet):
         services = (
             models.Service.objects.filter(
                 is_active=True,
-                operators=operator,
+                operatorserviceconfig__operator=operator,
                 operatorserviceconfig__display_priority__gte=0,
             )
             .select_related()

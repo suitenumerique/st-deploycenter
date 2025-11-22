@@ -27,6 +27,8 @@ class OperatorViewSet(viewsets.ReadOnlyModelViewSet):
         """
         Return only operators that the logged-in user has at least one UserOperatorRole for.
         """
+        if self.request.auth and isinstance(self.request.auth, models.Operator):
+            return models.Operator.objects.filter(id=self.request.auth.id)
         return models.Operator.objects.filter(
             user_roles__user=self.request.user
         ).prefetch_related("user_roles")
