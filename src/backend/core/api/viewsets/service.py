@@ -2,16 +2,18 @@
 API endpoints for Service model.
 """
 
-from django.db.models import Prefetch
+from django.db.models import F, Prefetch, Q
 from django.http import HttpResponse
 
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.serializers import ValidationError
+from rest_framework.settings import api_settings
 
 from core import models
+from core.authentication import ExternalManagementApiKeyAuthentication
 
 from .. import permissions, serializers
 
@@ -21,7 +23,7 @@ class ServiceViewSet(viewsets.ReadOnlyModelViewSet):
 
     queryset = models.Service.objects.all()
     serializer_class = serializers.ServiceSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticatedWithAnyMethod]
 
     filterset_fields = ["is_active", "type"]
     search_fields = ["type", "description"]
@@ -164,22 +166,46 @@ class OrganizationServiceViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = models.Service.objects.all()
     serializer_class = serializers.OrganizationServiceSerializer
     permission_classes = [
-        IsAuthenticated,
+        permissions.IsAuthenticatedWithAnyMethod,
         permissions.ParentOrganizationAccessPermission,
     ]
 
     def get_queryset(self):
-        organization = models.Organization.objects.get(
-            id=self.kwargs["organization_id"]
-        )
-        prefetch_queryset = models.ServiceSubscription.objects.filter(
-            organization=organization, operator=self.kwargs["operator_id"]
-        )
+        organization_id = self.kwargs["organization_id"]
+        operator_id = self.kwargs["operator_id"]
+
         return (
-            models.Service.objects.all()
-            .prefetch_related(Prefetch("subscriptions", queryset=prefetch_queryset))
-            .order_by("created_at")
+            models.Service.objects.filter(
+                Q(
+                    subscriptions__organization_id=organization_id,
+                    subscriptions__operator_id=operator_id,
+                )
+                | Q(operatorserviceconfig__operator_id=operator_id)
+            )
+            .prefetch_related(
+                Prefetch(
+                    "subscriptions",
+                    queryset=models.ServiceSubscription.objects.filter(
+                        organization_id=organization_id, operator_id=operator_id
+                    ),
+                ),
+                Prefetch(
+                    "operatorserviceconfig_set",
+                    queryset=models.OperatorServiceConfig.objects.filter(
+                        operator_id=operator_id,
+                        service_id__in=F("service_id"),
+                    ),
+                ),
+            )
+            .distinct()
+            .order_by("id")
         )
+
+    def get_serializer_context(self):
+        """Add operator_id to serializer context."""
+        context = super().get_serializer_context()
+        context["operator_id"] = self.kwargs["operator_id"]
+        return context
 
 
 class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
@@ -190,12 +216,17 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
 
     DELETE /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/
         Delete the given subscription for the given organization and service.
+
+    Supports both user authentication and external API key authentication.
     """
 
     queryset = models.ServiceSubscription.objects.all()
     serializer_class = serializers.ServiceSubscriptionSerializer
+    authentication_classes = [
+        ExternalManagementApiKeyAuthentication,
+    ] + [*api_settings.DEFAULT_AUTHENTICATION_CLASSES]
     permission_classes = [
-        IsAuthenticated,
+        permissions.IsAuthenticatedWithAnyMethod,
         permissions.ParentOrganizationAccessPermission,
     ]
 

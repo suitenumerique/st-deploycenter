@@ -74,6 +74,11 @@
   display: flex;
   flex-direction: column;
 
+  &--disabled {
+    opacity: 0.7;
+    background-color: var(--c--theme--colors--greyscale-50);
+  }
+
   &__header {
     display: flex;
     align-items: center;
@@ -87,6 +92,10 @@
 
     .c__checkbox {
       flex-shrink: 0;
+    }
+
+    .c__switch__rail__wrapper:has(input:checked):has(input:disabled) .c__switch__rail {
+      background-color: var(--c--components--forms-switch--border--color);
     }
 
     &__title {
