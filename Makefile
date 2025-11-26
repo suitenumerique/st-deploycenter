@@ -73,6 +73,9 @@ create-env-files: \
 	env.d/development/frontend.local
 .PHONY: create-env-files
 
+create-docker-network: ## create the docker network if it doesn't exist
+	@docker network create lasuite-network || true
+.PHONY: create-docker-network
 
 bootstrap: ## Prepare the project for local development
 bootstrap:
@@ -112,6 +115,7 @@ update:  ## Update the project with latest changes
 	@$(MAKE) data/media
 	@$(MAKE) data/static
 	@$(MAKE) create-env-files
+	@$(MAKE) create-docker-network
 	@$(MAKE) build
 	@$(MAKE) collectstatic
 	@$(MAKE) migrate

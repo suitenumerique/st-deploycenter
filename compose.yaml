@@ -58,6 +58,9 @@ services:
       - env.d/development/backend.local
     ports:
       - "8961:8000"
+    networks:
+      - default
+      - lasuite
     volumes:
       - ./src/backend:/app
       - ./data/static:/data/static
@@ -96,7 +99,7 @@ services:
       postgresql:
         condition: service_healthy
         restart: true
-  
+
   backend-poetry:
     profiles:
       - tools
@@ -114,7 +117,8 @@ services:
       args:
         DOCKER_USER: ${DOCKER_USER:-1000}
     user: ${DOCKER_USER:-1000}
-    command: ["celery", "-A", "deploycenter.celery_app", "worker", "-l", "DEBUG"]
+    command:
+      ["celery", "-A", "deploycenter.celery_app", "worker", "-l", "DEBUG"]
     environment:
       - DJANGO_CONFIGURATION=Development
     env_file:
@@ -220,5 +224,14 @@ services:
       - env.d/development/keycloak.local
     ports:
       - "8962:8802"
+    networks:
+      - default
+      - lasuite
     depends_on:
       - postgresql
+
+networks:
+  default: {}
+  lasuite:
+    name: lasuite-network
+    external: true
