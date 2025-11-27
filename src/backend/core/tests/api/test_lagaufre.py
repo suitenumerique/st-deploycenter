@@ -35,7 +35,10 @@ class TestLagaufreServicesEndpoint:
             organization=organization, service=service1, operator=operator
         )
         factories.ServiceSubscriptionFactory(
-            organization=organization, service=service3, operator=operator
+            organization=organization,
+            service=service3,
+            operator=operator,
+            is_active=False,
         )
 
         operator = factories.OperatorFactory()
@@ -72,7 +75,9 @@ class TestLagaufreServicesEndpoint:
         # Check that subscribed services come first
         services = data["services"]
         assert services[0]["subscribed"] is True  # Service Alpha (subscribed)
-        assert services[1]["subscribed"] is True  # Service Stable (subscribed)
+        assert (
+            services[1]["subscribed"] is False
+        )  # Service Stable (inactive subscription)
         assert services[2]["subscribed"] is False  # Service Beta (not subscribed)
 
         # Check service data structure

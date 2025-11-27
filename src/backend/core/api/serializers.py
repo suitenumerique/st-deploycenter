@@ -324,8 +324,8 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = models.ServiceSubscription
-        fields = ["id", "metadata", "created_at", "updated_at"]
-        read_only_fields = fields
+        fields = ["id", "metadata", "created_at", "updated_at", "is_active"]
+        read_only_fields = ["id", "metadata", "created_at", "updated_at"]
 
 
 class ServiceSubscriptionWithServiceSerializer(ServiceSubscriptionSerializer):

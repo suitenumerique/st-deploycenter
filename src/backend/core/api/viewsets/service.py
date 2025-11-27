@@ -81,7 +81,7 @@ class ServiceViewSet(viewsets.ReadOnlyModelViewSet):
             if subscription:
                 # Organization has an active subscription
                 response_data = {
-                    "has_subscription": True,
+                    "has_subscription": subscription.is_active,
                     "organization_id": organization.id,
                     "organization_name": organization.name,
                     "subscription_id": subscription.id,
@@ -188,7 +188,13 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
     POST /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/
         Create a new subscription for the given organization and service.
 
-    DELETE /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/
+    PUT /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/<subscription_id>/
+        Update the given subscription for the given organization and service.
+
+    PATCH /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/<subscription_id>/
+        Partial update the given subscription for the given organization and service.
+
+    DELETE /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/<subscription_id>/
         Delete the given subscription for the given organization and service.
     """
 
@@ -223,12 +229,6 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
         """
         Return 404 since individual subscription retrieval is not supported.
         Use the list method to get the subscription for the organization-service pair.
-        """
-        return Response({}, status=status.HTTP_404_NOT_FOUND)
-
-    def update(self, request, *args, **kwargs):
-        """
-        Update the subscription for the organization-service pair.
         """
         return Response({}, status=status.HTTP_404_NOT_FOUND)
 

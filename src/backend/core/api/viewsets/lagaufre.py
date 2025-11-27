@@ -95,7 +95,7 @@ class LagaufreViewSet(viewsets.ViewSet):
         if organization is not None:
             subscription_ids = set(
                 models.ServiceSubscription.objects.filter(
-                    organization=organization
+                    organization=organization, is_active=True
                 ).values_list("service_id", flat=True)
             )
             response_data["organization"] = {

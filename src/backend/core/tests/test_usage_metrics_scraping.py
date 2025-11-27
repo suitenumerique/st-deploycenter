@@ -197,9 +197,7 @@ def test_fetch_usage_metrics_from_service_with_filters(
 
 
 @pytest.mark.django_db
-def test_store_service_metrics(
-    mock_metrics_server, test_service, test_organizations
-):
+def test_store_service_metrics(mock_metrics_server, test_service, test_organizations):
     """Test storing fetched metrics in the database."""
     # Fetch metrics first
     metrics_data = fetch_usage_metrics_from_service(test_service)

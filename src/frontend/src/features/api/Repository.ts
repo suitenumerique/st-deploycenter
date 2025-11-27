@@ -35,6 +35,7 @@ export type ServiceSubscription = {
   created_at: string;
   updated_at: string;
   service?: Service;
+  is_active: boolean;
 };
 
 export type Service = {
@@ -146,4 +147,22 @@ export const deleteOrganizationServiceSubscription = async (
       method: "DELETE",
     }
   );
+};
+
+export const updateOrganizationServiceSubscription = async (
+  operatorId: string,
+  organizationId: string,
+  serviceId: string,
+  subscriptionId: string,
+  data: Record<string, any>
+): Promise<ServiceSubscription> => {
+  const response = await fetchAPI(
+    `operators/${operatorId}/organizations/${organizationId}/services/${serviceId}/subscription/${subscriptionId}/`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }
+  );
+  const subscription = (await response.json()) as ServiceSubscription;
+  return subscription;
 };

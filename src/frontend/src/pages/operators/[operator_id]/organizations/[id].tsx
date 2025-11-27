@@ -7,6 +7,7 @@ import { useRouter } from "next/router";
 import {
   useMutationCreateOrganizationServiceSubscription,
   useMutationDeleteOrganizationServiceSubscription,
+  useMutationUpdateOrganizationServiceSubscription,
   useOrganization,
   useOrganizationServices,
 } from "@/hooks/useQueries";
@@ -118,11 +119,13 @@ const ServiceBlock = ({
   organizationId: string;
 }) => {
   const { t } = useTranslation();
-  const [checked, setChecked] = useState(!!service.subscription);
-  const { mutate: deleteOrganizationServiceSubscription } =
-    useMutationDeleteOrganizationServiceSubscription();
+  const [checked, setChecked] = useState(
+    service.subscription && service.subscription.is_active
+  );
   const { mutate: createOrganizationServiceSubscription } =
     useMutationCreateOrganizationServiceSubscription();
+  const { mutate: updateOrganizationServiceSubscription } =
+    useMutationUpdateOrganizationServiceSubscription();
   const modals = useModals();
   const { operatorId } = useOperatorContext();
   return (
@@ -142,18 +145,36 @@ const ServiceBlock = ({
             if (e.target.checked) {
               const decision = await modals.confirmationModal();
               if (decision === "yes") {
-                createOrganizationServiceSubscription(
-                  {
-                    operatorId,
-                    organizationId,
-                    serviceId: service.id,
-                  },
-                  {
-                    onError: () => {
-                      setChecked(false);
+                if (service.subscription) {
+                  updateOrganizationServiceSubscription(
+                    {
+                      operatorId,
+                      organizationId,
+                      serviceId: service.id,
+                      subscriptionId: service.subscription.id,
+                      data: { is_active: true },
                     },
-                  }
-                );
+                    {
+                      onError: () => {
+                        setChecked(false);
+                      },
+                    }
+                  );
+                } else {
+                  createOrganizationServiceSubscription(
+                    {
+                      operatorId,
+                      organizationId,
+                      serviceId: service.id,
+                    },
+                    {
+                      onError: () => {
+                        setChecked(false);
+                      },
+                    }
+                  );
+                }
+
                 setChecked(true);
               }
             } else {
@@ -164,12 +185,13 @@ const ServiceBlock = ({
                 }),
               });
               if (decision === "delete") {
-                deleteOrganizationServiceSubscription(
+                updateOrganizationServiceSubscription(
                   {
                     operatorId,
                     organizationId,
                     serviceId: service.id,
                     subscriptionId: service.subscription.id,
+                    data: { is_active: false },
                   },
                   {
                     onError: () => {

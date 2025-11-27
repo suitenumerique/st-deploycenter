@@ -4,6 +4,7 @@ import {
   deleteOrganizationServiceSubscription,
   createOrganizationServiceSubscription,
   getOperatorOrganizations,
+  updateOrganizationServiceSubscription,
 } from "@/features/api/Repository";
 import { getOrganization } from "@/features/api/Repository";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -38,9 +39,18 @@ export const useOperatorOrganizations = (
   });
 };
 
-export const useOrganizationServices = (operatorId: string, organizationId: string) => {
+export const useOrganizationServices = (
+  operatorId: string,
+  organizationId: string
+) => {
   return useQuery({
-    queryKey: ["operators", operatorId, "organizations", organizationId, "services"],
+    queryKey: [
+      "operators",
+      operatorId,
+      "organizations",
+      organizationId,
+      "services",
+    ],
     queryFn: () => getOrganizationServices(operatorId, organizationId),
   });
 };
@@ -93,6 +103,41 @@ export const useMutationCreateOrganizationServiceSubscription = () => {
         operatorId,
         organizationId,
         serviceId
+      );
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ["organizations", variables.organizationId, "services"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["operators"],
+      });
+    },
+  });
+};
+
+export const useMutationUpdateOrganizationServiceSubscription = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      operatorId,
+      organizationId,
+      serviceId,
+      subscriptionId,
+      data,
+    }: {
+      operatorId: string;
+      organizationId: string;
+      serviceId: string;
+      subscriptionId: string;
+      data: Record<string, any>;
+    }) => {
+      return updateOrganizationServiceSubscription(
+        operatorId,
+        organizationId,
+        serviceId,
+        subscriptionId,
+        data
       );
     },
     onSuccess: (data, variables) => {
