@@ -86,6 +86,46 @@ class TestServiceSubscriptionCheck:
         assert data["service_name"] == service.name
         assert data["error_message"] is None
 
+    def test_check_service_subscription_with_insee_inactive_success(self, api_client):
+        """Test successful service subscription check with INSEE code."""
+        # Create test data
+        user = factories.UserFactory()
+        operator = factories.OperatorFactory()
+        organization = factories.OrganizationFactory()
+        service = factories.ServiceFactory()
+        subscription = factories.ServiceSubscriptionFactory(
+            organization=organization,
+            service=service,
+            operator=operator,
+            is_active=False,
+        )
+
+        # Link operator to organization
+        factories.OperatorOrganizationRoleFactory(
+            operator=operator, organization=organization, role="admin"
+        )
+
+        # Authenticate user
+        api_client.force_login(user)
+
+        # Test check
+        response = api_client.post(
+            f"/api/v1.0/services/{service.id}/check-subscription/",
+            {"insee": organization.code_insee},
+            format="json",
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["has_subscription"] is False
+        assert data["organization_id"] == str(organization.id)
+        assert data["organization_name"] == organization.name
+        assert data["subscription_id"] == str(subscription.id)
+        assert data["service_id"] == service.id
+        assert data["service_name"] == service.name
+        assert data["error_message"] is None
+
     def test_check_service_subscription_no_subscription(self, api_client):
         """Test service subscription check when organization has no subscription."""
         # Create test data

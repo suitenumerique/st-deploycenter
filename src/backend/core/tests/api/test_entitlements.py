@@ -74,7 +74,10 @@ class MockServiceServer(BaseHTTPRequestHandler):
             "results": [
                 {
                     "siret": "12345678900001",
-                    "account": {"type": "user", "id": "xyz", },
+                    "account": {
+                        "type": "user",
+                        "id": "xyz",
+                    },
                     "metrics": {"storage_used": self.__class__.MOCK_STORAGE_USED},
                 }
             ],
@@ -162,6 +165,57 @@ def test_api_entitlements_list_no_subscription(webhook_server):
             "usage_metrics_endpoint": metrics_usage_endpoint,
             "metrics_auth_token": "test_token",
         },
+    )
+
+    # Test that we can upload to the drive
+    response = client.get(
+        "/api/v1.0/entitlements/",
+        query_params={
+            "service_id": service.id,
+            "account_type": "user",
+            "account_id": "xyz",
+            "siret": organization.siret,
+        },
+        headers={"X-Service-Auth": "Bearer test_token"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert_equals_partial(
+        data,
+        {
+            "operator": None,
+            "entitlements": {
+                "can_access": False,
+            },
+        },
+    )
+
+
+def test_api_entitlements_list_with_inactive_subscription(webhook_server):
+    """Test the entitlements list endpoint for service with inactive subscription."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    port = webhook_server.server_address[1]
+    metrics_usage_endpoint = f"http://localhost:{port}/metrics/usage"
+
+    service = factories.ServiceFactory(
+        config={
+            "entitlements_api_key": "test_token",
+            "usage_metrics_endpoint": metrics_usage_endpoint,
+            "metrics_auth_token": "test_token",
+        },
+    )
+
+    factories.ServiceSubscriptionFactory(
+        organization=organization, service=service, operator=operator, is_active=False
     )
 
     # Test that we can upload to the drive

@@ -126,9 +126,7 @@ def scrape_service_metrics(service_id: int):
         return {"status": "error", "message": str(e)}
 
 
-def scrape_service_usage_metrics(
-    service: Service, filters: Dict[str, Any] = None
-):
+def scrape_service_usage_metrics(service: Service, filters: Dict[str, Any] = None):
     """
     Scrape usage metrics for a specific service (Celery task).
     """
@@ -208,11 +206,10 @@ def fetch_metrics_from_endpoint(
     if filters is None:
         filters = {}
 
-
     query_string = urlencode(filters) if filters else ""
     if query_string:
         separator = "&" if "?" in metrics_endpoint else "?"
-        metrics_endpoint = f"{metrics_endpoint}{separator}{query_string}"        
+        metrics_endpoint = f"{metrics_endpoint}{separator}{query_string}"
 
     # Get authentication token from service config
     auth_token = service.config.get("metrics_auth_token")
@@ -483,7 +480,9 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
                 if value is None:
                     continue
 
-                metrics_to_create[(service.id, organization.id, account_type, account_id, metric_name)] = Metric(
+                metrics_to_create[
+                    (service.id, organization.id, account_type, account_id, metric_name)
+                ] = Metric(
                     key=metric_name,
                     value=value,
                     service=service,

@@ -29,12 +29,12 @@ type Organization = {
 };
 
 export type ServiceSubscription = {
-  id: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata: Record<string, any>;
   created_at: string;
   updated_at: string;
   service?: Service;
+  is_active: boolean;
 };
 
 export type Service = {
@@ -137,13 +137,29 @@ export const createOrganizationServiceSubscription = async (
 export const deleteOrganizationServiceSubscription = async (
   operatorId: string,
   organizationId: string,
-  serviceId: string,
-  subscriptionId: string
+  serviceId: string
 ): Promise<void> => {
   await fetchAPI(
-    `operators/${operatorId}/organizations/${organizationId}/services/${serviceId}/subscription/${subscriptionId}/`,
+    `operators/${operatorId}/organizations/${organizationId}/services/${serviceId}/subscription/`,
     {
       method: "DELETE",
     }
   );
+};
+
+export const updateOrganizationServiceSubscription = async (
+  operatorId: string,
+  organizationId: string,
+  serviceId: string,
+  data: Partial<ServiceSubscription>
+): Promise<ServiceSubscription> => {
+  const response = await fetchAPI(
+    `operators/${operatorId}/organizations/${organizationId}/services/${serviceId}/subscription/`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }
+  );
+  const subscription = (await response.json()) as ServiceSubscription;
+  return subscription;
 };

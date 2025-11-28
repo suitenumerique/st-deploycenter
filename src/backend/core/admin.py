@@ -401,7 +401,10 @@ class ServiceAdmin(admin.ModelAdmin):
         ),
         (_("Logo"), {"fields": ("logo_svg_file",)}),
         (_("Configuration"), {"fields": ("config",)}),
-        (_("Metadata"), {"fields": ("created_at", "updated_at", "entitlements_api_key_display")}),
+        (
+            _("Metadata"),
+            {"fields": ("created_at", "updated_at", "entitlements_api_key_display")},
+        ),
     )
 
     def entitlements_api_key_display(self, obj):
@@ -862,7 +865,7 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
     autocomplete_fields = ["organization", "operator", "service"]
 
     fieldsets = (
-        (None, {"fields": ("organization", "operator", "service")}),
+        (None, {"fields": ("organization", "operator", "service", "is_active")}),
         (_("Subscription Data"), {"fields": ("metadata",)}),
         (_("Metadata"), {"fields": ("created_at", "updated_at")}),
     )
