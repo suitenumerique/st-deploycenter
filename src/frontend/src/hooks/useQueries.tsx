@@ -5,6 +5,7 @@ import {
   createOrganizationServiceSubscription,
   getOperatorOrganizations,
   updateOrganizationServiceSubscription,
+  ServiceSubscription,
 } from "@/features/api/Repository";
 import { getOrganization } from "@/features/api/Repository";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -62,18 +63,15 @@ export const useMutationDeleteOrganizationServiceSubscription = () => {
       operatorId,
       organizationId,
       serviceId,
-      subscriptionId,
     }: {
       operatorId: string;
       organizationId: string;
       serviceId: string;
-      subscriptionId: string;
     }) => {
       return deleteOrganizationServiceSubscription(
         operatorId,
         organizationId,
-        serviceId,
-        subscriptionId
+        serviceId
       );
     },
     onSuccess: (data, variables) => {
@@ -123,20 +121,17 @@ export const useMutationUpdateOrganizationServiceSubscription = () => {
       operatorId,
       organizationId,
       serviceId,
-      subscriptionId,
       data,
     }: {
       operatorId: string;
       organizationId: string;
       serviceId: string;
-      subscriptionId: string;
-      data: Record<string, any>;
+      data: Partial<ServiceSubscription>;
     }) => {
       return updateOrganizationServiceSubscription(
         operatorId,
         organizationId,
         serviceId,
-        subscriptionId,
         data
       );
     },

@@ -6,7 +6,6 @@ import {
 import { useRouter } from "next/router";
 import {
   useMutationCreateOrganizationServiceSubscription,
-  useMutationDeleteOrganizationServiceSubscription,
   useMutationUpdateOrganizationServiceSubscription,
   useOrganization,
   useOrganizationServices,
@@ -120,7 +119,7 @@ const ServiceBlock = ({
 }) => {
   const { t } = useTranslation();
   const [checked, setChecked] = useState(
-    service.subscription && service.subscription.is_active
+    service.subscription ? service.subscription.is_active : false
   );
   const { mutate: createOrganizationServiceSubscription } =
     useMutationCreateOrganizationServiceSubscription();
@@ -151,7 +150,6 @@ const ServiceBlock = ({
                       operatorId,
                       organizationId,
                       serviceId: service.id,
-                      subscriptionId: service.subscription.id,
                       data: { is_active: true },
                     },
                     {
@@ -190,7 +188,6 @@ const ServiceBlock = ({
                     operatorId,
                     organizationId,
                     serviceId: service.id,
-                    subscriptionId: service.subscription.id,
                     data: { is_active: false },
                   },
                   {
