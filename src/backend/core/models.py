@@ -713,6 +713,12 @@ class ServiceSubscription(BaseModel):
         help_text=_("Additional metadata for this subscription"),
     )
 
+    is_active = models.BooleanField(
+        _("active"),
+        default=True,
+        help_text=_("Whether this subscription is currently active"),
+    )
+
     class Meta:
         db_table = "deploycenter_service_subscription"
         verbose_name = _("service subscription")
@@ -883,7 +889,10 @@ class Entitlement(BaseModel):
             valid_types = ", ".join(self.EntitlementType.values)
             raise ValidationError(
                 {
-                    "type": _("Invalid entitlement type '%(type)s'. Valid types are: %(valid_types)s") % {
+                    "type": _(
+                        "Invalid entitlement type '%(type)s'. Valid types are: %(valid_types)s"
+                    )
+                    % {
                         "type": self.type,
                         "valid_types": valid_types,
                     }

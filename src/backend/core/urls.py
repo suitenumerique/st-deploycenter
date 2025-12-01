@@ -36,11 +36,6 @@ operator_organization_router.register(r"organizations", OperatorOrganizationView
 organization_service_router = DefaultRouter()
 organization_service_router.register(r"services", OrganizationServiceViewSet)
 
-organization_service_subscription_router = DefaultRouter()
-organization_service_subscription_router.register(
-    r"subscription", OrganizationServiceSubscriptionViewSet
-)
-
 urlpatterns = [
     # Include all router URLs
     path(
@@ -66,7 +61,21 @@ urlpatterns = [
                                         re_path(
                                             r"^services/(?P<service_id>[0-9a-z-]*)/",
                                             include(
-                                                organization_service_subscription_router.urls
+                                                [
+                                                    path(
+                                                        "subscription/",
+                                                        OrganizationServiceSubscriptionViewSet.as_view(
+                                                            {
+                                                                "get": "retrieve",
+                                                                "post": "create",
+                                                                "put": "update",
+                                                                "patch": "partial_update",
+                                                                "delete": "destroy",
+                                                            }
+                                                        ),
+                                                        name="organizationservice-subscription",
+                                                    ),
+                                                ]
                                             ),
                                         ),
                                     ]

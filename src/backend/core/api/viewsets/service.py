@@ -7,6 +7,7 @@ from django.http import HttpResponse
 
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.serializers import ValidationError
@@ -81,7 +82,7 @@ class ServiceViewSet(viewsets.ReadOnlyModelViewSet):
             if subscription:
                 # Organization has an active subscription
                 response_data = {
-                    "has_subscription": True,
+                    "has_subscription": subscription.is_active,
                     "organization_id": organization.id,
                     "organization_name": organization.name,
                     "subscription_id": subscription.id,
@@ -185,11 +186,20 @@ class OrganizationServiceViewSet(viewsets.ReadOnlyModelViewSet):
 class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
     """ViewSet for OrganizationServiceSubscription model.
 
+    GET /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/
+        Get the subscription for the given organization and service.
+
     POST /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/
         Create a new subscription for the given organization and service.
 
+    PUT /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/
+        Update the subscription for the given organization and service.
+
+    PATCH /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/
+        Partial update the subscription for the given organization and service.
+
     DELETE /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/
-        Delete the given subscription for the given organization and service.
+        Delete the subscription for the given organization and service.
     """
 
     queryset = models.ServiceSubscription.objects.all()
@@ -206,35 +216,39 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
             operator=self.kwargs["operator_id"],
         )
 
+    def get_object(self):
+        """
+        Get the subscription for the operator-organization-service triple.
+        Since there can only be one subscription per operator-organization-service triple,
+        we return it directly without requiring a pk in the URL.
+        """
+        queryset = self.get_queryset()
+        try:
+            return queryset.get()
+        except models.ServiceSubscription.DoesNotExist:
+            raise NotFound("Subscription not found for this operator-organization-service triple.")
+
     def list(self, request, *args, **kwargs):
         """
-        Return the subscription if one exists, otherwise return empty response.
-        Since there can only be one subscription per organization-service pair,
-        we return the subscription directly instead of a paginated list.
+        List method is not implemented for this viewset.
+        Use retrieve() to get the subscription for the operator-organization-service triple.
         """
-        try:
-            subscription = self.get_queryset().get()
-            serializer = self.get_serializer(subscription)
-            return Response(serializer.data)
-        except models.ServiceSubscription.DoesNotExist:
-            return Response({}, status=status.HTTP_404_NOT_FOUND)
+        return Response(
+            {"detail": "Method not allowed. Use GET to retrieve the subscription."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
 
     def retrieve(self, request, *args, **kwargs):
         """
-        Return 404 since individual subscription retrieval is not supported.
-        Use the list method to get the subscription for the organization-service pair.
+        Return the subscription for the operator-organization-service triple.
         """
-        return Response({}, status=status.HTTP_404_NOT_FOUND)
-
-    def update(self, request, *args, **kwargs):
-        """
-        Update the subscription for the organization-service pair.
-        """
-        return Response({}, status=status.HTTP_404_NOT_FOUND)
+        subscription = self.get_object()
+        serializer = self.get_serializer(subscription)
+        return Response(serializer.data)
 
     def create(self, request, *args, **kwargs):
         """
-        Create a new subscription for the organization-service pair.
+        Create a new subscription for the operator-organization-service triple.
         Returns 400 if subscription already exists.
         """
         if self.get_queryset().exists():
@@ -258,10 +272,8 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         """
-        Delete the subscription for the organization-service pair.
+        Delete the subscription for the operator-organization-service triple.
         """
         subscription = self.get_object()
-        if not subscription:
-            return Response({}, status=status.HTTP_404_NOT_FOUND)
         subscription.delete()
         return Response({}, status=status.HTTP_204_NO_CONTENT)

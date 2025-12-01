@@ -82,7 +82,7 @@ class EntitlementView(APIView):
         # This entitlement should always be resolved.
         entitlements_data = {**AccessEntitlementResolver().resolve(entitlement_context)}
 
-        if service_subscription:
+        if service_subscription and service_subscription.is_active:
             scrape_service_usage_metrics(
                 service,
                 {

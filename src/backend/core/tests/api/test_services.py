@@ -86,7 +86,7 @@ def test_api_organizations_services_list_authenticated():
                 "id": service1.id,
                 "name": service1.name,
                 "subscription": {
-                    "id": str(subscription.id),
+                    "is_active": True,
                 },
             },
             {"id": service2.id, "name": service2.name, "subscription": None},
@@ -109,7 +109,8 @@ def test_api_organizations_services_list_authenticated():
                         "service": {
                             "id": service1.id,
                             "name": service1.name,
-                        }
+                        },
+                        "is_active": True,
                     }
                 ],
             },
@@ -121,8 +122,8 @@ def test_api_organizations_services_list_authenticated():
     )
 
 
-def test_api_organization_service_enable_disable():
-    """Authenticated users should be able to enable and disable a service for an organization."""
+def test_api_organization_service_enable_delete():
+    """Authenticated users should be able to enable and delete a service subscription for an organization."""
     user = factories.UserFactory()
     user2 = factories.UserFactory()
     client = APIClient()
@@ -170,7 +171,6 @@ def test_api_organization_service_enable_disable():
     )
     assert response.status_code == 201
     content_created = response.json()
-    assert "id" in content_created
     assert "metadata" in content_created
     assert "created_at" in content_created
 
@@ -185,7 +185,7 @@ def test_api_organization_service_enable_disable():
     # Test that the subscription can be deleted
     url = (
         f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/"
-        f"services/{service1.id}/subscription/{content_created['id']}/"
+        f"services/{service1.id}/subscription/"
     )
     response = client.delete(url)
     assert response.status_code == 204
@@ -196,6 +196,87 @@ def test_api_organization_service_enable_disable():
         f"services/{service1.id}/subscription/"
     )
     assert response.status_code == 404
+
+
+
+def test_api_organization_service_inactive():
+    """Authenticated users should be able set inactive a service subscription for an organization."""
+    user = factories.UserFactory()
+    user2 = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    operator2 = factories.OperatorFactory()
+    operator3 = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    factories.UserOperatorRoleFactory(user=user2, operator=operator2)
+    factories.UserOperatorRoleFactory(user=user2, operator=operator3)
+
+    organization_ok1 = factories.OrganizationFactory(name="A")
+    organization_ok2 = factories.OrganizationFactory(name="B")
+    organization_nok1 = factories.OrganizationFactory()
+    organization_nok2 = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization_ok1
+    )
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization_ok2
+    )
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator2, organization=organization_nok1
+    )
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator2, organization=organization_nok2
+    )
+
+    service1 = factories.ServiceFactory()
+    service2 = factories.ServiceFactory()
+    factories.ServiceSubscriptionFactory(
+        organization=organization_nok1, service=service2, operator=operator2
+    )
+
+    # Test that no subscription exists
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/services/{service1.id}/subscription/"
+    )
+    assert response.status_code == 404
+
+    # Test that the subscription can be created
+    response = client.post(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/services/{service1.id}/subscription/",
+        {},
+    )
+    assert response.status_code == 201
+    content_created = response.json()
+    assert "metadata" in content_created
+    assert "created_at" in content_created
+
+    # Test that the subscription exists
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/services/{service1.id}/subscription/"
+    )
+    assert response.status_code == 200
+    content_retrieved = response.json()
+    assert_equals_partial(content_retrieved, content_created)
+
+    # Test that the subscription can be set inactive
+    url = (
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/"
+        f"services/{service1.id}/subscription/"
+    )
+    response = client.patch(url, {"is_active": False}, format="json")
+    assert response.status_code == 200
+    content_updated = response.json()
+    assert_equals_partial(content_updated, {"is_active": False})
+
+    # Test that the subscription is inactive
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/"
+        f"services/{service1.id}/subscription/"
+    )
+    assert response.status_code == 200
+    content_retrieved = response.json()
+    assert_equals_partial(content_retrieved, {"is_active": False})
 
 
 def test_api_organization_service_enable_disable_no_role():
@@ -253,6 +334,6 @@ def test_api_organization_service_enable_disable_no_role():
     # Test that the subscription cannot be deleted
     response = client.delete(
         f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}"
-        f"/services/{service1.id}/subscription/{subscription.id}/"
+        f"/services/{service1.id}/subscription/"
     )
     assert response.status_code == 403

@@ -4,6 +4,8 @@ import {
   deleteOrganizationServiceSubscription,
   createOrganizationServiceSubscription,
   getOperatorOrganizations,
+  updateOrganizationServiceSubscription,
+  ServiceSubscription,
 } from "@/features/api/Repository";
 import { getOrganization } from "@/features/api/Repository";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -38,9 +40,18 @@ export const useOperatorOrganizations = (
   });
 };
 
-export const useOrganizationServices = (operatorId: string, organizationId: string) => {
+export const useOrganizationServices = (
+  operatorId: string,
+  organizationId: string
+) => {
   return useQuery({
-    queryKey: ["operators", operatorId, "organizations", organizationId, "services"],
+    queryKey: [
+      "operators",
+      operatorId,
+      "organizations",
+      organizationId,
+      "services",
+    ],
     queryFn: () => getOrganizationServices(operatorId, organizationId),
   });
 };
@@ -52,18 +63,15 @@ export const useMutationDeleteOrganizationServiceSubscription = () => {
       operatorId,
       organizationId,
       serviceId,
-      subscriptionId,
     }: {
       operatorId: string;
       organizationId: string;
       serviceId: string;
-      subscriptionId: string;
     }) => {
       return deleteOrganizationServiceSubscription(
         operatorId,
         organizationId,
-        serviceId,
-        subscriptionId
+        serviceId
       );
     },
     onSuccess: (data, variables) => {
@@ -93,6 +101,38 @@ export const useMutationCreateOrganizationServiceSubscription = () => {
         operatorId,
         organizationId,
         serviceId
+      );
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ["organizations", variables.organizationId, "services"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["operators"],
+      });
+    },
+  });
+};
+
+export const useMutationUpdateOrganizationServiceSubscription = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      operatorId,
+      organizationId,
+      serviceId,
+      data,
+    }: {
+      operatorId: string;
+      organizationId: string;
+      serviceId: string;
+      data: Partial<ServiceSubscription>;
+    }) => {
+      return updateOrganizationServiceSubscription(
+        operatorId,
+        organizationId,
+        serviceId,
+        data
       );
     },
     onSuccess: (data, variables) => {
