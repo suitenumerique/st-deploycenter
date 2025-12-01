@@ -265,7 +265,7 @@ class OperatorAdmin(admin.ModelAdmin):
     readonly_fields = ("id", "computed_contribution", "created_at", "updated_at")
 
     fieldsets = (
-        (None, {"fields": ("name", "url", "is_active")}),
+        (None, {"fields": ("name", "url", "is_active", "config")}),
         (_("Financial Information"), {"fields": ("computed_contribution",)}),
         (_("Metadata"), {"fields": ("created_at", "updated_at")}),
     )
