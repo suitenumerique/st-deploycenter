@@ -221,12 +221,8 @@ const ServiceBlock = ({
                       onError: () => {
                         setChecked(true);
                       },
-                      {
-                        onError: () => {
-                          setChecked(true);
-                        },
-                      }
-                    );
+                    }
+                  );
                     setChecked(false);
                   }
                 }

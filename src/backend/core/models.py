@@ -897,6 +897,9 @@ class Entitlement(BaseModel):
             models.Index(fields=["service_subscription"]),
         ]
 
+    def __str__(self):
+        return f"{self.service_subscription.organization.name} - {self.type} - {self.account_type} - {self.account_id}"
+
     def clean(self):
         """Validate that the type is a valid EntitlementType."""
         super().clean()
@@ -913,6 +916,3 @@ class Entitlement(BaseModel):
                     }
                 }
             )
-
-    def __str__(self):
-        return f"{self.service_subscription.organization.name} - {self.type} - {self.account_type} - {self.account_id}"

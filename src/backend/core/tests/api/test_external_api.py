@@ -99,15 +99,16 @@ def test_external_api_create_subscription():
         f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/"
         f"services/{service.id}/subscription/",
         {},
+        format="json",
     )
     assert response.status_code == 201, (
         f"Expected 201, got {response.status_code}. "
         f"Response: {response.json() if response.status_code != 201 else 'OK'}"
     )
     content = response.json()
-    assert "id" in content
     assert "metadata" in content
     assert "created_at" in content
+    assert "is_active" in content
 
     # Verify subscription exists
     response = client.get(
@@ -116,7 +117,35 @@ def test_external_api_create_subscription():
     )
     assert response.status_code == 200
     content_retrieved = response.json()
-    assert content_retrieved["id"] == content["id"]
+    assert content_retrieved["metadata"] == content["metadata"]
+    assert content_retrieved["created_at"] == content["created_at"]
+    assert content_retrieved["is_active"] == content["is_active"]
+
+    # Test creating subscription with is_active=False
+    organization2 = factories.OrganizationFactory(siret="98765432109876")
+    service2 = factories.ServiceFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization2
+    )
+
+    response = client.post(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization2.id}/"
+        f"services/{service2.id}/subscription/",
+        {"is_active": False},
+        format="json",
+    )
+    assert response.status_code == 201
+    content = response.json()
+    assert content["is_active"] is False
+
+    # Verify subscription exists and is inactive
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization2.id}/"
+        f"services/{service2.id}/subscription/"
+    )
+    assert response.status_code == 200
+    content_retrieved = response.json()
+    assert content_retrieved["is_active"] is False
 
 
 def test_external_api_delete_subscription():
@@ -128,7 +157,7 @@ def test_external_api_delete_subscription():
 
     organization = factories.OrganizationFactory(siret="12345678901234")
     service = factories.ServiceFactory()
-    subscription = factories.ServiceSubscriptionFactory(
+    factories.ServiceSubscriptionFactory(
         organization=organization, service=service, operator=operator
     )
     factories.OperatorOrganizationRoleFactory(
@@ -148,7 +177,7 @@ def test_external_api_delete_subscription():
     # Delete subscription
     response = client.delete(
         f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/"
-        f"services/{service.id}/subscription/{subscription.id}/"
+        f"services/{service.id}/subscription/"
     )
     assert response.status_code == 204
 

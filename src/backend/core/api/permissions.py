@@ -1,10 +1,7 @@
 """Permission handlers for the deploycenter core app."""
 
-<<<<<<< HEAD
-import secrets
-=======
 import logging
->>>>>>> da02839 (✨(api) allow management of service subscritions with external API)
+import secrets
 
 from django.core import exceptions
 

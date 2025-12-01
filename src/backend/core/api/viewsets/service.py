@@ -8,7 +8,7 @@ from django.http import HttpResponse
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.serializers import ValidationError
 from rest_framework.settings import api_settings
@@ -256,8 +256,10 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
         queryset = self.get_queryset()
         try:
             return queryset.get()
-        except models.ServiceSubscription.DoesNotExist:
-            raise NotFound("Subscription not found for this operator-organization-service triple.")
+        except models.ServiceSubscription.DoesNotExist as err:
+            raise NotFound(
+                "Subscription not found for this operator-organization-service triple."
+            ) from err
 
     def list(self, request, *args, **kwargs):
         """
@@ -294,8 +296,15 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
         service = models.Service.objects.get(id=self.kwargs["service_id"])
         operator = models.Operator.objects.get(id=self.kwargs["operator_id"])
 
+        # Validate and extract is_active from request data
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
         subscription = models.ServiceSubscription.objects.create(
-            organization=organization, service=service, operator=operator
+            organization=organization,
+            service=service,
+            operator=operator,
+            is_active=serializer.validated_data.get("is_active", True),
         )
 
         serializer = self.get_serializer(subscription)
