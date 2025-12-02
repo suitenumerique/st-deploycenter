@@ -169,6 +169,9 @@ class ServiceAuthenticationPermission(permissions.BasePermission):
         if len(api_key_parts) != 2:
             return False
 
+        if api_key_parts[0] != "Bearer":
+            return False
+
         api_key = api_key_parts[1]
 
         # Check if the service matches.
