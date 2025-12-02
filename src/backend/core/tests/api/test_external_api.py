@@ -95,7 +95,7 @@ def test_external_api_create_subscription():
     client.credentials(HTTP_AUTHORIZATION=f"Bearer {api_key}")
 
     # Create subscription
-    response = client.post(
+    response = client.patch(
         f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/"
         f"services/{service.id}/subscription/",
         {},
@@ -128,7 +128,7 @@ def test_external_api_create_subscription():
         operator=operator, organization=organization2
     )
 
-    response = client.post(
+    response = client.patch(
         f"/api/v1.0/operators/{operator.id}/organizations/{organization2.id}/"
         f"services/{service2.id}/subscription/",
         {"is_active": False},
@@ -276,5 +276,53 @@ def test_external_api_organization_read_only():
     # Try to delete organization (should fail - read-only)
     response = client.delete(
         f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/"
+    )
+    assert response.status_code == 405
+
+
+def test_external_api_subscription_post_not_allowed():
+    """Test that POST method is not allowed for subscription endpoint via external API."""
+    operator = factories.OperatorFactory()
+    api_key = "test-external-api-key-12345"
+    operator.config = {"external_management_api_key": api_key}
+    operator.save()
+
+    organization = factories.OrganizationFactory()
+    service = factories.ServiceFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {api_key}")
+
+    response = client.post(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/subscription/",
+        {},
+        format="json",
+    )
+    assert response.status_code == 405
+
+
+def test_external_api_subscription_put_not_allowed():
+    """Test that PUT method is not allowed for subscription endpoint via external API."""
+    operator = factories.OperatorFactory()
+    api_key = "test-external-api-key-12345"
+    operator.config = {"external_management_api_key": api_key}
+    operator.save()
+
+    organization = factories.OrganizationFactory()
+    service = factories.ServiceFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {api_key}")
+
+    response = client.put(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/subscription/",
+        {"is_active": True},
+        format="json",
     )
     assert response.status_code == 405

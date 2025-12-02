@@ -5,7 +5,6 @@ import {
 } from "@/features/layouts/components/GlobalLayout";
 import { useRouter } from "next/router";
 import {
-  useMutationCreateOrganizationServiceSubscription,
   useMutationUpdateOrganizationServiceSubscription,
   useOrganization,
   useOrganizationServices,
@@ -130,8 +129,6 @@ const ServiceBlock = ({
   const [checked, setChecked] = useState(
     service.subscription ? service.subscription.is_active : false
   );
-  const { mutate: createOrganizationServiceSubscription } =
-    useMutationCreateOrganizationServiceSubscription();
   const { mutate: updateOrganizationServiceSubscription } =
     useMutationUpdateOrganizationServiceSubscription();
   const modals = useModals();
@@ -171,35 +168,19 @@ const ServiceBlock = ({
               if (e.target.checked) {
                 const decision = await modals.confirmationModal();
                 if (decision === "yes") {
-                  if (service.subscription) {
-                    updateOrganizationServiceSubscription(
-                      {
-                        operatorId,
-                        organizationId,
-                        serviceId: service.id,
-                        data: { is_active: true },
+                  updateOrganizationServiceSubscription(
+                    {
+                      operatorId,
+                      organizationId,
+                      serviceId: service.id,
+                      data: { is_active: true },
+                    },
+                    {
+                      onError: () => {
+                        setChecked(false);
                       },
-                      {
-                        onError: () => {
-                          setChecked(false);
-                        },
-                      }
-                    );
-                  } else {
-                    createOrganizationServiceSubscription(
-                      {
-                        operatorId,
-                        organizationId,
-                        serviceId: service.id,
-                      },
-                      {
-                        onError: () => {
-                          setChecked(false);
-                        },
-                      }
-                    );
-                  }
-
+                    }
+                  );
                   setChecked(true);
                 }
               } else {

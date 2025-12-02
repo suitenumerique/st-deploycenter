@@ -184,9 +184,7 @@ def test_api_organizations_services_list_authenticated():
     assert len(org2_result["service_subscriptions"]) == 0
 
     # Check that we don't have access to the organization via operator2
-    response = client.get(
-        f"/api/v1.0/operators/{operator2.id}/organizations/"
-    )
+    response = client.get(f"/api/v1.0/operators/{operator2.id}/organizations/")
     assert response.status_code == 403
 
     response = client.get(
@@ -238,7 +236,7 @@ def test_api_organization_service_enable_delete():
     assert response.status_code == 404
 
     # Test that the subscription can be created
-    response = client.post(
+    response = client.patch(
         f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/services/{service1.id}/subscription/",
         {},
         format="json",
@@ -317,7 +315,7 @@ def test_api_organization_service_inactive():
     assert response.status_code == 404
 
     # Test that the subscription can be created with is_active=True (default)
-    response = client.post(
+    response = client.patch(
         f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/services/{service1.id}/subscription/",
         {},
         format="json",
@@ -362,7 +360,7 @@ def test_api_organization_service_inactive():
     assert response.status_code == 204
 
     # Test that the subscription can be created with is_active=False
-    response = client.post(
+    response = client.patch(
         f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/services/{service1.id}/subscription/",
         {"is_active": False},
         format="json",
@@ -432,9 +430,10 @@ def test_api_organization_service_enable_disable_no_role():
     assert response.status_code == 403
 
     # Test that the subscription cannot be created
-    response = client.post(
+    response = client.patch(
         f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/services/{service1.id}/subscription/",
         {},
+        format="json",
     )
     assert response.status_code == 403
 
@@ -444,3 +443,45 @@ def test_api_organization_service_enable_disable_no_role():
         f"/services/{service1.id}/subscription/"
     )
     assert response.status_code == 403
+
+
+def test_api_organization_service_subscription_post_not_allowed():
+    """Test that POST method is not allowed for subscription endpoint."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory()
+    service = factories.ServiceFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    response = client.post(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/subscription/",
+        {},
+        format="json",
+    )
+    assert response.status_code == 405
+
+
+def test_api_organization_service_subscription_put_not_allowed():
+    """Test that PUT method is not allowed for subscription endpoint."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory()
+    service = factories.ServiceFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    response = client.put(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/subscription/",
+        {"is_active": True},
+        format="json",
+    )
+    assert response.status_code == 405

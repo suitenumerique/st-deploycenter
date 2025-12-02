@@ -120,24 +120,6 @@ export const getOrganizationServices = async (
   return data;
 };
 
-export const createOrganizationServiceSubscription = async (
-  operatorId: string,
-  organizationId: string,
-  serviceId: string
-): Promise<ServiceSubscription> => {
-  const response = await fetchAPI(
-    `operators/${operatorId}/organizations/${organizationId}/services/${serviceId}/subscription/`,
-    {
-      method: "POST",
-    },
-    {
-      redirectOn40x: false,
-    }
-  );
-  const data = (await response.json()) as ServiceSubscription;
-  return data;
-};
-
 export const deleteOrganizationServiceSubscription = async (
   operatorId: string,
   organizationId: string,

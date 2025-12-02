@@ -6,11 +6,9 @@ from django.db.models import Prefetch, Q
 from django.http import HttpResponse
 
 from rest_framework import status, viewsets
-from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.serializers import ValidationError
 from rest_framework.settings import api_settings
 
 from core import models
@@ -109,14 +107,9 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
     GET /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/
         Get the subscription for the given organization and service.
 
-    POST /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/
-        Create a new subscription for the given organization and service.
-
-    PUT /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/
-        Update the subscription for the given organization and service.
-
     PATCH /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/
-        Partial update the subscription for the given organization and service.
+        Create or update the subscription for the given organization and service.
+        Creates the subscription if it doesn't exist (upsert behavior).
 
     DELETE /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/
         Delete the subscription for the given organization and service.
@@ -173,16 +166,13 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(subscription)
         return Response(serializer.data)
 
-    def create(self, request, *args, **kwargs):
+    def partial_update(self, request, *args, **kwargs):
         """
-        Create a new subscription for the operator-organization-service triple.
-        Returns 400 if subscription already exists.
+        Partially update or create the subscription for the operator-organization-service triple.
+        Creates the subscription if it doesn't exist (upsert behavior).
         """
-        if self.get_queryset().exists():
-            return Response(
-                {"error": "Subscription already exists"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        queryset = self.get_queryset()
+        subscription = queryset.first()
 
         organization = models.Organization.objects.get(
             id=self.kwargs["organization_id"]
@@ -190,19 +180,26 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
         service = models.Service.objects.get(id=self.kwargs["service_id"])
         operator = models.Operator.objects.get(id=self.kwargs["operator_id"])
 
-        # Validate and extract is_active from request data
-        serializer = self.get_serializer(data=request.data)
+        # Validate request data
+        serializer = self.get_serializer(subscription, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
 
+        if subscription:
+            # Update existing subscription
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        # Create new subscription with provided data, using defaults for missing fields
+        is_active = serializer.validated_data.get("is_active", True)
         subscription = models.ServiceSubscription.objects.create(
             organization=organization,
             service=service,
             operator=operator,
-            is_active=serializer.validated_data.get("is_active", True),
+            is_active=is_active,
         )
-
-        serializer = self.get_serializer(subscription)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(
+            self.get_serializer(subscription).data, status=status.HTTP_201_CREATED
+        )
 
     def destroy(self, request, *args, **kwargs):
         """

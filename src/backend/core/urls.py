@@ -65,8 +65,6 @@ urlpatterns = [
                                                         OrganizationServiceSubscriptionViewSet.as_view(
                                                             {
                                                                 "get": "retrieve",
-                                                                "post": "create",
-                                                                "put": "update",
                                                                 "patch": "partial_update",
                                                                 "delete": "destroy",
                                                             }

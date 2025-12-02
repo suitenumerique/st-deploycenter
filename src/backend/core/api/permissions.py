@@ -113,12 +113,16 @@ def user_has_role_in_organization(request, organization_id, operator_id):
         return False
 
     try:
-        operator = models.Operator.objects.get(id=operator_id, user_roles__user=request.user)
+        operator = models.Operator.objects.get(
+            id=operator_id, user_roles__user=request.user
+        )
     except models.Operator.DoesNotExist:
         return False
 
     # Make sure the organization is managed by the operator
-    return models.Organization.objects.filter(id=organization_id, operator_roles__operator=operator).exists()
+    return models.Organization.objects.filter(
+        id=organization_id, operator_roles__operator=operator
+    ).exists()
 
 
 class OperatorAndOrganizationAccessPermission(permissions.BasePermission):
