@@ -18,14 +18,12 @@ from .api.viewsets.service import (
     OrganizationServiceSubscriptionViewSet,
     OrganizationServiceViewSet,
     ServiceLogoViewSet,
-    ServiceViewSet,
 )
 from .api.viewsets.user import UserViewSet
 
 # Create router and register viewsets
 router = DefaultRouter()
 router.register(r"lagaufre", LagaufreViewSet, basename="lagaufre")
-router.register(r"services", ServiceViewSet)
 router.register(r"servicelogo", ServiceLogoViewSet, basename="servicelogo")
 router.register(r"users", UserViewSet, basename="user")
 router.register(r"operators", OperatorViewSet)
@@ -67,8 +65,6 @@ urlpatterns = [
                                                         OrganizationServiceSubscriptionViewSet.as_view(
                                                             {
                                                                 "get": "retrieve",
-                                                                "post": "create",
-                                                                "put": "update",
                                                                 "patch": "partial_update",
                                                                 "delete": "destroy",
                                                             }

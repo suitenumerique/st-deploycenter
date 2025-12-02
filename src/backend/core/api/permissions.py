@@ -1,5 +1,6 @@
 """Permission handlers for the deploycenter core app."""
 
+import logging
 import secrets
 
 from django.core import exceptions
@@ -8,20 +9,27 @@ from rest_framework import permissions
 
 from core import models
 
+logger = logging.getLogger(__name__)
+
 ACTION_FOR_METHOD_TO_PERMISSION = {
     "versions_detail": {"DELETE": "versions_destroy", "GET": "versions_retrieve"},
     "children": {"GET": "children_list", "POST": "children_create"},
 }
 
 
-class IsAuthenticated(permissions.BasePermission):
+class IsAuthenticatedWithAnyMethod(permissions.BasePermission):
     """
     Allows access only to authenticated users. Alternative method checking the presence
     of the auth token to avoid hitting the database.
+    Supports both user authentication and external API key authentication.
     """
 
     def has_permission(self, request, view):
-        return bool(request.auth) or request.user.is_authenticated
+        # Check if authenticated via external API key (request.auth is Operator)
+        if request.auth and isinstance(request.auth, models.Operator):
+            return True
+        # Check if authenticated via user
+        return bool(request.user and request.user.is_authenticated)
 
 
 class IsSuperUser(permissions.IsAdminUser):
@@ -31,7 +39,7 @@ class IsSuperUser(permissions.IsAdminUser):
         return request.user and (request.user.is_superuser)
 
 
-class IsAuthenticatedOrSafe(IsAuthenticated):
+class IsAuthenticatedOrSafe(IsAuthenticatedWithAnyMethod):
     """Allows access to authenticated users (or anonymous users but only on safe methods)."""
 
     def has_permission(self, request, view):
@@ -40,7 +48,7 @@ class IsAuthenticatedOrSafe(IsAuthenticated):
         return super().has_permission(request, view)
 
 
-class IsSelf(IsAuthenticated):
+class IsSelf(IsAuthenticatedWithAnyMethod):
     """
     Allows access only to authenticated users. Alternative method checking the presence
     of the auth token to avoid hitting the database.
@@ -51,7 +59,7 @@ class IsSelf(IsAuthenticated):
         return obj == request.user
 
 
-class IsOwnedOrPublic(IsAuthenticated):
+class IsOwnedOrPublic(IsAuthenticatedWithAnyMethod):
     """
     Allows access to authenticated users only for objects that are owned or not related
     to any user via the "owner" field.
@@ -75,49 +83,79 @@ class OperatorAccessPermission(permissions.BasePermission):
     """
     Allows access only to authenticated users with a role in a operators's parent organization.
     Used for nested /operators/<operator_id>/* endpoints.
+    Supports both user authentication and external API key authentication.
     """
 
     def has_permission(self, request, view):
-        operator = models.Operator.objects.get(id=view.kwargs["operator_id"])
+        # If authenticated via external API key, check if the operator matches
+        if request.auth and isinstance(request.auth, models.Operator):
+            operator = request.auth
+            return str(operator.id) == str(view.kwargs["operator_id"])
+
+        # Regular user authentication
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        try:
+            operator = models.Operator.objects.get(id=view.kwargs["operator_id"])
+        except models.Operator.DoesNotExist:
+            return False
+
         has_role = models.UserOperatorRole.objects.filter(
             operator=operator, user=request.user
-        )
+        ).exists()
         return has_role
 
 
-def user_has_role_in_organization(request, organization_id):
+def user_has_role_in_organization(request, organization_id, operator_id):
     """Check if the user has a role in a organization's operator."""
-    organization = models.Organization.objects.get(id=organization_id)
-    has_role = models.OperatorOrganizationRole.objects.filter(
-        organization=organization, operator__user_roles__user=request.user
+    if not request.user or not request.user.is_authenticated:
+        return False
+
+    try:
+        operator = models.Operator.objects.get(
+            id=operator_id, user_roles__user=request.user
+        )
+    except models.Operator.DoesNotExist:
+        return False
+
+    # Make sure the organization is managed by the operator
+    return models.Organization.objects.filter(
+        id=organization_id, operator_roles__operator=operator
     ).exists()
-    return has_role
 
 
-class OrganizationAccessPermission(permissions.BasePermission):
-    """
-    Allows access only to authenticated users with a role in a organizations's operator.
-    """
-
-    def has_object_permission(self, request, view, obj):
-        """
-        Check if the user has a role in a organizations's operator.
-        """
-        has_role = user_has_role_in_organization(request, obj.id)
-        return has_role
-
-
-class ParentOrganizationAccessPermission(permissions.BasePermission):
+class OperatorAndOrganizationAccessPermission(permissions.BasePermission):
     """
     Allows access only to authenticated users with a role in a organizations's parent operator.
     Used for nested /organizations/<organization_id>/* endpoints.
+    Supports both user authentication and external API key authentication.
     """
 
     def has_permission(self, request, view):
-        has_role = user_has_role_in_organization(
-            request, view.kwargs["organization_id"]
-        )
-        return has_role
+        organization_id = view.kwargs.get("organization_id")
+        if not organization_id:
+            return False
+
+        operator_id = view.kwargs.get("operator_id")
+        if not operator_id:
+            return False
+
+        # If authenticated via external API key, check if operator manages the organization
+        if request.auth and isinstance(request.auth, models.Operator):
+            operator = request.auth
+
+            # Verify the operator_id in URL matches the authenticated operator
+            if str(operator.id) != str(operator_id):
+                return False
+
+            # Check if operator manages the organization
+            return models.OperatorOrganizationRole.objects.filter(
+                organization_id=organization_id, operator=operator
+            ).exists()
+
+        # Regular user authentication
+        return user_has_role_in_organization(request, organization_id, operator_id)
 
 
 class ServiceAuthenticationPermission(permissions.BasePermission):
@@ -130,7 +168,15 @@ class ServiceAuthenticationPermission(permissions.BasePermission):
         if not api_key_header:
             return False
 
-        api_key = api_key_header.split(" ")[1]
+        # Validate header format (should be "Bearer <token>")
+        api_key_parts = api_key_header.split(" ", 1)
+        if len(api_key_parts) != 2:
+            return False
+
+        if api_key_parts[0] != "Bearer":
+            return False
+
+        api_key = api_key_parts[1]
 
         # Check if the service matches.
         target_service = models.Service.objects.filter(

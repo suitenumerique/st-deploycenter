@@ -214,6 +214,14 @@ class Operator(BaseModel):
         help_text=_("Whether this operator is currently active"),
     )
 
+    config = models.JSONField(
+        _("configuration"),
+        default=dict,
+        blank=True,
+        null=True,
+        help_text=_("Custom configuration data"),
+    )
+
     class Meta:
         db_table = "deploycenter_operator"
         verbose_name = _("operator")
@@ -549,6 +557,13 @@ class OperatorServiceConfig(BaseModel):
         default=0,
         help_text=_("Priority of the operator and service for display"),
     )
+    externally_managed = models.BooleanField(
+        _("externally managed"),
+        default=False,
+        help_text=_(
+            "Whether the subscriptions to this service are managed in the operator's own system"
+        ),
+    )
 
     class Meta:
         db_table = "deploycenter_operator_service_config"
@@ -882,6 +897,9 @@ class Entitlement(BaseModel):
             models.Index(fields=["service_subscription"]),
         ]
 
+    def __str__(self):
+        return f"{self.service_subscription.organization.name} - {self.type} - {self.account_type} - {self.account_id}"
+
     def clean(self):
         """Validate that the type is a valid EntitlementType."""
         super().clean()
@@ -898,6 +916,3 @@ class Entitlement(BaseModel):
                     }
                 }
             )
-
-    def __str__(self):
-        return f"{self.service_subscription.organization.name} - {self.type} - {self.account_type} - {self.account_id}"

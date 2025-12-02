@@ -378,10 +378,11 @@ class OrganizationServiceSerializer(ServiceSerializer):
     """Serialize services for an organization. It contains the subscription for the given organization."""
 
     subscription = serializers.SerializerMethodField(read_only=True)
+    operator_config = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = models.Service
-        fields = ServiceSerializer.Meta.fields + ["subscription"]
+        fields = ServiceSerializer.Meta.fields + ["subscription", "operator_config"]
         read_only_fields = fields
 
     def get_subscription(self, obj):
@@ -391,4 +392,15 @@ class OrganizationServiceSerializer(ServiceSerializer):
         first_subscription = obj.subscriptions.first()
         if first_subscription:
             return ServiceSubscriptionSerializer(first_subscription).data
+        return None
+
+    def get_operator_config(self, obj):
+        """Return operator configuration for this service."""
+
+        configs = obj.operatorserviceconfig_set.all()
+        if configs.count() > 0:
+            return {
+                "display_priority": configs[0].display_priority,
+                "externally_managed": configs[0].externally_managed,
+            }
         return None

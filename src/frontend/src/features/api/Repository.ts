@@ -44,6 +44,10 @@ export type Service = {
   description: string;
   subscription: ServiceSubscription;
   logo: string | null;
+  operator_config?: {
+    display_priority?: number;
+    externally_managed?: boolean;
+  } | null;
 };
 
 export const sortModelToOrdering = (sortModel: SortModel): string => {
@@ -113,24 +117,6 @@ export const getOrganizationServices = async (
     `operators/${operatorId}/organizations/${organizationId}/services/`
   );
   const data = (await response.json()) as PaginatedResponse<Service>;
-  return data;
-};
-
-export const createOrganizationServiceSubscription = async (
-  operatorId: string,
-  organizationId: string,
-  serviceId: string
-): Promise<ServiceSubscription> => {
-  const response = await fetchAPI(
-    `operators/${operatorId}/organizations/${organizationId}/services/${serviceId}/subscription/`,
-    {
-      method: "POST",
-    },
-    {
-      redirectOn40x: false,
-    }
-  );
-  const data = (await response.json()) as ServiceSubscription;
   return data;
 };
 

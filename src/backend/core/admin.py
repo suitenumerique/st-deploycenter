@@ -265,7 +265,7 @@ class OperatorAdmin(admin.ModelAdmin):
     readonly_fields = ("id", "computed_contribution", "created_at", "updated_at")
 
     fieldsets = (
-        (None, {"fields": ("name", "url", "is_active")}),
+        (None, {"fields": ("name", "url", "is_active", "config")}),
         (_("Financial Information"), {"fields": ("computed_contribution",)}),
         (_("Metadata"), {"fields": ("created_at", "updated_at")}),
     )
@@ -833,8 +833,14 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
 class OperatorServiceConfigAdmin(admin.ModelAdmin):
     """Admin class for the OperatorServiceConfig model"""
 
-    list_display = ("operator", "service", "display_priority", "created_at")
-    list_filter = ("operator", "service__is_active", "created_at")
+    list_display = (
+        "operator",
+        "service",
+        "display_priority",
+        "externally_managed",
+        "created_at",
+    )
+    list_filter = ("operator", "service__is_active", "externally_managed", "created_at")
     search_fields = ("operator__name", "service__name", "service__type")
     ordering = ("operator__name", "display_priority", "service__name")
     readonly_fields = ("id", "created_at", "updated_at")
@@ -842,7 +848,17 @@ class OperatorServiceConfigAdmin(admin.ModelAdmin):
     autocomplete_fields = ["operator", "service"]
 
     fieldsets = (
-        (None, {"fields": ("operator", "service", "display_priority")}),
+        (
+            None,
+            {
+                "fields": (
+                    "operator",
+                    "service",
+                    "display_priority",
+                    "externally_managed",
+                )
+            },
+        ),
         (_("Metadata"), {"fields": ("created_at", "updated_at")}),
     )
 

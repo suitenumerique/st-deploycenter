@@ -80,6 +80,9 @@ def test_api_organizations_list_authenticated():
         ],
     )
 
+    response = client.get(f"/api/v1.0/operators/{operator2.id}/organizations/")
+    assert response.status_code == 403
+
 
 def test_api_organizations_list_authenticated_order_by():
     """

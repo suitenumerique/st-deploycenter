@@ -2,7 +2,6 @@ import {
   getOperator,
   getOrganizationServices,
   deleteOrganizationServiceSubscription,
-  createOrganizationServiceSubscription,
   getOperatorOrganizations,
   updateOrganizationServiceSubscription,
   ServiceSubscription,
@@ -69,35 +68,6 @@ export const useMutationDeleteOrganizationServiceSubscription = () => {
       serviceId: string;
     }) => {
       return deleteOrganizationServiceSubscription(
-        operatorId,
-        organizationId,
-        serviceId
-      );
-    },
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: ["organizations", variables.organizationId, "services"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["operators"],
-      });
-    },
-  });
-};
-
-export const useMutationCreateOrganizationServiceSubscription = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      operatorId,
-      organizationId,
-      serviceId,
-    }: {
-      operatorId: string;
-      organizationId: string;
-      serviceId: string;
-    }) => {
-      return createOrganizationServiceSubscription(
         operatorId,
         organizationId,
         serviceId

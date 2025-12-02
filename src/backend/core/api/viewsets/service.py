@@ -2,124 +2,19 @@
 API endpoints for Service model.
 """
 
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 from django.http import HttpResponse
 
 from rest_framework import status, viewsets
-from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.serializers import ValidationError
+from rest_framework.settings import api_settings
 
 from core import models
+from core.authentication import ExternalManagementApiKeyAuthentication
 
 from .. import permissions, serializers
-
-
-class ServiceViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet for Service model."""
-
-    queryset = models.Service.objects.all()
-    serializer_class = serializers.ServiceSerializer
-    permission_classes = [IsAuthenticated]
-
-    filterset_fields = ["is_active", "type"]
-    search_fields = ["type", "description"]
-    ordering_fields = ["type", "created_at"]
-    ordering = ["type"]
-
-    @action(
-        detail=True,
-        methods=["post"],
-        url_path="check-subscription",
-        url_name="check-subscription",
-    )
-    def check_subscription(self, request, **kwargs):
-        """
-        Check if an organization has an active subscription to this service.
-
-        This endpoint allows services to check if a SIRET, SIREN, or INSEE code
-        has access to their service.
-        """
-        # Get the service
-        service = self.get_object()
-
-        # Validate organization identifier using serializer
-        serializer = serializers.OrganizationIdentifierSerializer(data=request.data)
-
-        if not serializer.is_valid():
-            return Response(
-                {
-                    "has_subscription": False,
-                    "error_message": serializer.errors,
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        try:
-            # Get organization using serializer (requires identifier for this endpoint)
-            organization = serializer.get_organization()
-
-            if organization is None:
-                return Response(
-                    {
-                        "has_subscription": False,
-                        "error_message": "No organization identifier provided",
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            # Check for subscription
-            subscription = (
-                models.ServiceSubscription.objects.filter(
-                    organization=organization, service=service
-                )
-                .select_related("organization")
-                .first()
-            )
-
-            if subscription:
-                # Organization has an active subscription
-                response_data = {
-                    "has_subscription": subscription.is_active,
-                    "organization_id": organization.id,
-                    "organization_name": organization.name,
-                    "subscription_id": subscription.id,
-                    "service_id": service.id,
-                    "service_name": service.name,
-                    "error_message": None,
-                }
-                return Response(response_data, status=status.HTTP_200_OK)
-
-            # Organization exists but no subscription
-            response_data = {
-                "has_subscription": False,
-                "organization_id": organization.id,
-                "organization_name": organization.name,
-                "subscription_id": None,
-                "service_id": service.id,
-                "service_name": service.name,
-                "error_message": "Organization exists but has no subscription to this service",
-            }
-            return Response(response_data, status=status.HTTP_200_OK)
-
-        except ValidationError as e:
-            return Response(
-                {
-                    "has_subscription": False,
-                    "error_message": str(e),
-                },
-                status=status.HTTP_404_NOT_FOUND,
-            )
-        except (ValueError, KeyError, TypeError) as e:
-            return Response(
-                {
-                    "has_subscription": False,
-                    "error_message": f"Unexpected error: {str(e)}",
-                },
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
 
 
 class ServiceLogoViewSet(viewsets.ReadOnlyModelViewSet):
@@ -165,22 +60,45 @@ class OrganizationServiceViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = models.Service.objects.all()
     serializer_class = serializers.OrganizationServiceSerializer
     permission_classes = [
-        IsAuthenticated,
-        permissions.ParentOrganizationAccessPermission,
+        permissions.IsAuthenticatedWithAnyMethod,
+        permissions.OperatorAndOrganizationAccessPermission,
     ]
 
     def get_queryset(self):
-        organization = models.Organization.objects.get(
-            id=self.kwargs["organization_id"]
-        )
-        prefetch_queryset = models.ServiceSubscription.objects.filter(
-            organization=organization, operator=self.kwargs["operator_id"]
-        )
+        organization_id = self.kwargs["organization_id"]
+        operator_id = self.kwargs["operator_id"]
+
         return (
-            models.Service.objects.all()
-            .prefetch_related(Prefetch("subscriptions", queryset=prefetch_queryset))
-            .order_by("created_at")
+            models.Service.objects.filter(
+                Q(
+                    subscriptions__organization_id=organization_id,
+                    subscriptions__operator_id=operator_id,
+                )
+                | Q(operatorserviceconfig__operator_id=operator_id)
+            )
+            .prefetch_related(
+                Prefetch(
+                    "subscriptions",
+                    queryset=models.ServiceSubscription.objects.filter(
+                        organization_id=organization_id, operator_id=operator_id
+                    ),
+                ),
+                Prefetch(
+                    "operatorserviceconfig_set",
+                    queryset=models.OperatorServiceConfig.objects.filter(
+                        operator_id=operator_id,
+                    ),
+                ),
+            )
+            .distinct()
+            .order_by("id")
         )
+
+    def get_serializer_context(self):
+        """Add operator_id to serializer context."""
+        context = super().get_serializer_context()
+        context["operator_id"] = self.kwargs["operator_id"]
+        return context
 
 
 class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
@@ -189,24 +107,24 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
     GET /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/
         Get the subscription for the given organization and service.
 
-    POST /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/
-        Create a new subscription for the given organization and service.
-
-    PUT /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/
-        Update the subscription for the given organization and service.
-
     PATCH /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/
-        Partial update the subscription for the given organization and service.
+        Create or update the subscription for the given organization and service.
+        Creates the subscription if it doesn't exist (upsert behavior).
 
     DELETE /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/
         Delete the subscription for the given organization and service.
+
+    Supports both user authentication and external API key authentication.
     """
 
     queryset = models.ServiceSubscription.objects.all()
     serializer_class = serializers.ServiceSubscriptionSerializer
+    authentication_classes = [
+        ExternalManagementApiKeyAuthentication,
+    ] + [*api_settings.DEFAULT_AUTHENTICATION_CLASSES]
     permission_classes = [
-        IsAuthenticated,
-        permissions.ParentOrganizationAccessPermission,
+        permissions.IsAuthenticatedWithAnyMethod,
+        permissions.OperatorAndOrganizationAccessPermission,
     ]
 
     def get_queryset(self):
@@ -225,8 +143,10 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
         queryset = self.get_queryset()
         try:
             return queryset.get()
-        except models.ServiceSubscription.DoesNotExist:
-            raise NotFound("Subscription not found for this operator-organization-service triple.")
+        except models.ServiceSubscription.DoesNotExist as err:
+            raise NotFound(
+                "Subscription not found for this operator-organization-service triple."
+            ) from err
 
     def list(self, request, *args, **kwargs):
         """
@@ -246,16 +166,13 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(subscription)
         return Response(serializer.data)
 
-    def create(self, request, *args, **kwargs):
+    def partial_update(self, request, *args, **kwargs):
         """
-        Create a new subscription for the operator-organization-service triple.
-        Returns 400 if subscription already exists.
+        Partially update or create the subscription for the operator-organization-service triple.
+        Creates the subscription if it doesn't exist (upsert behavior).
         """
-        if self.get_queryset().exists():
-            return Response(
-                {"error": "Subscription already exists"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        queryset = self.get_queryset()
+        subscription = queryset.first()
 
         organization = models.Organization.objects.get(
             id=self.kwargs["organization_id"]
@@ -263,12 +180,26 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
         service = models.Service.objects.get(id=self.kwargs["service_id"])
         operator = models.Operator.objects.get(id=self.kwargs["operator_id"])
 
-        subscription = models.ServiceSubscription.objects.create(
-            organization=organization, service=service, operator=operator
-        )
+        # Validate request data
+        serializer = self.get_serializer(subscription, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
 
-        serializer = self.get_serializer(subscription)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        if subscription:
+            # Update existing subscription
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        # Create new subscription with provided data, using defaults for missing fields
+        is_active = serializer.validated_data.get("is_active", True)
+        subscription = models.ServiceSubscription.objects.create(
+            organization=organization,
+            service=service,
+            operator=operator,
+            is_active=is_active,
+        )
+        return Response(
+            self.get_serializer(subscription).data, status=status.HTTP_201_CREATED
+        )
 
     def destroy(self, request, *args, **kwargs):
         """

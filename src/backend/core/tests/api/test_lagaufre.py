@@ -639,3 +639,49 @@ class TestLagaufreServicesEndpoint:
         assert "organization" not in data
         assert len(data["services"]) == 1
         assert "subscribed" not in data["services"][0]
+
+    def test_get_services_only_matches_operator_specific_config(self, api_client):
+        """
+        Test that display_priority filter only matches the OperatorServiceConfig
+        for the specified operator, not configs from other operators.
+
+        This test would fail if the filter operatorserviceconfig__display_priority__gte
+        matches OperatorServiceConfig instances from different operators.
+        """
+        # Create two different operators
+        operator1 = factories.OperatorFactory()
+        operator2 = factories.OperatorFactory()
+
+        # Create a service that will be associated with both operators
+        service = factories.ServiceFactory(is_active=True)
+
+        # Create OperatorServiceConfig for operator1 with negative priority
+        # (should be excluded by the filter)
+        factories.OperatorServiceConfigFactory(
+            operator=operator1, service=service, display_priority=-1
+        )
+
+        # Create OperatorServiceConfig for operator2 with positive priority
+        # (should NOT affect operator1's query)
+        factories.OperatorServiceConfigFactory(
+            operator=operator2, service=service, display_priority=5
+        )
+
+        # Query for operator1's services
+        # The service should NOT be returned because operator1's config has priority < 0
+        response = api_client.get(
+            "/api/v1.0/lagaufre/services/",
+            {"operator": operator1.id},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # The service should NOT be in the results because operator1's config
+        # has display_priority=-1, which is < 0
+        service_ids = [s["id"] for s in data["services"]]
+        assert service.id not in service_ids, (
+            "Service should not be returned for operator1 because its "
+            "OperatorServiceConfig has display_priority=-1. If this test fails, "
+            "the filter is incorrectly matching operator2's config."
+        )
