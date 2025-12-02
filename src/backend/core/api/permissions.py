@@ -93,36 +93,35 @@ class OperatorAccessPermission(permissions.BasePermission):
             return str(operator.id) == str(view.kwargs["operator_id"])
 
         # Regular user authentication
-        operator = models.Operator.objects.get(id=view.kwargs["operator_id"])
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        try:
+            operator = models.Operator.objects.get(id=view.kwargs["operator_id"])
+        except models.Operator.DoesNotExist:
+            return False
+
         has_role = models.UserOperatorRole.objects.filter(
             operator=operator, user=request.user
         ).exists()
         return has_role
 
 
-def user_has_role_in_organization(request, organization_id):
+def user_has_role_in_organization(request, organization_id, operator_id):
     """Check if the user has a role in a organization's operator."""
-    organization = models.Organization.objects.get(id=organization_id)
-    has_role = models.OperatorOrganizationRole.objects.filter(
-        organization=organization, operator__user_roles__user=request.user
-    ).exists()
-    return has_role
+    if not request.user or not request.user.is_authenticated:
+        return False
+
+    try:
+        operator = models.Operator.objects.get(id=operator_id, user_roles__user=request.user)
+    except models.Operator.DoesNotExist:
+        return False
+
+    # Make sure the organization is managed by the operator
+    return models.Organization.objects.filter(id=organization_id, operator_roles__operator=operator).exists()
 
 
-class OrganizationAccessPermission(permissions.BasePermission):
-    """
-    Allows access only to authenticated users with a role in a organizations's operator.
-    """
-
-    def has_object_permission(self, request, view, obj):
-        """
-        Check if the user has a role in a organizations's operator.
-        """
-        has_role = user_has_role_in_organization(request, obj.id)
-        return has_role
-
-
-class ParentOrganizationAccessPermission(permissions.BasePermission):
+class OperatorAndOrganizationAccessPermission(permissions.BasePermission):
     """
     Allows access only to authenticated users with a role in a organizations's parent operator.
     Used for nested /organizations/<organization_id>/* endpoints.
@@ -134,13 +133,16 @@ class ParentOrganizationAccessPermission(permissions.BasePermission):
         if not organization_id:
             return False
 
+        operator_id = view.kwargs.get("operator_id")
+        if not operator_id:
+            return False
+
         # If authenticated via external API key, check if operator manages the organization
         if request.auth and isinstance(request.auth, models.Operator):
             operator = request.auth
-            operator_id = view.kwargs.get("operator_id")
 
             # Verify the operator_id in URL matches the authenticated operator
-            if operator_id and str(operator.id) != str(operator_id):
+            if str(operator.id) != str(operator_id):
                 return False
 
             # Check if operator manages the organization
@@ -149,7 +151,7 @@ class ParentOrganizationAccessPermission(permissions.BasePermission):
             ).exists()
 
         # Regular user authentication
-        return user_has_role_in_organization(request, organization_id)
+        return user_has_role_in_organization(request, organization_id, operator_id)
 
 
 class ServiceAuthenticationPermission(permissions.BasePermission):
@@ -162,7 +164,12 @@ class ServiceAuthenticationPermission(permissions.BasePermission):
         if not api_key_header:
             return False
 
-        api_key = api_key_header.split(" ")[1]
+        # Validate header format (should be "Bearer <token>")
+        api_key_parts = api_key_header.split(" ", 1)
+        if len(api_key_parts) != 2:
+            return False
+
+        api_key = api_key_parts[1]
 
         # Check if the service matches.
         target_service = models.Service.objects.filter(

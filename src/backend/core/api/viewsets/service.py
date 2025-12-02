@@ -2,7 +2,7 @@
 API endpoints for Service model.
 """
 
-from django.db.models import F, Prefetch, Q
+from django.db.models import Prefetch, Q
 from django.http import HttpResponse
 
 from rest_framework import status, viewsets
@@ -17,111 +17,6 @@ from core import models
 from core.authentication import ExternalManagementApiKeyAuthentication
 
 from .. import permissions, serializers
-
-
-class ServiceViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet for Service model."""
-
-    queryset = models.Service.objects.all()
-    serializer_class = serializers.ServiceSerializer
-    permission_classes = [permissions.IsAuthenticatedWithAnyMethod]
-
-    filterset_fields = ["is_active", "type"]
-    search_fields = ["type", "description"]
-    ordering_fields = ["type", "created_at"]
-    ordering = ["type"]
-
-    @action(
-        detail=True,
-        methods=["post"],
-        url_path="check-subscription",
-        url_name="check-subscription",
-    )
-    def check_subscription(self, request, **kwargs):
-        """
-        Check if an organization has an active subscription to this service.
-
-        This endpoint allows services to check if a SIRET, SIREN, or INSEE code
-        has access to their service.
-        """
-        # Get the service
-        service = self.get_object()
-
-        # Validate organization identifier using serializer
-        serializer = serializers.OrganizationIdentifierSerializer(data=request.data)
-
-        if not serializer.is_valid():
-            return Response(
-                {
-                    "has_subscription": False,
-                    "error_message": serializer.errors,
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        try:
-            # Get organization using serializer (requires identifier for this endpoint)
-            organization = serializer.get_organization()
-
-            if organization is None:
-                return Response(
-                    {
-                        "has_subscription": False,
-                        "error_message": "No organization identifier provided",
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            # Check for subscription
-            subscription = (
-                models.ServiceSubscription.objects.filter(
-                    organization=organization, service=service
-                )
-                .select_related("organization")
-                .first()
-            )
-
-            if subscription:
-                # Organization has an active subscription
-                response_data = {
-                    "has_subscription": subscription.is_active,
-                    "organization_id": organization.id,
-                    "organization_name": organization.name,
-                    "subscription_id": subscription.id,
-                    "service_id": service.id,
-                    "service_name": service.name,
-                    "error_message": None,
-                }
-                return Response(response_data, status=status.HTTP_200_OK)
-
-            # Organization exists but no subscription
-            response_data = {
-                "has_subscription": False,
-                "organization_id": organization.id,
-                "organization_name": organization.name,
-                "subscription_id": None,
-                "service_id": service.id,
-                "service_name": service.name,
-                "error_message": "Organization exists but has no subscription to this service",
-            }
-            return Response(response_data, status=status.HTTP_200_OK)
-
-        except ValidationError as e:
-            return Response(
-                {
-                    "has_subscription": False,
-                    "error_message": str(e),
-                },
-                status=status.HTTP_404_NOT_FOUND,
-            )
-        except (ValueError, KeyError, TypeError) as e:
-            return Response(
-                {
-                    "has_subscription": False,
-                    "error_message": f"Unexpected error: {str(e)}",
-                },
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
 
 
 class ServiceLogoViewSet(viewsets.ReadOnlyModelViewSet):
@@ -168,7 +63,7 @@ class OrganizationServiceViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = serializers.OrganizationServiceSerializer
     permission_classes = [
         permissions.IsAuthenticatedWithAnyMethod,
-        permissions.ParentOrganizationAccessPermission,
+        permissions.OperatorAndOrganizationAccessPermission,
     ]
 
     def get_queryset(self):
@@ -194,7 +89,6 @@ class OrganizationServiceViewSet(viewsets.ReadOnlyModelViewSet):
                     "operatorserviceconfig_set",
                     queryset=models.OperatorServiceConfig.objects.filter(
                         operator_id=operator_id,
-                        service_id__in=F("service_id"),
                     ),
                 ),
             )
@@ -237,7 +131,7 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
     ] + [*api_settings.DEFAULT_AUTHENTICATION_CLASSES]
     permission_classes = [
         permissions.IsAuthenticatedWithAnyMethod,
-        permissions.ParentOrganizationAccessPermission,
+        permissions.OperatorAndOrganizationAccessPermission,
     ]
 
     def get_queryset(self):

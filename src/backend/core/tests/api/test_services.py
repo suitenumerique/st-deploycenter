@@ -25,9 +25,6 @@ def test_api_organizations_services_list_anonymous():
         f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/"
     )
     assert response.status_code == 401
-    assert response.json() == {
-        "detail": "Informations d'authentification non fournies."
-    }
 
 
 def test_api_organizations_services_list_authenticated():
@@ -48,8 +45,8 @@ def test_api_organizations_services_list_authenticated():
 
     organization_ok1 = factories.OrganizationFactory(name="A")
     organization_ok2 = factories.OrganizationFactory(name="B")
-    organization_nok1 = factories.OrganizationFactory()
-    organization_nok2 = factories.OrganizationFactory()
+    organization_nok1 = factories.OrganizationFactory(name="C")
+    organization_nok2 = factories.OrganizationFactory(name="D")
     factories.OperatorOrganizationRoleFactory(
         operator=operator, organization=organization_ok1
     )
@@ -99,6 +96,7 @@ def test_api_organizations_services_list_authenticated():
     response = client.get(
         f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/services/"
     )
+    assert response.status_code == 200
     content = response.json()
     results = content["results"]
     assert len(results) == 4
@@ -184,6 +182,17 @@ def test_api_organizations_services_list_authenticated():
     org2_result = results_by_id[str(organization_ok2.id)]
     assert org2_result["name"] == organization_ok2.name
     assert len(org2_result["service_subscriptions"]) == 0
+
+    # Check that we don't have access to the organization via operator2
+    response = client.get(
+        f"/api/v1.0/operators/{operator2.id}/organizations/"
+    )
+    assert response.status_code == 403
+
+    response = client.get(
+        f"/api/v1.0/operators/{operator2.id}/organizations/{organization_ok1.id}/services/"
+    )
+    assert response.status_code == 403
 
 
 def test_api_organization_service_enable_delete():
