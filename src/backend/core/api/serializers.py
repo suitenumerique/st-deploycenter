@@ -339,7 +339,7 @@ class ServiceSubscriptionWithServiceSerializer(ServiceSubscriptionSerializer):
     class Meta:
         model = models.ServiceSubscription
         fields = ServiceSubscriptionSerializer.Meta.fields + ["service", "operator"]
-        read_only_fields = fields
+        read_only_fields = [field for field in fields if field != "metadata"]
 
 
 class OrganizationSerializer(serializers.ModelSerializer):
