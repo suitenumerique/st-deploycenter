@@ -405,3 +405,9 @@ class OrganizationServiceSerializer(ServiceSerializer):
                 "externally_managed": configs[0].externally_managed,
             }
         return None
+
+    def to_representation(self, instance):
+        """Convert the representation to the desired format."""
+        data = super().to_representation(instance)
+        data["can_activate"] = instance.can_activate(self.context["organization"])
+        return data

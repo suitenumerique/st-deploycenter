@@ -485,3 +485,176 @@ def test_api_organization_service_subscription_put_not_allowed():
         format="json",
     )
     assert response.status_code == 405
+
+
+def test_api_organization_service_can_activate():
+    """Test that the can_activate method returns True if the service has no required services."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    service = factories.ServiceFactory()
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/"
+    )
+    assert response.status_code == 200
+    content = response.json()
+    assert content["can_activate"] is True
+
+
+def test_api_organization_service_cannot_activate_required_services():
+    """Test that it is not possible to activate a service if one of its required services is not activated."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    service_required = factories.ServiceFactory(name="Service Required")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service_required)
+
+    service = factories.ServiceFactory(name="Service")
+    service.required_services.add(service_required)
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    # Check that the service cannot be activated by default
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/"
+    )
+    assert response.status_code == 200
+    content = response.json()
+    assert content["can_activate"] is False
+
+    # Check that the subscription cannot be created
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/subscription/",
+        {"is_active": True},
+        format="json",
+    )
+    assert response.status_code == 400
+    assert response.json() == {
+        "__all__": [
+            "Cannot activate this subscription. The following required services must be active first: Service Required"
+        ]
+    }
+
+
+def test_api_organization_service_can_update_subscription_when_cannot_activate():
+    """Test that it is possible to update a subscription (with is_active=False only) when it cannot be activated."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    service_required = factories.ServiceFactory(name="Service Required")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service_required)
+
+    service = factories.ServiceFactory(name="Service")
+    service.required_services.add(service_required)
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    # Check that the service cannot be activated by default
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/"
+    )
+    assert response.status_code == 200
+    content = response.json()
+    assert content["can_activate"] is False
+
+    # Check that the subscription can be created if is_active is False
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/subscription/",
+        {"metadata": {"idp_id": "1234567890"}, "is_active": False},
+        format="json",
+    )
+    assert response.status_code == 201
+
+    # Check that the subscription can be updated if is_active is False
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/subscription/",
+        {"metadata": {"idp_id": "1234567891"}},
+        format="json",
+    )
+    assert response.status_code == 200
+
+
+def test_api_organization_service_can_activate_if_required_services_are_activated():
+    """Test that activation of a service is possible if all its required services gets activated."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    organization2 = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization2
+    )
+
+    service_required = factories.ServiceFactory(name="Service Required")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service_required)
+
+    service = factories.ServiceFactory(name="Service")
+    service.required_services.add(service_required)
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    # Check that the service cannot be activated by default
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/"
+    )
+    assert response.status_code == 200
+    content = response.json()
+    assert content["can_activate"] is False
+
+    # Activate the required service on another organization to verify that
+    # there is no collision.
+
+    factories.ServiceSubscriptionFactory(
+        organization=organization2, service=service_required, operator=operator
+    )
+
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/"
+    )
+    assert response.status_code == 200
+    content = response.json()
+    assert content["can_activate"] is False
+
+    # Activate the required service on the first organization
+
+    factories.ServiceSubscriptionFactory(
+        organization=organization, service=service_required, operator=operator
+    )
+
+    # Check that the service can be activated
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/"
+    )
+    assert response.status_code == 200
+    content = response.json()
+    assert content["can_activate"] is True

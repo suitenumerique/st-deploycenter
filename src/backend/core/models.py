@@ -669,6 +669,15 @@ class Service(BaseModel):
         help_text=_("Operators with a configuration for this service"),
     )
 
+    required_services = models.ManyToManyField(
+        "self",
+        related_name="required_by",
+        verbose_name=_("required services"),
+        help_text=_("Services that are required for this service to be activated"),
+        symmetrical=False,
+        blank=True,
+    )
+
     class Meta:
         db_table = "deploycenter_service"
         verbose_name = _("service")
@@ -688,6 +697,20 @@ class Service(BaseModel):
         if self.logo_svg:
             return f"{settings.API_PUBLIC_URL}servicelogo/{self.id}/"
         return None
+
+    def can_activate(self, organization: Organization):
+        """
+        Check if the service can be activated for the given organization.
+        """
+        if not self.required_services.count():
+            return True
+        return (
+            self.required_services.all()
+            .filter(
+                subscriptions__organization=organization, subscriptions__is_active=True
+            )
+            .exists()
+        )
 
 
 class ServiceSubscription(BaseModel):
@@ -744,6 +767,13 @@ class ServiceSubscription(BaseModel):
 
     def __str__(self):
         return f"{self.operator.name} → {self.organization.name} → {self.service.name}"
+
+    def clean(self):
+        """
+        Validate that when is_active is True, all required services have active subscriptions.
+        """
+        super().clean()
+        self.validate_required_services()
 
 
 class Metric(models.Model):

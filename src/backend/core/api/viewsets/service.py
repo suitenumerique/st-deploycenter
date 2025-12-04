@@ -95,9 +95,13 @@ class OrganizationServiceViewSet(viewsets.ReadOnlyModelViewSet):
         )
 
     def get_serializer_context(self):
-        """Add operator_id to serializer context."""
+        """Add operator_id and organization to serializer context."""
         context = super().get_serializer_context()
         context["operator_id"] = self.kwargs["operator_id"]
+        organization = models.Organization.objects.get(
+            id=self.kwargs["organization_id"]
+        )
+        context["organization"] = organization
         return context
 
 
