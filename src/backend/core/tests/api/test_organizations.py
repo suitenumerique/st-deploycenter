@@ -6,6 +6,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from core import factories
+from core.models import Organization
 from core.tests.utils import assert_equals_partial
 
 pytestmark = pytest.mark.django_db
@@ -352,7 +353,11 @@ def test_api_organizations_retrieve_authenticated():
     factories.UserOperatorRoleFactory(user=user2, operator=operator2)
     factories.UserOperatorRoleFactory(user=user2, operator=operator3)
 
-    organization_ok1 = factories.OrganizationFactory()
+    organization_ok1 = factories.OrganizationFactory(
+        rpnt=["1.1", "1.2", "2.1", "2.2", "2.3"],
+        adresse_messagerie="contact@commune.fr",
+        site_internet="https://www.commune.fr",
+    )
     organization_ok2 = factories.OrganizationFactory()
     organization_nok1 = factories.OrganizationFactory()
     organization_nok2 = factories.OrganizationFactory()
@@ -379,6 +384,8 @@ def test_api_organizations_retrieve_authenticated():
         {
             "id": str(organization_ok1.id),
             "name": organization_ok1.name,
+            "mail_domain": "commune.fr",
+            "mail_domain_status": Organization.MailDomainStatus.VALID,
         },
     )
 

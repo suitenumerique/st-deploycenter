@@ -4,7 +4,9 @@ Declare and configure the models for the deploycenter core application
 # pylint: disable=too-many-lines,too-many-instance-attributes
 
 import uuid
+from enum import StrEnum
 from logging import getLogger
+from urllib.parse import urlparse
 
 from django.conf import settings
 from django.contrib.auth import models as auth_models
@@ -330,6 +332,15 @@ class Organization(BaseModel):
     Based on data.gouv.fr structure.
     """
 
+    class MailDomainStatus(StrEnum):
+        """
+        Status of the mail domain for the organization.
+        """
+
+        VALID = "valid"
+        NEED_EMAIL_SETUP = "need_email_setup"
+        INVALID = "invalid"
+
     name = models.CharField(
         _("name"),
         max_length=255,
@@ -490,6 +501,67 @@ class Organization(BaseModel):
 
     def __str__(self):
         return f"{self.name} ({self.type})"
+
+    @property
+    def adresse_messagerie_domain(self):
+        """Get the mail domain for the organization."""
+        if not self.adresse_messagerie:
+            return None
+        return self.adresse_messagerie.split("@")[1]
+
+    @property
+    def site_internet_domain(self):
+        """
+        Get the website domain for the organization.
+
+        Not sure that this method is completely exhaustive.
+        """
+        if not self.site_internet:
+            return None
+        parsed = urlparse(self.site_internet)
+        domain = parsed.netloc
+        # Remove port number if present (e.g., "example.com:8080" -> "example.com")
+        if ":" in domain:
+            domain = domain.split(":")[0]
+        # Remove www. prefix if present
+        if domain.startswith("www."):
+            return domain[4:]
+        return domain
+
+    @property
+    def mail_domain(self):
+        """Get the mail domain for the organization."""
+        mail_domain, _ = self.get_mail_domain_status()
+        return mail_domain
+
+    def get_mail_domain_status(self):
+        """
+        Get the mail domain and its status based on RPNT validation.
+
+        Returns:
+            tuple: (mail_domain, status) where:
+                - mail_domain: The mail domain to use (str or None)
+                - status: MailDomainStatus enum value
+        """
+        if not self.rpnt:
+            return (None, self.MailDomainStatus.INVALID)
+
+        rpnt_set = set(self.rpnt)
+
+        website_valid = {"1.1", "1.2"}
+        email_valid = {"2.1", "2.2", "2.3"}
+
+        # Website domain is valid.
+        if website_valid.issubset(rpnt_set):
+            # Email domain is valid and matches the website domain.
+            if email_valid.issubset(rpnt_set):
+                return (self.adresse_messagerie_domain, self.MailDomainStatus.VALID)
+            # Email domain is invalid or does not match the website domain.
+            # Set the email domain to the website domain as it should be anyway once
+            # it will be valid.
+            return (self.site_internet_domain, self.MailDomainStatus.NEED_EMAIL_SETUP)
+        # Website domain is invalid.
+        return (None, self.MailDomainStatus.INVALID)
 
 
 class OperatorOrganizationRole(BaseModel):

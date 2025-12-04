@@ -416,6 +416,14 @@ class OrganizationSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
+    def to_representation(self, instance):
+        """Convert the representation to the desired format."""
+        data = super().to_representation(instance)
+        mail_domain, mail_domain_status = instance.get_mail_domain_status()
+        data["mail_domain"] = mail_domain
+        data["mail_domain_status"] = mail_domain_status
+        return data
+
 
 class OrganizationServiceSerializer(ServiceSerializer):
     """Serialize services for an organization. It contains the subscription for the given organization."""
