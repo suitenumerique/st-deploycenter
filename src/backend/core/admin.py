@@ -265,8 +265,9 @@ class OperatorAdmin(admin.ModelAdmin):
     readonly_fields = ("id", "computed_contribution", "created_at", "updated_at")
 
     fieldsets = (
-        (None, {"fields": ("name", "url", "is_active", "config")}),
+        (None, {"fields": ("name", "url", "is_active")}),
         (_("Financial Information"), {"fields": ("computed_contribution",)}),
+        (_("Configuration"), {"fields": ("config",)}),
         (_("Metadata"), {"fields": ("created_at", "updated_at")}),
     )
     autocomplete_fields = ["users"]
@@ -396,6 +397,7 @@ class ServiceAdmin(admin.ModelAdmin):
                     "maturity",
                     "launch_date",
                     "is_active",
+                    "required_services",
                 )
             },
         ),
