@@ -200,7 +200,6 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
             organization=organization,
             service=service,
             operator=operator,
-            # **serializer.validated_data,
             is_active=is_active,
             metadata=metadata,
         )
