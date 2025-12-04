@@ -26,8 +26,30 @@
           "status": "Active",
           "goto": "Access service",
           "externally_managed": "This service is managed externally and cannot be modified here.",
+          "cannot_activate": "This service cannot be activated for this organization. ProConnect is required.",
+          "idp": {
+            "label": "IDP",
+            "none": "None",
+            "required": "IDP is required",
+            "modal": {
+              "title": "Change the IDP",
+              "help": "Select an IDP for the organization.",
+              "label": "Identity provider",
+              "close": "Close"
+            }
+          },
           "values": {
             "users": "Users"
+          },
+          "mail_domain": {
+            "label": "NDD",
+            "none": "None",
+            "required": "Mail domain is required",
+            "need_email_setup": "The mail domain is not valid. Please set it to the website domain.",
+            "invalid": "The mail domain is not valid. Please set it to the website domain."
+          },
+          "help_center": {
+            "label": "Help Centre"
           }
         },
         "details": {
@@ -73,8 +95,30 @@
           },
           "goto": "Accéder au service",
           "externally_managed": "Ce service est géré de manière externe et ne peut pas être modifié ici.",
+          "cannot_activate": "Ce service ne peut pas être activé pour cette collectivité. ProConnect est requis.",
+          "idp": {
+            "label": "Fournisseur d'identité",
+            "none": "Aucun",
+            "required": "FI requis",
+            "modal": {
+              "title": "Modification du FI",
+              "help": "Selectionnez un FI pour l'organisation.",
+              "label": "Fournisseur d'identité",
+              "close": "Fermer"
+            }
+          },
           "values": {
             "users": "Utilisateurs"
+          },
+          "mail_domain": {
+            "label": "Nom de domaine",
+            "none": "Aucun",
+            "required": "Le domaine mail est requis",
+            "need_email_setup": "Le domaine mail utilisé est celui du site internet, veuillez le raccorder à votre fournisseur de messagerie.",
+            "invalid": "Aucun domaine mail valide trouvé sur la base du RPNT. Veuillez contacter le support."
+          },
+          "help_center": {
+            "label": "Centre d'aide"
           }
         },
         "details": {
