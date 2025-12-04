@@ -221,6 +221,8 @@ class WebhookClient:
             "subscription_created_at": subscription.created_at.isoformat(),
             "subscription_updated_at": subscription.updated_at.isoformat(),
             "subscription_metadata": subscription.metadata,
+            "subscription_idp_name": subscription.idp_name,
+            "subscription_is_active": subscription.is_active,
             # Organization data
             "organization_id": str(organization.id),
             "organization_name": organization.name,
@@ -230,6 +232,7 @@ class WebhookClient:
             "organization_population": organization.population,
             "organization_siret": organization.siret,
             "organization_siren": organization.siren,
+            "organization_mail_domain": organization.mail_domain,
             # Service data
             "service_id": service.id,
             "service_name": service.name,
@@ -237,6 +240,9 @@ class WebhookClient:
             "service_url": service.url,
             "service_description": service.description,
             "service_maturity": service.maturity,
+            # Operator
+            "operator_id": subscription.operator.id,
+            "operator_name": subscription.operator.name,
         }
 
         for webhook_config in self.webhook_configs:
