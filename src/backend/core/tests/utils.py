@@ -20,4 +20,6 @@ def assert_equals_partial(actual, expected, debug=False):
             if isinstance(value, (dict, list)):
                 assert_equals_partial(actual[key], value, debug)
             else:
-                assert actual[key] == value
+                assert actual[key] == value, (
+                    f"Expected {value} but got {actual[key]} for key {key}"
+                )

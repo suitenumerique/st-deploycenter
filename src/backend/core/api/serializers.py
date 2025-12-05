@@ -283,10 +283,11 @@ class OperatorSerializer(serializers.ModelSerializer):
     """Serialize operators."""
 
     user_role = serializers.SerializerMethodField(read_only=True)
+    config = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = models.Operator
-        fields = ["id", "name", "url", "scope", "is_active", "user_role"]
+        fields = ["id", "name", "url", "scope", "is_active", "user_role", "config"]
         read_only_fields = fields
 
     def get_user_role(self, obj):
@@ -296,11 +297,21 @@ class OperatorSerializer(serializers.ModelSerializer):
             return roles[0].role
         return None
 
+    def get_config(self, obj):
+        """
+        Get the configuration for the operator.
+        We don't expose all the configuration, because it may contain sensitive data.
+        """
+        config = obj.config or {}
+        whitelist_keys = ["idps"]
+        return {key: config[key] for key in whitelist_keys if key in config}
+
 
 class ServiceSerializer(serializers.ModelSerializer):
     """Serialize services."""
 
     logo = serializers.CharField(source="get_logo_url", read_only=True)
+    config = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = models.Service
@@ -315,8 +326,15 @@ class ServiceSerializer(serializers.ModelSerializer):
             "is_active",
             "created_at",
             "logo",
+            "config",
         ]
         read_only_fields = fields
+
+    def get_config(self, obj):
+        """Get the configuration for the service."""
+        config = obj.config or {}
+        whitelist_keys = ["help_center_url"]
+        return {key: config[key] for key in whitelist_keys if key in config}
 
 
 class ServiceSubscriptionSerializer(serializers.ModelSerializer):
@@ -325,7 +343,49 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
     class Meta:
         model = models.ServiceSubscription
         fields = ["metadata", "created_at", "updated_at", "is_active"]
-        read_only_fields = ["metadata", "created_at", "updated_at"]
+        read_only_fields = ["created_at", "updated_at"]
+
+    def _validate_proconnect_subscription(self, instance, attrs):
+        """
+        Validate ProConnect subscription data.
+        It is not possible to update the IDP for an active ProConnect subscription.
+        Deactivate the subscription first to change the IDP.
+        """
+        if instance.service.type != "proconnect":
+            return
+
+        # Check if subscription is active (either already active or being set to active)
+        is_active = attrs.get("is_active", instance.is_active)
+        if not is_active:
+            return
+
+        if "metadata" not in attrs:
+            return
+
+        new_metadata = attrs["metadata"]
+        if not isinstance(new_metadata, dict) or not "idp_id" in new_metadata:
+            return
+
+        current_idp_id = instance.metadata.get("idp_id")
+        new_idp_id = new_metadata.get("idp_id")
+        if current_idp_id == new_idp_id:
+            return
+        raise serializers.ValidationError(
+            {
+                "metadata": (
+                    "Cannot update idp_id for an active ProConnect subscription. "
+                    "Deactivate the subscription first to change the IDP."
+                )
+            }
+        )
+
+    def validate(self, attrs):
+        """Validate subscription data."""
+        instance = self.instance
+        if instance:
+            self._validate_proconnect_subscription(instance, attrs)
+
+        return attrs
 
 
 class ServiceSubscriptionWithServiceSerializer(ServiceSubscriptionSerializer):
@@ -338,7 +398,7 @@ class ServiceSubscriptionWithServiceSerializer(ServiceSubscriptionSerializer):
     class Meta:
         model = models.ServiceSubscription
         fields = ServiceSubscriptionSerializer.Meta.fields + ["service", "operator"]
-        read_only_fields = fields
+        read_only_fields = [field for field in fields if field != "metadata"]
 
 
 class OrganizationSerializer(serializers.ModelSerializer):
@@ -373,6 +433,14 @@ class OrganizationSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
+    def to_representation(self, instance):
+        """Convert the representation to the desired format."""
+        data = super().to_representation(instance)
+        mail_domain, mail_domain_status = instance.get_mail_domain_status()
+        data["mail_domain"] = mail_domain
+        data["mail_domain_status"] = mail_domain_status
+        return data
+
 
 class OrganizationServiceSerializer(ServiceSerializer):
     """Serialize services for an organization. It contains the subscription for the given organization."""
@@ -404,3 +472,9 @@ class OrganizationServiceSerializer(ServiceSerializer):
                 "externally_managed": configs[0].externally_managed,
             }
         return None
+
+    def to_representation(self, instance):
+        """Convert the representation to the desired format."""
+        data = super().to_representation(instance)
+        data["can_activate"] = instance.can_activate(self.context["organization"])
+        return data

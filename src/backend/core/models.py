@@ -4,7 +4,9 @@ Declare and configure the models for the deploycenter core application
 # pylint: disable=too-many-lines,too-many-instance-attributes
 
 import uuid
+from enum import StrEnum
 from logging import getLogger
+from urllib.parse import urlparse
 
 from django.conf import settings
 from django.contrib.auth import models as auth_models
@@ -330,6 +332,15 @@ class Organization(BaseModel):
     Based on data.gouv.fr structure.
     """
 
+    class MailDomainStatus(StrEnum):
+        """
+        Status of the mail domain for the organization.
+        """
+
+        VALID = "valid"
+        NEED_EMAIL_SETUP = "need_email_setup"
+        INVALID = "invalid"
+
     name = models.CharField(
         _("name"),
         max_length=255,
@@ -490,6 +501,67 @@ class Organization(BaseModel):
 
     def __str__(self):
         return f"{self.name} ({self.type})"
+
+    @property
+    def adresse_messagerie_domain(self):
+        """Get the mail domain for the organization."""
+        if not self.adresse_messagerie:
+            return None
+        return self.adresse_messagerie.split("@")[1]
+
+    @property
+    def site_internet_domain(self):
+        """
+        Get the website domain for the organization.
+
+        Not sure that this method is completely exhaustive.
+        """
+        if not self.site_internet:
+            return None
+        parsed = urlparse(self.site_internet)
+        domain = parsed.netloc
+        # Remove port number if present (e.g., "example.com:8080" -> "example.com")
+        if ":" in domain:
+            domain = domain.split(":")[0]
+        # Remove www. prefix if present
+        if domain.startswith("www."):
+            return domain[4:]
+        return domain
+
+    @property
+    def mail_domain(self):
+        """Get the mail domain for the organization."""
+        mail_domain, _ = self.get_mail_domain_status()
+        return mail_domain
+
+    def get_mail_domain_status(self):
+        """
+        Get the mail domain and its status based on RPNT validation.
+
+        Returns:
+            tuple: (mail_domain, status) where:
+                - mail_domain: The mail domain to use (str or None)
+                - status: MailDomainStatus enum value
+        """
+        if not self.rpnt:
+            return (None, self.MailDomainStatus.INVALID)
+
+        rpnt_set = set(self.rpnt)
+
+        website_valid = {"1.1", "1.2"}
+        email_valid = {"2.1", "2.2", "2.3"}
+
+        # Website domain is valid.
+        if website_valid.issubset(rpnt_set):
+            # Email domain is valid and matches the website domain.
+            if email_valid.issubset(rpnt_set):
+                return (self.adresse_messagerie_domain, self.MailDomainStatus.VALID)
+            # Email domain is invalid or does not match the website domain.
+            # Set the email domain to the website domain as it should be anyway once
+            # it will be valid.
+            return (self.site_internet_domain, self.MailDomainStatus.NEED_EMAIL_SETUP)
+        # Website domain is invalid.
+        return (None, self.MailDomainStatus.INVALID)
 
 
 class OperatorOrganizationRole(BaseModel):
@@ -669,6 +741,15 @@ class Service(BaseModel):
         help_text=_("Operators with a configuration for this service"),
     )
 
+    required_services = models.ManyToManyField(
+        "self",
+        related_name="required_by",
+        verbose_name=_("required services"),
+        help_text=_("Services that are required for this service to be activated"),
+        symmetrical=False,
+        blank=True,
+    )
+
     class Meta:
         db_table = "deploycenter_service"
         verbose_name = _("service")
@@ -688,6 +769,20 @@ class Service(BaseModel):
         if self.logo_svg:
             return f"{settings.API_PUBLIC_URL}servicelogo/{self.id}/"
         return None
+
+    def can_activate(self, organization: Organization):
+        """
+        Check if the service can be activated for the given organization.
+        """
+        if not self.required_services.count():
+            return True
+        return (
+            self.required_services.all()
+            .filter(
+                subscriptions__organization=organization, subscriptions__is_active=True
+            )
+            .exists()
+        )
 
 
 class ServiceSubscription(BaseModel):
@@ -744,6 +839,82 @@ class ServiceSubscription(BaseModel):
 
     def __str__(self):
         return f"{self.operator.name} → {self.organization.name} → {self.service.name}"
+
+    @property
+    def idp_name(self):
+        """
+        Get the name of the IDP for the ProConnect subscription.
+        """
+        if not self.metadata.get("idp_id"):
+            return None
+        if not self.operator.config["idps"]:
+            return None
+        for idp in self.operator.config["idps"]:
+            if idp["id"] == self.metadata.get("idp_id"):
+                return idp["name"]
+        return None
+
+    def validate_required_services(self):
+        """
+        Validate that all required services have active subscriptions
+        when activating the subscription.
+        """
+        if not self.is_active:
+            return
+
+        required_services = self.service.required_services.all()
+        if not required_services.exists():
+            # No required services, validation passes
+            return
+
+        # Get all required service IDs that have active subscriptions for this organization
+        active_required_service_ids = set(
+            ServiceSubscription.objects.filter(
+                organization=self.organization,
+                service__in=required_services,
+                is_active=True,
+            ).values_list("service_id", flat=True)
+        )
+
+        # Find which required services are missing active subscriptions
+        missing_services = [
+            required_service.name
+            for required_service in required_services
+            if required_service.id not in active_required_service_ids
+        ]
+        if missing_services:
+            services_list = ", ".join(missing_services)
+            raise ValidationError(
+                f"Cannot activate this subscription. The following required services "
+                f"must be active first: {services_list}"
+            )
+
+    def validate_proconnect_subscription(self):
+        """
+        When activating a ProConnect subscription, we need to validate
+        that the mail domain and IDP are set.
+        """
+        if not self.is_active:
+            return
+
+        if self.service.type != "proconnect":
+            return
+
+        if not self.organization.mail_domain:
+            raise ValidationError(
+                "Mail domain is required for ProConnect subscription."
+            )
+
+        if not self.metadata.get("idp_id"):
+            raise ValidationError("IDP is required for ProConnect subscription.")
+
+    def clean(self):
+        """
+        Validate that when is_active is True, all required services have active subscriptions.
+        """
+        super().clean()
+        self.validate_required_services()
+        self.validate_proconnect_subscription()
 
 
 class Metric(models.Model):

@@ -8,15 +8,29 @@ type PaginatedResponse<T> = {
   results: T[];
 };
 
+export type OperatorIdp = {
+  id: string;
+  name: string;
+};
+
 export type Operator = {
   id: string;
   name: string;
   url: string;
   scope: string;
   is_active: boolean;
+  config: {
+    idps: OperatorIdp[];
+  };
 };
 
-type Organization = {
+export enum MailDomainStatus {
+  VALID = "valid",
+  NEED_EMAIL_SETUP = "need_email_setup",
+  INVALID = "invalid",
+}
+
+export type Organization = {
   id: string;
   name: string;
   code_postal: string;
@@ -26,6 +40,8 @@ type Organization = {
   departement_code_insee: string;
   epci_libelle: string;
   rpnt: string[];
+  mail_domain: string | null;
+  mail_domain_status: MailDomainStatus;
 };
 
 export type ServiceSubscription = {
@@ -37,17 +53,24 @@ export type ServiceSubscription = {
   is_active: boolean;
 };
 
+export const SERVICE_TYPE_PROCONNECT = "proconnect";
+
 export type Service = {
   id: string;
   name: string;
   url: string;
   description: string;
+  type: string;
   subscription: ServiceSubscription;
   logo: string | null;
   operator_config?: {
     display_priority?: number;
     externally_managed?: boolean;
   } | null;
+  can_activate: boolean;
+  config?: {
+    help_center_url?: string;
+  };
 };
 
 export const sortModelToOrdering = (sortModel: SortModel): string => {
