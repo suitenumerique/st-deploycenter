@@ -658,3 +658,39 @@ def test_api_organization_service_can_activate_if_required_services_are_activate
     assert response.status_code == 200
     content = response.json()
     assert content["can_activate"] is True
+
+
+def test_api_services_exposed_config():
+    """Test that the exposed config is the expected one."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    service = factories.ServiceFactory(
+        config={"help_center_url": "https://www.service.fr", "secret_key": "secret_key"}
+    )
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    # List route.
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/"
+    )
+    assert response.status_code == 200
+    keys = list(response.json()["results"][0]["config"].keys())
+    assert keys == ["help_center_url"]
+
+    # Retrieve route.
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/"
+    )
+    assert response.status_code == 200
+    keys = list(response.json()["config"].keys())
+    assert keys == ["help_center_url"]

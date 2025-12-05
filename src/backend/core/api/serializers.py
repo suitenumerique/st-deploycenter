@@ -283,6 +283,7 @@ class OperatorSerializer(serializers.ModelSerializer):
     """Serialize operators."""
 
     user_role = serializers.SerializerMethodField(read_only=True)
+    config = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = models.Operator
@@ -296,11 +297,21 @@ class OperatorSerializer(serializers.ModelSerializer):
             return roles[0].role
         return None
 
+    def get_config(self, obj):
+        """
+        Get the configuration for the operator.
+        We don't expose all the configuration, because it may contain sensitive data.
+        """
+        config = obj.config or {}
+        whitelist_keys = ["idps"]
+        return {key: config[key] for key in whitelist_keys if key in config}
+
 
 class ServiceSerializer(serializers.ModelSerializer):
     """Serialize services."""
 
     logo = serializers.CharField(source="get_logo_url", read_only=True)
+    config = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = models.Service
@@ -318,6 +329,12 @@ class ServiceSerializer(serializers.ModelSerializer):
             "config",
         ]
         read_only_fields = fields
+
+    def get_config(self, obj):
+        """Get the configuration for the service."""
+        config = obj.config or {}
+        whitelist_keys = ["help_center_url"]
+        return {key: config[key] for key in whitelist_keys if key in config}
 
 
 class ServiceSubscriptionSerializer(serializers.ModelSerializer):

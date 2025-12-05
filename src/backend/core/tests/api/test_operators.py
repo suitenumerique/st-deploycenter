@@ -91,3 +91,30 @@ def test_api_operators_retrieve_authenticated_no_role():
     response = client.get(f"/api/v1.0/operators/{operator2.id}/")
     assert response.status_code == 404
     assert response.json() == {"detail": "No Operator matches the given query."}
+
+
+def test_api_operators_exposed_config():
+    """Test that the exposed config is the expected one."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory(
+        config={"idps": ["idp1", "idp2"], "secret_key": "secret_key"}
+    )
+    operator.save()
+
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    # Retrieve route.
+    response = client.get(f"/api/v1.0/operators/{operator.id}/")
+    assert response.status_code == 200
+    keys = list(response.json()["config"].keys())
+    assert keys == ["idps"]
+
+    # List route.
+    response = client.get("/api/v1.0/operators/")
+    results = response.json()["results"]
+    assert len(results) == 1
+    keys = list(results[0]["config"].keys())
+    assert keys == ["idps"]
