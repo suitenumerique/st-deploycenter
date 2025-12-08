@@ -697,7 +697,7 @@ def test_api_services_exposed_config():
 
 
 @pytest.mark.parametrize(
-    "population,epci_population,expected_can_activate,expected_reason,description",
+    "population,epci_population,expected_can_activate,expected_reason,_description",
     [
         (3000, 20000, True, None, "commune population below limit"),
         (5000, 10000, True, None, "EPCI population below limit"),
