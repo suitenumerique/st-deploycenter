@@ -6,29 +6,31 @@ on:
       - main
   pull_request:
     branches:
-      - '*'
+      - "*"
 
 env:
   COMPOSE_BAKE: true
 
 jobs:
-
   lint-back:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+      - name: Run network setup
+        run: make create-docker-network
       - name: Create env files
         run: make create-env-files
       - name: Run linting checks
         run: make back-lint
-
 
   test-back:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+      - name: Run network setup
+        run: make create-docker-network
       - name: Create env files
         run: make create-env-files
       - name: Setup data directories
