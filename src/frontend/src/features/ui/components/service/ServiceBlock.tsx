@@ -125,6 +125,7 @@ export const ServiceBlock = ({
                       },
                     }
                   );
+                  setChecked(false);
                 }
               }
             }}
