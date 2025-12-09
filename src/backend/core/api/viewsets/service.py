@@ -103,9 +103,7 @@ class OrganizationServiceViewSet(viewsets.ReadOnlyModelViewSet):
                 id=self.kwargs["organization_id"]
             )
         except models.Organization.DoesNotExist as err:
-            raise NotFound(
-                "Organization not found."
-            ) from err
+            raise NotFound("Organization not found.") from err
         context["organization"] = organization
         return context
 

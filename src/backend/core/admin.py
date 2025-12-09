@@ -656,6 +656,16 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
                         created += 1
                     elif was_existing:
                         already_exists += 1
+        elif not expand_epci and epci_organizations:
+            # If expansion is disabled, create relationships for EPCIs themselves
+            for epci in epci_organizations:
+                was_created, was_existing = self._create_relationship(
+                    operator, epci, role
+                )
+                if was_created:
+                    created += 1
+                elif was_existing:
+                    already_exists += 1
 
         # Process non-EPCI organizations
         for organization in other_organizations:

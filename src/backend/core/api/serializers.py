@@ -477,6 +477,8 @@ class OrganizationServiceSerializer(ServiceSerializer):
         """Convert the representation to the desired format."""
         data = super().to_representation(instance)
         if "organization" not in self.context:
-            raise ValueError("OrganizationServiceSerializer requires 'organization' in context")
+            raise ValueError(
+                "OrganizationServiceSerializer requires 'organization' in context"
+            )
         data["can_activate"] = instance.can_activate(self.context["organization"])
         return data
