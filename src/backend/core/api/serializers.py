@@ -287,7 +287,7 @@ class OperatorSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = models.Operator
-        fields = ["id", "name", "url", "scope", "is_active", "user_role", "config"]
+        fields = ["id", "name", "url", "is_active", "user_role", "config"]
         read_only_fields = fields
 
     def get_user_role(self, obj):

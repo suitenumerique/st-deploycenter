@@ -203,13 +203,6 @@ class Operator(BaseModel):
         help_text=_("Homepage URL of the operator"),
     )
 
-    scope = models.JSONField(
-        _("scope"),
-        default=dict,
-        blank=True,
-        help_text=_("Geographic or population scope criteria for the operator"),
-    )
-
     is_active = models.BooleanField(
         _("active"),
         default=True,

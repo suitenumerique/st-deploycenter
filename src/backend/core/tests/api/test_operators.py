@@ -44,7 +44,6 @@ def test_api_operators_list_authenticated():
             "url": operator.url,
             "is_active": operator.is_active,
             "user_role": "admin",
-            "scope": operator.scope,
             "config": operator.config,
         }
     ]
@@ -71,7 +70,6 @@ def test_api_operators_retrieve_authenticated():
         "url": operator.url,
         "is_active": operator.is_active,
         "user_role": "admin",
-        "scope": operator.scope,
         "config": operator.config,
     }
 

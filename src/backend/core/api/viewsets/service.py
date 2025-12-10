@@ -74,7 +74,10 @@ class OrganizationServiceViewSet(viewsets.ReadOnlyModelViewSet):
                     subscriptions__organization_id=organization_id,
                     subscriptions__operator_id=operator_id,
                 )
-                | Q(operatorserviceconfig__operator_id=operator_id)
+                | Q(
+                    operatorserviceconfig__operator_id=operator_id,
+                    operatorserviceconfig__display_priority__gte=0,
+                )
             )
             .prefetch_related(
                 Prefetch(

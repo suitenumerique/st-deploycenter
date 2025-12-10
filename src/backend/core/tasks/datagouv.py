@@ -12,7 +12,7 @@ from django.conf import settings
 import requests
 from celery import shared_task
 
-from ..models import Metric, Service
+from ..models import Metric, Operator, OperatorServiceConfig, Service
 
 logger = logging.getLogger(__name__)
 
@@ -151,4 +151,76 @@ def upload_deployment_services_dataset():
     return {
         "status": "success",
         "message": f"Uploaded {len(data)} services to data.gouv.fr",
+    }
+
+
+@shared_task
+def upload_deployment_operators_dataset():
+    """Upload deployment operators dataset to data.gouv.fr"""
+
+    dataset_id = "68b0a2a1117b75b1b09edc6b"
+    resource_id = "902bb360-0b60-46d2-8169-4207a01caed1"
+
+    if not resource_id:
+        raise ValueError("resource_id must be set for operators dataset upload")
+
+    # First, get all operators
+    operators = Operator.objects.all().order_by("name")
+
+    # Then, for each operator, get their services with display_priority >= -100
+    data = []
+    for operator in operators:
+        # Get services for this operator with display_priority >= -100
+        service_ids = (
+            OperatorServiceConfig.objects.filter(
+                operator=operator, display_priority__gte=-100
+            )
+            .values_list("service_id", flat=True)
+            .order_by("service_id")
+        )
+
+        departements = (
+            operator.config.get("departements", []) if operator.config else []
+        )
+
+        data.append(
+            {
+                "id": operator.id,
+                "nom": operator.name,
+                "url": operator.url or "",
+                "services": ",".join(str(service_id) for service_id in service_ids),
+                "departements": ",".join(
+                    str(departement) for departement in sorted(departements)
+                ),
+            }
+        )
+
+    if not data:
+        logger.warning(
+            "No operators found with services having display_priority >= -100"
+        )
+        return {
+            "status": "success",
+            "message": "No data to upload",
+        }
+
+    logger.info("Produced %s operator rows", len(data))
+
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=data[0].keys(), delimiter=";")
+    writer.writeheader()
+    for row in data:
+        writer.writerow(row)
+
+    buffer.seek(0)
+    _upload_data_to_data_gouv(
+        dataset_id,
+        resource_id,
+        buffer.getvalue().encode("utf-8"),
+        "operateurs-quotidien.csv",
+    )
+
+    return {
+        "status": "success",
+        "message": f"Uploaded {len(data)} operators to data.gouv.fr",
     }
