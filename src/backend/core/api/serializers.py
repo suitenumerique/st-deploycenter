@@ -337,12 +337,23 @@ class ServiceSerializer(serializers.ModelSerializer):
         return {key: config[key] for key in whitelist_keys if key in config}
 
 
+class EntitlementSerializer(serializers.ModelSerializer):
+    """Serialize entitlements."""
+
+    class Meta:
+        model = models.Entitlement
+        fields = ["id", "type", "config", "account_type", "account_id"]
+        read_only_fields = ["id", "type"]
+
+
 class ServiceSubscriptionSerializer(serializers.ModelSerializer):
     """Serialize service subscriptions."""
 
+    entitlements = EntitlementSerializer(many=True, read_only=True)
+
     class Meta:
         model = models.ServiceSubscription
-        fields = ["metadata", "created_at", "updated_at", "is_active"]
+        fields = ["metadata", "created_at", "updated_at", "is_active", "entitlements"]
         read_only_fields = ["created_at", "updated_at"]
 
     def _validate_proconnect_subscription(self, instance, attrs):
