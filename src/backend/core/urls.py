@@ -1,11 +1,12 @@
 """
 URL configuration for core app.
 """
+# pylint: disable=line-too-long
 
 from django.conf import settings
 from django.urls import include, path, re_path
 
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import DefaultRouter, SimpleRouter
 
 from core.authentication.urls import urlpatterns as oidc_urls
 
@@ -15,9 +16,11 @@ from .api.viewsets.lagaufre import LagaufreViewSet
 from .api.viewsets.operator import OperatorViewSet
 from .api.viewsets.organization import OperatorOrganizationViewSet
 from .api.viewsets.service import (
+    OrganizationServiceSubscriptionEntitlementViewSet,
     OrganizationServiceSubscriptionViewSet,
     OrganizationServiceViewSet,
     ServiceLogoViewSet,
+    SubscriptionEntitlementViewSet,
 )
 from .api.viewsets.user import UserViewSet
 
@@ -34,6 +37,16 @@ operator_organization_router.register(r"organizations", OperatorOrganizationView
 organization_service_router = DefaultRouter()
 organization_service_router.register(r"services", OrganizationServiceViewSet)
 
+
+organization_subscription_entitlements_router = DefaultRouter()
+organization_subscription_entitlements_router.register(
+    r"", OrganizationServiceSubscriptionEntitlementViewSet
+)
+
+subscription_entitlements_router = SimpleRouter()
+subscription_entitlements_router.register(r"", SubscriptionEntitlementViewSet)
+
+
 urlpatterns = [
     # Include all router URLs
     path(
@@ -43,7 +56,15 @@ urlpatterns = [
                 *router.urls,
                 *oidc_urls,
                 path(
-                    "entitlements/", EntitlementView.as_view(), name="api-entitlements"
+                    "entitlements/",
+                    include(
+                        [
+                            path(
+                                "", EntitlementView.as_view(), name="api-entitlements"
+                            ),
+                            *subscription_entitlements_router.urls,
+                        ]
+                    ),
                 ),
                 path("config/", ConfigView.as_view(), name="api-config"),
                 re_path(
@@ -62,14 +83,27 @@ urlpatterns = [
                                                 [
                                                     path(
                                                         "subscription/",
-                                                        OrganizationServiceSubscriptionViewSet.as_view(
-                                                            {
-                                                                "get": "retrieve",
-                                                                "patch": "partial_update",
-                                                                "delete": "destroy",
-                                                            }
+                                                        include(
+                                                            [
+                                                                path(
+                                                                    "",
+                                                                    OrganizationServiceSubscriptionViewSet.as_view(
+                                                                        {
+                                                                            "get": "retrieve",
+                                                                            "patch": "partial_update",
+                                                                            "delete": "destroy",
+                                                                        }
+                                                                    ),
+                                                                    name="organizationservice-subscription",
+                                                                ),
+                                                                path(
+                                                                    "entitlements/",
+                                                                    include(
+                                                                        organization_subscription_entitlements_router.urls
+                                                                    ),
+                                                                ),
+                                                            ]
                                                         ),
-                                                        name="organizationservice-subscription",
                                                     ),
                                                 ]
                                             ),

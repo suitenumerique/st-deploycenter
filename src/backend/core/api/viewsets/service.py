@@ -1,11 +1,13 @@
 """
 API endpoints for Service model.
 """
+# pylint: disable=line-too-long
 
 from django.db.models import Prefetch, Q
 from django.http import HttpResponse
 
-from rest_framework import status, viewsets
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import mixins, status, viewsets
 from rest_framework.exceptions import NotFound
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -93,6 +95,7 @@ class OrganizationServiceViewSet(viewsets.ReadOnlyModelViewSet):
                     ),
                 ),
             )
+            .prefetch_related("subscriptions__entitlements")
             .distinct()
             .order_by("id")
         )
@@ -123,6 +126,9 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
 
     DELETE /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/
         Delete the subscription for the given organization and service.
+
+    GET /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/entitlements/
+        Get the entitlements for the given organization and service.
 
     Supports both user authentication and external API key authentication.
     """
@@ -220,3 +226,55 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
         subscription = self.get_object()
         subscription.delete()
         return Response({}, status=status.HTTP_204_NO_CONTENT)
+
+
+class OrganizationServiceSubscriptionEntitlementViewSet(
+    mixins.ListModelMixin, viewsets.GenericViewSet
+):
+    """ViewSet for OrganizationServiceSubscriptionEntitlement model.
+
+    GET /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/entitlements/
+        Get the entitlements for the given organization and service.
+        Supports filtering by type, account_type, and account_id.
+    """
+
+    queryset = models.Entitlement.objects.all()
+    serializer_class = serializers.EntitlementSerializer
+    authentication_classes = [
+        ExternalManagementApiKeyAuthentication,
+    ] + [*api_settings.DEFAULT_AUTHENTICATION_CLASSES]
+    # TODO: Check permission on entitlement id
+    permission_classes = [
+        permissions.IsAuthenticatedWithAnyMethod,
+        permissions.OperatorAndOrganizationAccessPermission,
+    ]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ["type", "account_type", "account_id"]
+
+    def get_queryset(self):
+        queryset = models.Entitlement.objects.filter(
+            service_subscription__organization=self.kwargs["organization_id"],
+            service_subscription__service=self.kwargs["service_id"],
+            service_subscription__operator=self.kwargs["operator_id"],
+        )
+        return queryset
+
+
+class SubscriptionEntitlementViewSet(
+    viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.UpdateModelMixin
+):
+    """ViewSet for SubscriptionEntitlement model.
+
+    GET /api/v1.0/entitlements/<entitlement_id>/
+        Get the entitlement for the given entitlement id.
+
+    PATCH /api/v1.0/entitlements/<entitlement_id>/
+        Partially update the entitlement for the given entitlement id.
+    """
+
+    queryset = models.Entitlement.objects.all()
+    serializer_class = serializers.EntitlementSerializer
+    permission_classes = [
+        permissions.IsAuthenticatedWithAnyMethod,
+        permissions.SubscriptionEntitlementAccessPermission,
+    ]
