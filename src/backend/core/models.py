@@ -833,6 +833,13 @@ class ServiceSubscription(BaseModel):
     def __str__(self):
         return f"{self.operator.name} → {self.organization.name} → {self.service.name}"
 
+    def save(self, *args, **kwargs):
+        """
+        Save the service subscription.
+        """
+        super().save(*args, **kwargs)
+        self._create_default_entitlements()
+
     @property
     def idp_name(self):
         """
@@ -908,6 +915,31 @@ class ServiceSubscription(BaseModel):
         super().clean()
         self.validate_required_services()
         self.validate_proconnect_subscription()
+
+    def _create_default_entitlements(self):
+        """
+        Create default entitlements for the service subscription.
+        """
+        self._create_default_drive_entitlements()
+
+    def _create_default_drive_entitlements(self):
+        """
+        Create default drive entitlements for the service subscription.
+        """
+        if self.service.type != "drive":
+            return
+        if self.entitlements.filter(
+            type=Entitlement.EntitlementType.DRIVE_STORAGE
+        ).exists():
+            return
+        self.entitlements.create(
+            type=Entitlement.EntitlementType.DRIVE_STORAGE,
+            config={
+                "max_storage": 1000 * 1000 * 1000 * 10,  # 10GB
+            },
+            account_type="",
+            account_id="",
+        )
 
 
 class Metric(models.Model):
