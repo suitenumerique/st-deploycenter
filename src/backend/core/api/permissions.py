@@ -125,6 +125,31 @@ def user_has_role_in_organization(request, organization_id, operator_id):
     ).exists()
 
 
+def request_has_role_in_organization(request, organization_id, operator_id):
+    """
+    Check if the request has a role in a organization.
+    Supports both user authentication and external API key authentication.
+    """
+    if not organization_id or not operator_id:
+        return False
+
+    # If authenticated via external API key, check if operator manages the organization
+    if request.auth and isinstance(request.auth, models.Operator):
+        operator = request.auth
+
+        # Verify the operator_id in URL matches the authenticated operator
+        if str(operator.id) != str(operator_id):
+            return False
+
+        # Check if operator manages the organization
+        return models.OperatorOrganizationRole.objects.filter(
+            organization_id=organization_id, operator=operator
+        ).exists()
+
+    # Regular user authentication
+    return user_has_role_in_organization(request, organization_id, operator_id)
+
+
 class OperatorAndOrganizationAccessPermission(permissions.BasePermission):
     """
     Allows access only to authenticated users with a role in a organizations's parent operator.
@@ -141,21 +166,26 @@ class OperatorAndOrganizationAccessPermission(permissions.BasePermission):
         if not operator_id:
             return False
 
-        # If authenticated via external API key, check if operator manages the organization
-        if request.auth and isinstance(request.auth, models.Operator):
-            operator = request.auth
+        return request_has_role_in_organization(request, organization_id, operator_id)
 
-            # Verify the operator_id in URL matches the authenticated operator
-            if str(operator.id) != str(operator_id):
-                return False
 
-            # Check if operator manages the organization
-            return models.OperatorOrganizationRole.objects.filter(
-                organization_id=organization_id, operator=operator
-            ).exists()
+class SubscriptionEntitlementAccessPermission(permissions.BasePermission):
+    """
+    Allows access only to authenticated users with a role in a organizations's parent operator.
+    Used for root /entitlements/<entitlement_id>/ endpoints.
+    Supports both user authentication and external API key authentication.
+    """
 
-        # Regular user authentication
-        return user_has_role_in_organization(request, organization_id, operator_id)
+    def has_permission(self, request, view):
+        # Allow all requests to proceed to object-level permission check
+        return True
+
+    def has_object_permission(self, request, view, obj):
+        return request_has_role_in_organization(
+            request,
+            obj.service_subscription.organization_id,
+            obj.service_subscription.operator_id,
+        )
 
 
 class ServiceAuthenticationPermission(permissions.BasePermission):
