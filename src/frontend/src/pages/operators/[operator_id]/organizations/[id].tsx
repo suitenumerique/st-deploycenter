@@ -24,8 +24,11 @@ export default function Organization() {
   } = useOperatorContext();
   const { data: organization, isLoading: isOrganizationLoading } =
     useOrganization(operatorId, organizationId);
-  const { data: services, isLoading: isServicesLoading } =
-    useOrganizationServices(operatorId, organizationId);
+  const {
+    data: services,
+    isLoading: isServicesLoading,
+    isFetching: isServicesFetching,
+  } = useOrganizationServices(operatorId, organizationId);
   const breadcrumbOperator = useBreadcrumbOperator(
     operatorId,
     operator,
@@ -104,7 +107,11 @@ export default function Organization() {
           <div className="dc__organization__header__image"></div>
         </div>
       </div>
-      <div className="dc__services__list">
+      <div
+        className={`dc__services__list ${
+          isServicesFetching ? "dc__services__list--fetching" : ""
+        }`}
+      >
         {isServicesLoading || !organization || !operator ? (
           <Spinner />
         ) : (
