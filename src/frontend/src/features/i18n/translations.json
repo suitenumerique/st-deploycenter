@@ -1,6 +1,10 @@
 {
   "en": {
     "translation": {
+      "common": {
+        "cancel": "Cancel",
+        "save": "Save"
+      },
       "app_title": "Operator Space",
       "home": {
         "title": "Operator Space",
@@ -50,6 +54,29 @@
           },
           "help_center": {
             "label": "Help Centre"
+          },
+          "types": {
+            "drive": {
+              "entitlements": {
+                "drive_storage": {
+                  "max_storage": {
+                    "label": "Quotas",
+                    "modal": {
+                      "title": "Change the storage quotas",
+                      "description": "Change the storage quotas for the accounts of this service."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "entitlements": {
+            "fields": {
+              "storage_picker": {
+                "input_placeholder": "Value",
+                "unit_placeholder": "Unit"
+              }
+            }
           }
         },
         "details": {
@@ -66,6 +93,10 @@
   },
   "fr": {
     "translation": {
+      "common": {
+        "cancel": "Annuler",
+        "save": "Valider"
+      },
       "app_title": "Espace Opérateur",
       "home": {
         "title": "La centrale d'administration",
@@ -119,6 +150,29 @@
           },
           "help_center": {
             "label": "Centre d'aide"
+          },
+          "types": {
+            "drive": {
+              "entitlements": {
+                "drive_storage": {
+                  "max_storage": {
+                    "label": "Quotas",
+                    "modal": {
+                      "title": "Modification des quotas",
+                      "description": "Modifier les quotas de stockage pour les comptes de ce service."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "entitlements": {
+            "fields": {
+              "storage_picker": {
+                "input_placeholder": "Valeur",
+                "unit_placeholder": "Unité"
+              }
+            }
           }
         },
         "details": {

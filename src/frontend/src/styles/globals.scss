@@ -4,7 +4,8 @@
 @use "./../features/layouts/components/header/index.scss";
 @use "./../features/ui/components/toaster";
 @use "./../features/ui/components/breadcrumbs/index.scss" as *;
-
+@use "./../features/ui/components/service/entitlements/fields/StoragePickerEntitlementField.scss"
+  as *;
 @use "./../features/layouts/components/container/Container.scss" as *;
 
 @use "./../features/ui/components/spinner/SpinnerPage.scss";
