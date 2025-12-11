@@ -5,6 +5,8 @@ import {
   getOperatorOrganizations,
   updateOrganizationServiceSubscription,
   ServiceSubscription,
+  updateEntitlement,
+  Entitlement,
 } from "@/features/api/Repository";
 import { getOrganization } from "@/features/api/Repository";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -107,10 +109,42 @@ export const useMutationUpdateOrganizationServiceSubscription = () => {
     },
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ["organizations", variables.organizationId, "services"],
+        queryKey: [
+          "operators",
+          variables.operatorId,
+          "organizations",
+          variables.organizationId,
+          "services",
+        ],
       });
+    },
+  });
+};
+
+export const useMutationUpdateEntitlement = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      entitlementId,
+      data,
+    }: {
+      operatorId: string;
+      organizationId: string;
+      serviceId: string;
+      entitlementId: string;
+      data: Partial<Entitlement>;
+    }) => {
+      return updateEntitlement(entitlementId, data);
+    },
+    onSuccess: (data, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ["operators"],
+        queryKey: [
+          "operators",
+          variables.operatorId,
+          "organizations",
+          variables.organizationId,
+          "services",
+        ],
       });
     },
   });

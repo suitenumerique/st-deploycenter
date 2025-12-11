@@ -51,6 +51,15 @@ export type ServiceSubscription = {
   updated_at: string;
   service?: Service;
   is_active: boolean;
+  entitlements: Entitlement[];
+};
+
+export type Entitlement = {
+  type: string;
+  config: Record<string, unknown>;
+  account_type: string;
+  account_id: string;
+  id: string;
 };
 
 export const SERVICE_TYPE_PROCONNECT = "proconnect";
@@ -171,4 +180,16 @@ export const updateOrganizationServiceSubscription = async (
   );
   const subscription = (await response.json()) as ServiceSubscription;
   return subscription;
+};
+
+export const updateEntitlement = async (
+  entitlementId: string,
+  data: Partial<Entitlement>
+): Promise<Entitlement> => {
+  const response = await fetchAPI(`entitlements/${entitlementId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+  const entitlement = (await response.json()) as Entitlement;
+  return entitlement;
 };
