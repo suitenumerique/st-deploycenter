@@ -746,7 +746,7 @@ def test_api_organization_service_commune_population_limits(
 
 
 @pytest.mark.parametrize(
-    "population,expected_can_activate,expected_reason,description",
+    "population,expected_can_activate,expected_reason,_description",
     [
         (10000, True, None, "EPCI population below limit"),
         (20000, False, "population_limit_exceeded", "EPCI population above limit"),
@@ -786,7 +786,7 @@ def test_api_organization_service_epci_population_limits(
 
 
 @pytest.mark.parametrize(
-    "can_bypass,org_type,population,epci_population,expected_can_activate,description",
+    "can_bypass,org_type,population,epci_population,expected_can_activate,_description",
     [
         (
             True,
@@ -876,4 +876,4 @@ def test_api_organization_service_subscription_validation_population_limits():
         format="json",
     )
     assert response.status_code == 400
-    assert "population limits" in response.json()["__all__"][0].lower()
+    assert "population_limit_exceeded" in response.json()["__all__"][0].lower()

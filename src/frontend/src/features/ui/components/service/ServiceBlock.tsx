@@ -134,7 +134,7 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
   const isPopulationLimitExceeded =
     props.service.activation_blocked_reason === "population_limit_exceeded";
 
-  const canSwitch = !isExternallyManaged && !isPopulationLimitExceeded && props.service.can_activate;
+  const canSwitch = !isExternallyManaged && props.service.can_activate;
 
   return (
     <div

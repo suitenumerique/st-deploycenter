@@ -972,9 +972,9 @@ class ServiceSubscription(BaseModel):
         if not self.metadata.get("idp_id"):
             raise ValidationError("IDP is required for ProConnect subscription.")
 
-    def validate_population_limits(self):
+    def validate_can_activate(self):
         """
-        Validate that the organization meets population limits when activating the subscription.
+        Validate that the organization can be activate with criteria like population limit.
         Only checks at activation time, not on every save.
         """
         if not self.is_active:
@@ -983,11 +983,10 @@ class ServiceSubscription(BaseModel):
         can_activate, reason = self.service.can_activate(
             self.organization, self.operator
         )
-        if not can_activate and reason == "population_limit_exceeded":
-            raise ValidationError(
-                "Cannot activate this subscription. The organization does not meet "
-                "the population limits for this service."
-            )
+        if can_activate:
+            return
+
+        raise ValidationError(f"Cannot activate this subscription. Reason: {reason}")
 
     def clean(self):
         """
@@ -996,7 +995,7 @@ class ServiceSubscription(BaseModel):
         super().clean()
         self.validate_required_services()
         self.validate_proconnect_subscription()
-        self.validate_population_limits()
+        self.validate_can_activate()
 
     def _create_default_entitlements(self):
         """
