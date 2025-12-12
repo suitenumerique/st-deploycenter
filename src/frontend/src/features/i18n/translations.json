@@ -30,8 +30,9 @@
           "status": "Active",
           "goto": "Access service",
           "externally_managed": "This service is managed externally and cannot be modified here.",
-          "cannot_activate": "This service cannot be activated for this organization. ProConnect is required.",
-          "population_limit_exceeded": "This service is only available for municipalities with less than 3,500 inhabitants or EPICs with less than 15,000 inhabitants.",
+          "cannot_activate": "This service cannot be activated for this organization.",
+          "population_limit_exceeded": "This service is only available for municipalities with fewer than 3,500 inhabitants or EPCIs with fewer than 15,000 inhabitants.",
+          "missing_required_services": "This service cannot be activated for this organization. ProConnect is required.",
           "idp": {
             "label": "IDP",
             "none": "None",
@@ -127,8 +128,9 @@
           },
           "goto": "Accéder au service",
           "externally_managed": "Ce service est géré de manière externe et ne peut pas être modifié ici.",
-          "cannot_activate": "Ce service ne peut pas être activé pour cette collectivité. ProConnect est requis.",
+          "cannot_activate": "Ce service ne peut pas être activé pour cette collectivité.",
           "population_limit_exceeded": "Ce service est uniquement disponible pour les communes de moins de 3 500 habitants ou les EPCI de moins de 15 000 habitants.",
+          "missing_required_services": "Ce service ne peut pas être activé pour cette collectivité. ProConnect est requis.",
           "idp": {
             "label": "Fournisseur d'identité",
             "none": "Aucun",

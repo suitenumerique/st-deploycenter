@@ -918,41 +918,6 @@ class ServiceSubscription(BaseModel):
                 return idp["name"]
         return None
 
-    def validate_required_services(self):
-        """
-        Validate that all required services have active subscriptions
-        when activating the subscription.
-        """
-        if not self.is_active:
-            return
-
-        required_services = self.service.required_services.all()
-        if not required_services.exists():
-            # No required services, validation passes
-            return
-
-        # Get all required service IDs that have active subscriptions for this organization
-        active_required_service_ids = set(
-            ServiceSubscription.objects.filter(
-                organization=self.organization,
-                service__in=required_services,
-                is_active=True,
-            ).values_list("service_id", flat=True)
-        )
-
-        # Find which required services are missing active subscriptions
-        missing_services = [
-            required_service.name
-            for required_service in required_services
-            if required_service.id not in active_required_service_ids
-        ]
-        if missing_services:
-            services_list = ", ".join(missing_services)
-            raise ValidationError(
-                f"Cannot activate this subscription. The following required services "
-                f"must be active first: {services_list}"
-            )
-
     def validate_proconnect_subscription(self):
         """
         When activating a ProConnect subscription, we need to validate
@@ -993,7 +958,6 @@ class ServiceSubscription(BaseModel):
         Validate that when is_active is True, all required services have active subscriptions.
         """
         super().clean()
-        self.validate_required_services()
         self.validate_proconnect_subscription()
         self.validate_can_activate()
 

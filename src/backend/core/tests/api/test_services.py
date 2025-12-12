@@ -546,11 +546,7 @@ def test_api_organization_service_cannot_activate_required_services():
         format="json",
     )
     assert response.status_code == 400
-    assert response.json() == {
-        "__all__": [
-            "Cannot activate this subscription. The following required services must be active first: Service Required"
-        ]
-    }
+    assert "missing_required_services" in response.json()["__all__"][0].lower()
 
 
 def test_api_organization_service_can_update_subscription_when_cannot_activate():
