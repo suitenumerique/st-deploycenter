@@ -77,6 +77,17 @@ export const ProConnectServiceBlock = (props: {
 
   const idpModal = useModal();
 
+  // Check if subscription is less than 48 hours old
+  const isSubscriptionLessThan48Hours = useMemo(() => {
+    if (!props.service.subscription?.created_at) {
+      return false;
+    }
+    const createdAt = new Date(props.service.subscription.created_at);
+    const now = new Date();
+    const diffInHours = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
+    return diffInHours < 48;
+  }, [props.service.subscription?.created_at]);
+
   return (
     <ServiceBlock
       {...blockProps}
@@ -93,6 +104,14 @@ export const ProConnectServiceBlock = (props: {
         <>
           <form onSubmit={handleSubmit(onSubmit)}>
             <div className="dc__service__attribute__container">
+
+              {isSubscriptionLessThan48Hours && props.service.subscription?.is_active && (
+                <div className="dc__service__info">
+                  <Icon name="info" size={IconSize.SMALL} />
+                  {t("organizations.services.proconnect.activation_delay")}
+                </div>
+              )}
+
               <Controller
                 control={control}
                 name="idp_id"

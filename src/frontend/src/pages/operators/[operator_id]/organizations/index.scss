@@ -233,8 +233,16 @@
   color: var(--c--theme--colors--warning-500);
   font-size: 12px;
   font-weight: 400;
-  margin-top: 4px;
   margin-top: 16px;
+}
+
+.dc__service__info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--c--theme--colors--info-600);
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .dc__service__attribute__container {

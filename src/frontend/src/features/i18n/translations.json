@@ -54,6 +54,9 @@
             "need_email_setup": "The mail domain is not valid. Please set it to the website domain.",
             "invalid": "The mail domain is not valid. Please set it to the website domain."
           },
+          "proconnect": {
+            "activation_delay": "ProConnect activation may take up to 48 hours"
+          },
           "help_center": {
             "label": "Help Centre"
           },
@@ -152,6 +155,9 @@
             "required": "Le domaine mail est requis",
             "need_email_setup": "Le domaine mail utilisé est celui du site internet, veuillez le raccorder à votre fournisseur de messagerie.",
             "invalid": "Aucun domaine mail valide trouvé sur la base du RPNT. Veuillez contacter le support."
+          },
+          "proconnect": {
+            "activation_delay": "L'activation de ProConnect peut prendre jusqu'à 48 heures"
           },
           "help_center": {
             "label": "Centre d'aide"
