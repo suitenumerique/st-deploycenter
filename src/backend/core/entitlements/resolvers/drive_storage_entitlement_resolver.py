@@ -36,12 +36,11 @@ class DriveStorageEntitlementResolver:
             return {"can_upload": False}
 
         entitlement = context["entitlement"]
-        max_storage = entitlement.config.get("max_storage")
-        if not max_storage:
-            logger.warning(
-                "No max storage size configured for entitlement %s", entitlement.id
-            )
-            return {"can_upload": False}
+        max_storage = entitlement.config.get("max_storage") or 0
+
+        # If max storage is 0 or undefined, the entitlement is unlimited
+        if max_storage == 0:
+            return {"can_upload": True}
 
         if metric.value > max_storage:
             return {"can_upload": False}
