@@ -234,7 +234,7 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
         )}
       </div>
       <div className="dc__service__block__body">
-        {!!props.service.description && !props.service.subscription && (
+        {!!props.service.description && (
           <div className="dc__service__block__description">
             {props.service.description}
           </div>

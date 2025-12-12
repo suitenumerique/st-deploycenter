@@ -548,3 +548,76 @@ def test_api_entitlements_list_usage_metrics_endpoint_error(buggy_service_server
         BuggyServiceServer.requests_received[0]["headers"]["Authorization"]
         == "Bearer test_token"
     )
+
+
+@pytest.mark.parametrize(
+    "entitlement_config,storage_used",
+    [
+        ({"max_storage": 0}, 1000000),  # Explicitly set to 0
+        ({}, 5000000),  # Missing max_storage key - should default to 0
+    ],
+)
+def test_api_entitlements_list_unlimited_storage(
+    webhook_server, entitlement_config, storage_used
+):
+    """
+    Test that when max_storage is 0 or missing, can_upload is always True (unlimited storage).
+    """
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    port = webhook_server.server_address[1]
+    metrics_usage_endpoint = f"http://localhost:{port}/metrics/usage"
+
+    service = factories.ServiceFactory(
+        config={
+            "entitlements_api_key": "test_token",
+            "usage_metrics_endpoint": metrics_usage_endpoint,
+            "metrics_auth_token": "test_token",
+        },
+    )
+    service_subscription = factories.ServiceSubscriptionFactory(
+        organization=organization, service=service, operator=operator
+    )
+    factories.EntitlementFactory(
+        service_subscription=service_subscription,
+        type=models.Entitlement.EntitlementType.DRIVE_STORAGE,
+        config=entitlement_config,
+    )
+
+    # Set a high storage usage value
+    MockServiceServer.MOCK_STORAGE_USED = storage_used
+
+    # Test that can_upload is True even with high storage usage
+    response = client.get(
+        "/api/v1.0/entitlements/",
+        query_params={
+            "service_id": service.id,
+            "account_type": "user",
+            "account_id": "xyz",
+            "siret": organization.siret,
+        },
+        headers={"X-Service-Auth": "Bearer test_token"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert_equals_partial(
+        data,
+        {
+            "operator": {
+                "id": str(operator.id),
+                "name": operator.name,
+            },
+            "entitlements": {
+                "can_access": True,
+                "can_upload": True,  # Should be True even with high usage when max_storage is 0 or missing
+            },
+        },
+    )

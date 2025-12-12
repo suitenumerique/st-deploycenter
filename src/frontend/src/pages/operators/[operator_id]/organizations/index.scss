@@ -165,9 +165,8 @@
 
   &__description {
     font-size: 14px;
-    font-weight: 500;
-    color: var(--c--theme--colors--greyscale-600);
-
+    color: var(--c--theme--colors--greyscale-400);
+    font-style: italic;
     overflow: hidden;
     text-overflow: ellipsis;
   }
@@ -179,7 +178,6 @@
   &__body {
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
     flex-grow: 1;
     gap: 16px;
     padding: 8px;
