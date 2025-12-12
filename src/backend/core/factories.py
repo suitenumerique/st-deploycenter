@@ -120,6 +120,7 @@ class ServiceFactory(factory.django.DjangoModelFactory):
         model = models.Service
 
     name = factory.Faker("word")
+    instance_name = factory.Faker("word")
     type = factory.Faker("word")
     url = factory.Faker("url")
     description = factory.Faker("text", max_nb_chars=100)

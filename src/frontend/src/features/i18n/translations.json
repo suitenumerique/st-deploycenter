@@ -62,11 +62,12 @@
               "entitlements": {
                 "drive_storage": {
                   "max_storage": {
-                    "label": "Quotas",
+                    "label": "Quota per user",
                     "modal": {
-                      "title": "Change the storage quotas",
-                      "description": "Change the storage quotas for the accounts of this service."
-                    }
+                      "title": "Change the quota per user",
+                      "description": "Change the quota per user of this service."
+                    },
+                    "zero_value": "Unlimited"
                   }
                 }
               }
@@ -160,11 +161,12 @@
               "entitlements": {
                 "drive_storage": {
                   "max_storage": {
-                    "label": "Quotas",
+                    "label": "Quota par utilisateur",
                     "modal": {
-                      "title": "Modification des quotas",
-                      "description": "Modifier les quotas de stockage pour les comptes de ce service."
-                    }
+                      "title": "Quota par utilisateur",
+                      "description": "Modifier le quota de stockage par utilisateur."
+                    },
+                    "zero_value": "Illimité"
                   }
                 }
               }

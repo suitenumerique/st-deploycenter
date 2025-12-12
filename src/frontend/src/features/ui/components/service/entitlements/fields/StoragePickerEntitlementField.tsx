@@ -94,7 +94,7 @@ export const StoragePickerEntitlementField = (
       )}
       <ServiceAttribute
         name={t(`${translationPrefix}.label`)}
-        value={`${value} ${unit}`}
+        value={value ? `${value} ${unit}` : t(`${translationPrefix}.zero_value`)}
         onClick={() => modal.open()}
         interactive={true}
       />

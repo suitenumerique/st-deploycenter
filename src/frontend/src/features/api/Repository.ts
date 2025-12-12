@@ -67,6 +67,7 @@ export const SERVICE_TYPE_PROCONNECT = "proconnect";
 export type Service = {
   id: string;
   name: string;
+  instance_name: string;
   url: string;
   description: string;
   type: string;

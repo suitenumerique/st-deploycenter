@@ -670,6 +670,13 @@ class Service(BaseModel):
         help_text=_("Human-readable name of the service"),
     )
 
+    instance_name = models.CharField(
+        _("instance name"),
+        max_length=255,
+        default="",
+        help_text=_("Name of the instance of the service"),
+    )
+
     url = models.URLField(
         _("URL"),
         help_text=_("URL where the service can be accessed"),
@@ -753,7 +760,7 @@ class Service(BaseModel):
         ]
 
     def __str__(self):
-        return f"{self.name} ({self.type})"
+        return f"{self.name} ({self.instance_name})"
 
     def get_logo_url(self):
         """

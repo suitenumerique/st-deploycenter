@@ -30,6 +30,7 @@ class ServiceForm(forms.ModelForm):
         model = models.Service
         fields = [
             "name",
+            "instance_name",
             "type",
             "url",
             "description",
@@ -379,7 +380,7 @@ class ServiceAdmin(admin.ModelAdmin):
 
     form = ServiceForm
     change_form_template = "admin/core/service/change_form.html"
-    list_display = ("name", "type", "url", "description", "is_active", "created_at")
+    list_display = ("name", "instance_name", "type", "url", "is_active", "created_at")
     list_filter = ("is_active", "created_at")
     search_fields = ("name", "type", "description")
     ordering = ("name", "type", "url")
@@ -391,6 +392,7 @@ class ServiceAdmin(admin.ModelAdmin):
             {
                 "fields": (
                     "name",
+                    "instance_name",
                     "type",
                     "url",
                     "description",

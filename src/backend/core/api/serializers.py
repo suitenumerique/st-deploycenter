@@ -318,6 +318,7 @@ class ServiceSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "name",
+            "instance_name",
             "type",
             "url",
             "description",

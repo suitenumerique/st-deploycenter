@@ -143,11 +143,22 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
         <div className="dc__service__block__header__title">
           {props.service.logo && (
             <div className="dc__service__block__header__logo">
-              <img src={props.service.logo} alt={props.service.name} />
+              <a href={props.service.url} target="_blank" rel="noopener noreferrer">
+                <img src={props.service.logo} alt={props.service.name} />
+              </a>
             </div>
           )}
-          <div className="dc__service__block__header__name">
-            {props.service.name}
+          <div className="dc__service__block__header__name-wrapper">
+            <div className="dc__service__block__header__name">
+              {props.service.name}
+            </div>
+            {props.service.instance_name && (
+              <div className="dc__service__block__header__instance_name">
+                <a href={props.service.url} target="_blank" rel="noopener noreferrer">
+                  {props.service.instance_name}
+                </a>
+              </div>
+            )}
           </div>
         </div>
         {canSwitch ? (
@@ -223,25 +234,13 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
         )}
       </div>
       <div className="dc__service__block__body">
-        {!!props.service.description && (
+        {!!props.service.description && !props.service.subscription && (
           <div className="dc__service__block__description">
             {props.service.description}
           </div>
         )}
         <div className="dc__service__block__body__content">
           {props.content}
-          {/*
-            <div className="dc__service__block__values">
-              <div className="dc__service__block__values__item">
-                <span className="dc__service__block__values__item__label">
-                  {t("organizations.services.values.users")}
-                </span>
-                <span className="dc__service__block__values__item__value">
-                  0
-                </span>
-              </div>
-            </div>
-            */}
           {Object.keys(props.entitlementsFields).length > 0 && (
             <ServiceBlockEntitlements {...props} />
           )}

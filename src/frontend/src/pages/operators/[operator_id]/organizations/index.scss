@@ -120,6 +120,13 @@
       gap: 16px;
       height: 100%;
     }
+
+    &__name-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
     &__name {
       font-size: 16px;
       font-weight: 700;
@@ -128,6 +135,20 @@
       -webkit-box-orient: vertical;
       display: -webkit-box;
       overflow: hidden;
+    }
+
+    &__instance_name {
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--c--theme--colors--greyscale-600);
+      line-height: 1.2;
+      a {
+        color: var(--c--theme--colors--greyscale-600);
+        text-decoration: none;
+        &:hover {
+          text-decoration: underline;
+        }
+      }
     }
 
     &__logo {
