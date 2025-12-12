@@ -1095,6 +1095,7 @@ class Entitlement(BaseModel):
         """
 
         DRIVE_STORAGE = "drive_storage"
+        MESSAGES_STORAGE = "messages_storage"
 
     service_subscription = models.ForeignKey(
         ServiceSubscription,
