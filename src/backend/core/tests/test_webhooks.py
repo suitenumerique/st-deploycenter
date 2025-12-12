@@ -158,6 +158,7 @@ def fixture_sample_service():
     """Create a sample service for testing."""
     return Service.objects.create(
         name="Test Service",
+        instance_name="test-instance",
         type="test_service",
         url="https://example.com",
         description="A test service",
@@ -724,6 +725,7 @@ class TestWebhookIntegration:
         port = webhook_server.server_address[1]
         service = Service.objects.create(
             name="Test Service",
+            instance_name="test-instance",
             type="test_service",
             url="https://example.com",
             config={
@@ -866,6 +868,7 @@ class TestWebhookIntegration:
         """Test that no webhooks are sent when none are configured."""
         service = Service.objects.create(
             name="Test Service",
+            instance_name="test-instance",
             type="test_service",
             url="https://example.com",
             config={},  # No webhooks configured
@@ -893,6 +896,7 @@ class TestWebhookIntegration:
         port = failing_webhook_server.server_address[1]
         service = Service.objects.create(
             name="Test Service",
+            instance_name="test-instance",
             type="test_service",
             url="https://example.com",
             config={
@@ -926,6 +930,7 @@ class TestWebhookIntegration:
         port = slow_webhook_server.server_address[1]
         service = Service.objects.create(
             name="Test Service",
+            instance_name="test-instance",
             type="test_service",
             url="https://example.com",
             config={
