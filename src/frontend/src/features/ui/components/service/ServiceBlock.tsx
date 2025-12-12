@@ -7,12 +7,8 @@ import { useTranslation } from "react-i18next";
 import { Service } from "@/features/api/Repository";
 import {
   Button,
-  Input,
-  Modal,
-  ModalSize,
   Switch,
   Tooltip,
-  useModal,
   useModals,
 } from "@openfun/cunningham-react";
 import { Icon, IconSize } from "@gouvfr-lasuite/ui-kit";
@@ -20,8 +16,6 @@ import { useEffect, useState } from "react";
 import { useMutationUpdateOrganizationServiceSubscription } from "@/hooks/useQueries";
 import { useOperatorContext } from "@/features/layouts/components/GlobalLayout";
 import { MutateOptions } from "@tanstack/react-query";
-import { ServiceAttribute } from "./ServiceAttribute";
-import prettyBytes from "pretty-bytes";
 import { StoragePickerEntitlementField } from "./entitlements/fields/StoragePickerEntitlementField";
 
 export type EntitlementFields = {
@@ -131,13 +125,18 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
   const modals = useModals();
   const isExternallyManaged =
     props.service.operator_config?.externally_managed === true;
-
+  const isPopulationLimitExceeded =
+    props.service.activation_blocked_reason === "population_limit_exceeded";
+  const isMissingRequiredServices =
+    props.service.activation_blocked_reason === "missing_required_services";
   const canSwitch = !isExternallyManaged && props.service.can_activate;
 
   return (
     <div
       className={`dc__service__block ${
-        isExternallyManaged ? "dc__service__block--disabled" : ""
+        !canSwitch
+          ? "dc__service__block--disabled"
+          : ""
       }`}
     >
       <div className="dc__service__block__header">
@@ -197,14 +196,26 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
             content={t(
               isExternallyManaged
                 ? "organizations.services.externally_managed"
-                : "organizations.services.cannot_activate"
+                : isPopulationLimitExceeded
+                  ? "organizations.services.population_limit_exceeded"
+                  : isMissingRequiredServices
+                    ? "organizations.services.missing_required_services"
+                  : "organizations.services.cannot_activate"
             )}
           >
             <div
               className="dc__service__block__switch-wrapper"
               role="button"
               tabIndex={0}
-              aria-label={t("organizations.services.externally_managed")}
+              aria-label={
+                isExternallyManaged
+                  ? t("organizations.services.externally_managed")
+                  : isPopulationLimitExceeded
+                    ? t("organizations.services.population_limit_exceeded")
+                    : isMissingRequiredServices
+                      ? t("organizations.services.missing_required_services")
+                    : t("organizations.services.cannot_activate")
+              }
             >
               <Switch checked={props.checked} disabled={true} />
             </div>

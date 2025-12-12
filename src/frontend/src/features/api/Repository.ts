@@ -77,6 +77,7 @@ export type Service = {
     externally_managed?: boolean;
   } | null;
   can_activate: boolean;
+  activation_blocked_reason?: string;
   config?: {
     help_center_url?: string;
   };
