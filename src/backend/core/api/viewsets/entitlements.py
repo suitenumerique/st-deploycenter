@@ -2,6 +2,7 @@
 Entitlements API viewsets.
 """
 
+from math import e
 import rest_framework as drf
 from rest_framework import serializers
 from rest_framework.response import Response
@@ -94,10 +95,16 @@ class EntitlementView(APIView):
             entitlements = models.Entitlement.objects.filter(
                 service_subscription=service_subscription
             )
+            entitlements_by_type = {}
+            for entitlement in entitlements:
+                if entitlement.type not in entitlements_by_type:
+                    entitlements_by_type[entitlement.type] = []
+                entitlements_by_type[entitlement.type].append(entitlement)
+             
             for entitlement in entitlements:
                 resolver = get_entitlement_resolver(entitlement.type)
                 entitlement_data = resolver.resolve(
-                    {**entitlement_context, "entitlement": entitlement}
+                    {**entitlement_context, "entitlements": entitlements_by_type[entitlement.type]}
                 )
                 entitlements_data = {**entitlements_data, **entitlement_data}
 
