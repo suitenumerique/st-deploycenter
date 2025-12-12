@@ -44,14 +44,11 @@ class EntitlementView(APIView):
 
         serializer = EntitlementViewSerializer(data=request.query_params)
         serializer.is_valid(raise_exception=True)
+        siret = serializer.validated_data["siret"]
 
         organization = models.Organization.objects.filter(
-            siret=serializer.validated_data["siret"]
+            siret=siret
         ).first()
-        if not organization:
-            raise drf.exceptions.NotFound(
-                "Organization not found. Make sure the organization exists."
-            )
 
         service = models.Service.objects.filter(
             id=serializer.validated_data["service_id"]
@@ -61,10 +58,12 @@ class EntitlementView(APIView):
                 "Service not found. Make sure the service exists."
             )
 
-        # We should always have one or none service subscription for an organization-service pair.
-        service_subscription = models.ServiceSubscription.objects.filter(
-            organization=organization, service=service
-        ).first()
+        service_subscription = None
+        if organization:
+            # We should always have one or none service subscription for an organization-service pair.
+            service_subscription = models.ServiceSubscription.objects.filter(
+                organization=organization, service=service
+            ).first()
 
         # Response building.
         account_type = serializer.validated_data["account_type"]
@@ -77,6 +76,7 @@ class EntitlementView(APIView):
             "organization": organization,
             "service": service,
             "service_subscription": service_subscription,
+            "siret": siret,
         }
 
         # This entitlement should always be resolved.
