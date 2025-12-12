@@ -763,19 +763,83 @@ class Service(BaseModel):
             return f"{settings.API_PUBLIC_URL}servicelogo/{self.id}/"
         return None
 
-    def can_activate(self, organization: Organization):
+    def can_activate(self, organization: Organization, operator: "Operator" = None):
         """
         Check if the service can be activated for the given organization.
+
+        Returns:
+            tuple: (can_activate: bool, reason: str | None)
         """
-        if not self.required_services.count():
-            return True
-        return (
-            self.required_services.all()
-            .filter(
-                subscriptions__organization=organization, subscriptions__is_active=True
+        # Check required services first
+        required_services_count = self.required_services.count()
+        if required_services_count:
+            subscribed_required_count = (
+                self.required_services.all()
+                .filter(
+                    subscriptions__organization=organization,
+                    subscriptions__is_active=True,
+                )
+                .distinct()
+                .count()
             )
-            .exists()
-        )
+            if subscribed_required_count < required_services_count:
+                return (False, "missing_required_services")
+
+        # Check population limits
+        population_limits = (self.config or {}).get("population_limits", {})
+        if not population_limits:
+            return (True, None)
+
+        # Check if operator can bypass population limits
+        if operator and (operator.config or {}).get(
+            "can_bypass_population_limits", False
+        ):
+            return (True, None)
+
+        # Check population limits based on organization type
+        commune_limit = population_limits.get("commune")
+        epci_limit = population_limits.get("epci")
+
+        # For communes: check if commune population < limit OR epci population < limit
+        if organization.type == "commune":
+            commune_pop = organization.population
+            epci_pop = organization.epci_population
+
+            # Block if both populations are null
+            if commune_pop is None and epci_pop is None:
+                return (False, "population_limit_exceeded")
+
+            # Check if at least one is below the limit
+            commune_ok = (
+                commune_limit is not None
+                and commune_pop is not None
+                and commune_pop < commune_limit
+            )
+            epci_ok = (
+                epci_limit is not None
+                and epci_pop is not None
+                and epci_pop < epci_limit
+            )
+
+            if commune_ok or epci_ok:
+                return (True, None)
+            return (False, "population_limit_exceeded")
+
+        # For EPCIs: check if epci population < limit
+        if organization.type == "epci":
+            if epci_limit is None:
+                return (True, None)
+
+            epci_pop = organization.population
+            if epci_pop is None:
+                return (False, "population_limit_exceeded")
+
+            if epci_pop < epci_limit:
+                return (True, None)
+            return (False, "population_limit_exceeded")
+
+        # For other types, allow activation if no specific limit is defined
+        return (True, None)
 
 
 class ServiceSubscription(BaseModel):
@@ -908,6 +972,23 @@ class ServiceSubscription(BaseModel):
         if not self.metadata.get("idp_id"):
             raise ValidationError("IDP is required for ProConnect subscription.")
 
+    def validate_population_limits(self):
+        """
+        Validate that the organization meets population limits when activating the subscription.
+        Only checks at activation time, not on every save.
+        """
+        if not self.is_active:
+            return
+
+        can_activate, reason = self.service.can_activate(
+            self.organization, self.operator
+        )
+        if not can_activate and reason == "population_limit_exceeded":
+            raise ValidationError(
+                "Cannot activate this subscription. The organization does not meet "
+                "the population limits for this service."
+            )
+
     def clean(self):
         """
         Validate that when is_active is True, all required services have active subscriptions.
@@ -915,6 +996,7 @@ class ServiceSubscription(BaseModel):
         super().clean()
         self.validate_required_services()
         self.validate_proconnect_subscription()
+        self.validate_population_limits()
 
     def _create_default_entitlements(self):
         """

@@ -333,7 +333,7 @@ class ServiceSerializer(serializers.ModelSerializer):
     def get_config(self, obj):
         """Get the configuration for the service."""
         config = obj.config or {}
-        whitelist_keys = ["help_center_url"]
+        whitelist_keys = ["help_center_url", "population_limits"]
         return {key: config[key] for key in whitelist_keys if key in config}
 
 
@@ -491,5 +491,17 @@ class OrganizationServiceSerializer(ServiceSerializer):
             raise ValueError(
                 "OrganizationServiceSerializer requires 'organization' in context"
             )
-        data["can_activate"] = instance.can_activate(self.context["organization"])
+
+        organization = self.context["organization"]
+        operator = None
+        if "operator_id" in self.context:
+            try:
+                operator = models.Operator.objects.get(id=self.context["operator_id"])
+            except models.Operator.DoesNotExist:
+                pass
+
+        can_activate, reason = instance.can_activate(organization, operator)
+        data["can_activate"] = can_activate
+        if not can_activate and reason:
+            data["activation_blocked_reason"] = reason
         return data

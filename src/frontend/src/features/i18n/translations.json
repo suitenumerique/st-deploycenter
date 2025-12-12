@@ -127,6 +127,7 @@
           "goto": "Accéder au service",
           "externally_managed": "Ce service est géré de manière externe et ne peut pas être modifié ici.",
           "cannot_activate": "Ce service ne peut pas être activé pour cette collectivité. ProConnect est requis.",
+          "population_limit_exceeded": "Ce service est uniquement disponible pour les communes de moins de 3 500 habitants ou les EPCI de moins de 15 000 habitants.",
           "idp": {
             "label": "Fournisseur d'identité",
             "none": "Aucun",

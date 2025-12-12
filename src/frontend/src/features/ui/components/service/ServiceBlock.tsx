@@ -131,13 +131,17 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
   const modals = useModals();
   const isExternallyManaged =
     props.service.operator_config?.externally_managed === true;
+  const isPopulationLimitExceeded =
+    props.service.activation_blocked_reason === "population_limit_exceeded";
 
-  const canSwitch = !isExternallyManaged && props.service.can_activate;
+  const canSwitch = !isExternallyManaged && !isPopulationLimitExceeded && props.service.can_activate;
 
   return (
     <div
       className={`dc__service__block ${
-        isExternallyManaged ? "dc__service__block--disabled" : ""
+        isExternallyManaged || isPopulationLimitExceeded
+          ? "dc__service__block--disabled"
+          : ""
       }`}
     >
       <div className="dc__service__block__header">
@@ -197,14 +201,22 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
             content={t(
               isExternallyManaged
                 ? "organizations.services.externally_managed"
-                : "organizations.services.cannot_activate"
+                : isPopulationLimitExceeded
+                  ? "organizations.services.population_limit_exceeded"
+                  : "organizations.services.cannot_activate"
             )}
           >
             <div
               className="dc__service__block__switch-wrapper"
               role="button"
               tabIndex={0}
-              aria-label={t("organizations.services.externally_managed")}
+              aria-label={
+                isExternallyManaged
+                  ? t("organizations.services.externally_managed")
+                  : isPopulationLimitExceeded
+                    ? t("organizations.services.population_limit_exceeded")
+                    : t("organizations.services.cannot_activate")
+              }
             >
               <Switch checked={props.checked} disabled={true} />
             </div>

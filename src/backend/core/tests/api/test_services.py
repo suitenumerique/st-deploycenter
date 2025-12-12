@@ -694,3 +694,186 @@ def test_api_services_exposed_config():
     assert response.status_code == 200
     keys = list(response.json()["config"].keys())
     assert keys == ["help_center_url"]
+
+
+@pytest.mark.parametrize(
+    "population,epci_population,expected_can_activate,expected_reason,description",
+    [
+        (3000, 20000, True, None, "commune population below limit"),
+        (5000, 10000, True, None, "EPCI population below limit"),
+        (
+            5000,
+            20000,
+            False,
+            "population_limit_exceeded",
+            "both populations exceed limits",
+        ),
+        (None, None, False, "population_limit_exceeded", "both populations are null"),
+    ],
+)
+def test_api_organization_service_commune_population_limits(
+    population, epci_population, expected_can_activate, expected_reason, _description
+):
+    """Test population limit checking for commune organizations."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory(
+        type="commune", population=population, epci_population=epci_population
+    )
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    service = factories.ServiceFactory(
+        config={"population_limits": {"commune": 3500, "epci": 15000}}
+    )
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/"
+    )
+    assert response.status_code == 200
+    content = response.json()
+    assert content["can_activate"] is expected_can_activate
+    if expected_reason:
+        assert content["activation_blocked_reason"] == expected_reason
+    else:
+        assert "activation_blocked_reason" not in content
+
+
+@pytest.mark.parametrize(
+    "population,expected_can_activate,expected_reason,description",
+    [
+        (10000, True, None, "EPCI population below limit"),
+        (20000, False, "population_limit_exceeded", "EPCI population above limit"),
+        (None, False, "population_limit_exceeded", "EPCI population is null"),
+    ],
+)
+def test_api_organization_service_epci_population_limits(
+    population, expected_can_activate, expected_reason, _description
+):
+    """Test population limit checking for EPCI organizations."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory(type="epci", population=population)
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    service = factories.ServiceFactory(
+        config={"population_limits": {"commune": 3500, "epci": 15000}}
+    )
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/"
+    )
+    assert response.status_code == 200
+    content = response.json()
+    assert content["can_activate"] is expected_can_activate
+    if expected_reason:
+        assert content["activation_blocked_reason"] == expected_reason
+    else:
+        assert "activation_blocked_reason" not in content
+
+
+@pytest.mark.parametrize(
+    "can_bypass,org_type,population,epci_population,expected_can_activate,description",
+    [
+        (
+            True,
+            "commune",
+            5000,
+            20000,
+            True,
+            "operator bypass with commune exceeding limits",
+        ),
+        (True, "epci", 20000, None, True, "operator bypass with EPCI exceeding limit"),
+        (
+            False,
+            "commune",
+            5000,
+            20000,
+            False,
+            "no bypass with commune exceeding limits",
+        ),
+        (False, "epci", 20000, None, False, "no bypass with EPCI exceeding limit"),
+    ],
+)
+def test_api_organization_service_operator_bypass_population_limits(
+    can_bypass,
+    org_type,
+    population,
+    epci_population,
+    expected_can_activate,
+    _description,
+):
+    """Test operator bypass functionality for population limits."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator_config = {"can_bypass_population_limits": can_bypass} if can_bypass else {}
+    operator = factories.OperatorFactory(config=operator_config)
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    org_kwargs = {"type": org_type, "population": population}
+    if org_type == "commune":
+        org_kwargs["epci_population"] = epci_population
+    organization = factories.OrganizationFactory(**org_kwargs)
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    service = factories.ServiceFactory(
+        config={"population_limits": {"commune": 3500, "epci": 15000}}
+    )
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/"
+    )
+    assert response.status_code == 200
+    content = response.json()
+    assert content["can_activate"] is expected_can_activate
+    if expected_can_activate:
+        assert "activation_blocked_reason" not in content
+    else:
+        assert content["activation_blocked_reason"] == "population_limit_exceeded"
+
+
+def test_api_organization_service_subscription_validation_population_limits():
+    """Test that subscription activation is blocked when population limits are exceeded."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory(
+        type="commune", population=5000, epci_population=20000
+    )
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    service = factories.ServiceFactory(
+        config={"population_limits": {"commune": 3500, "epci": 15000}}
+    )
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    # Try to activate subscription
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/subscription/",
+        {"is_active": True},
+        format="json",
+    )
+    assert response.status_code == 400
+    assert "population limits" in response.json()["__all__"][0].lower()
