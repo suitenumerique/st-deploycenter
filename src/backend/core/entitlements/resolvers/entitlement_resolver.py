@@ -9,25 +9,34 @@ logger = logging.getLogger(__name__)
 def get_entitlements_by_priority(entitlements):
     """
     It sort entitlements by their hierarchy:
-    user_override = (account_type="user", account_id="xyz)
+    <account>_override = (account_type="<account>", account_id="xyz)
+    <account> = (account_type="<account>", account_id=None)
     organization = (account_type="organization", account_id=None)
-    user = (account_type="user", account_id=None)
     """
-    user_override = None
-    user = None
+    account_override = None
+    account = None
     organization = None
 
     for entitlement in entitlements:
-        if entitlement.account_type == "user" and entitlement.account_id:
-            user_override = entitlement
-        elif entitlement.account_type == "user" and not entitlement.account_id:
-            user = entitlement
-        elif entitlement.account_type == "organization" and not entitlement.account_id:
+        if entitlement.account_type == "organization":
+            if entitlement.account_id:
+                raise ValueError(
+                    f"Organization entitlement must not have an account ID: {entitlement.account_id}"
+                )
             organization = entitlement
+        elif entitlement.account_type:
+            if entitlement.account_id:
+                account_override = entitlement
+            else:
+                account = entitlement
         else:
             raise ValueError(f"Invalid account type: {entitlement.account_type}")
 
-    return {"user_override": user_override, "user": user, "organization": organization}
+    return {
+        "account_override": account_override,
+        "account": account,
+        "organization": organization,
+    }
 
 
 class MetricNotFoundError(Exception):
@@ -51,9 +60,9 @@ class EntitlementResolver(ABC):
 
         Basically in real terms it translates to:
         Your entitlement should comply to (this first one is the highest priority):
-        - An entitlement for a specific user - can be considered as an blocking override (account_type="user", account_id="xyz")
+        - An entitlement for a specific account type - can be considered as an blocking override (ex: account_type="user", account_id="xyz")
         - An entitlement for organization (account_type="organization", account_id=None)
-        - An entitlement for user (account_type="user", account_id=None)
+        - An entitlement for account type (ex: account_type="user", account_id=None)
 
         There is no entitlement for a specific organization (account_type="organization", account_id="xyz")
         because as an entitlement is already bounds to an organization via the service subscription. it would
@@ -75,50 +84,56 @@ class EntitlementResolver(ABC):
             it tells that the organization still have free storage left. So we can finally check
             that the user has free storage left for the default user entitlement.
 
+        The same goes for any account type, it could be mailbox, etc.
+
         This method also return in the object the last level at which the entitlement was compliant or not via
         "_reason_level" key.
 
         Example:
         {
             "can_store": True,
-            "can_store_resolve_level": "user_override",
+            "can_store_resolve_level": "user_override", # could have been
         }
         """
 
         entitlements = get_entitlements_by_priority(context["entitlements"])
-        entitlement_user = entitlements.get("user")
+        entitlement_account = entitlements.get("account")
 
-        # The user override is the highest priority entitlement. Whether it
+        # The account override is the highest priority entitlement. Whether it
         # complies or not, we will return the result.
-        if entitlement_user_override := entitlements.get("user_override"):
-            metric = self._get_metric(context, entitlement_user_override)
+        if entitlement_account_override := entitlements.get("account_override"):
+            metric = self._get_metric(context, entitlement_account_override)
             _, attributes = self._resolve_entitlement(
-                context, entitlement_user_override, metric
+                context, entitlement_account_override, metric
             )
-            return self._build_resolve_level(attributes, "user_override")
+            return self._build_resolve_level(
+                attributes, f"{entitlement_account_override.account_type}_override"
+            )
 
         # If there is an organization entitlement, it should first resolve anyway
-        # before the generic user entitlement.
+        # before the generic account entitlement.
         if entitlement_organization := entitlements.get("organization"):
             metric = self._get_metric(context, entitlement_organization)
             compliant, attributes = self._resolve_entitlement(
                 context, entitlement_organization, metric
             )
-            # If there is a user entitlement and it this one does not comply, we can return directly.
-            # Or if there is no user entitlement to run further, we can return directly in anyway.
-            if not compliant or not entitlement_user:
+            # If there is an account entitlement and it this one does not comply, we can return directly.
+            # Or if there is no account entitlement to run further, we can return directly in anyway.
+            if not compliant or not entitlement_account:
                 return self._build_resolve_level(attributes, "organization")
 
-        # If there is a generic user entitlement, it should be the last one to resolve.
-        if entitlement_user:
-            metric = self._get_metric(context, entitlement_user)
+        # If there is a generic account entitlement, it should be the last one to resolve.
+        if entitlement_account:
+            metric = self._get_metric(context, entitlement_account)
             compliant, attributes = self._resolve_entitlement(
-                context, entitlement_user, metric
+                context, entitlement_account, metric
             )
-            return self._build_resolve_level(attributes, "user")
+            return self._build_resolve_level(
+                attributes, entitlement_account.account_type
+            )
 
         raise ValueError(
-            f"This should not happen, no user or organization entitlement could be resolved for the given context. "
+            f"This should not happen, no account or organization entitlement could be resolved for the given context. "
             f"Service {context['service'].name}, organization {context['organization'].name}, "
             f"account type {context['account_type']}, account id {context['account_id']}"
         )
@@ -136,14 +151,12 @@ class EntitlementResolver(ABC):
                 "Please mind to define the key filter."
             )
 
-        if entitlement.account_type == "user":
-            filters["account_type"] = entitlement.account_type
-            filters["account_id"] = context["account_id"]
-        elif entitlement.account_type == "organization":
+        if entitlement.account_type == "organization":
             filters["account_type"] = entitlement.account_type
             filters["account_id"] = context["organization"].id
         else:
-            raise ValueError(f"Invalid account type: {entitlement.account_type}")
+            filters["account_type"] = entitlement.account_type
+            filters["account_id"] = context["account_id"]
 
         metric = (
             models.Metric.objects.filter(

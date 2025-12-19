@@ -94,14 +94,14 @@ class EntitlementView(APIView):
                     entitlements_by_type[entitlement.type] = []
                 entitlements_by_type[entitlement.type].append(entitlement)
 
-            # Always scrape user metrics.
-            scrape_user = True
+            # Always scrape incoming account metrics. (user, mailbox, etc.)
+            scrape_account = True
             # Not all services supports organization account type.
             scrape_organization = False
 
             # Determine if we need to scrape organization metrics.
             # We scrape organization metrics only if we at least one organization entitlement.
-            for entitlement_type, entitlements_of_type in entitlements_by_type.items():
+            for _entitlement_type, entitlements_of_type in entitlements_by_type.items():
                 entitlements_by_priority = get_entitlements_by_priority(
                     entitlements_of_type
                 )
@@ -109,7 +109,7 @@ class EntitlementView(APIView):
                     scrape_organization = True
 
             # Scrape metrics.
-            if scrape_user:
+            if scrape_account:
                 scrape_service_usage_metrics(
                     service,
                     {

@@ -67,7 +67,7 @@ const getTranslationPrefix = (
   fieldName: string,
   priority: string
 ) => {
-  return `organizations.services.types.${serviceType}.entitlements.${entitlement.type}.${fieldName}.${priority}`;
+  return `organizations.services.types.${serviceType}.entitlements.${entitlement.type}.${fieldName}.${entitlement.account_type}`;
 };
 
 export const StoragePickerEntitlementField = (

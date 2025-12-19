@@ -81,11 +81,11 @@
               "entitlements": {
                 "messages_storage": {
                   "max_storage": {
-                    "user": {
-                      "label": "User storage quota",
+                    "mailbox": {
+                      "label": "Mailbox storage quota",
                       "modal": {
-                        "title": "User storage quota",
-                        "description": "Change the user storage quota of this service."
+                        "title": "Mailbox storage quota",
+                        "description": "Change the mailbox storage quota of this service."
                       },
                       "zero_value": "Unlimited"
                     },
@@ -209,11 +209,11 @@
               "entitlements": {
                 "messages_storage": {
                   "max_storage": {
-                    "user": {
-                      "label": "Quota par utilisateur",
+                    "mailbox": {
+                      "label": "Quota par mailbox",
                       "modal": {
-                        "title": "Quota par utilisateur",
-                        "description": "Modifier le quota de stockage par utilisateur."
+                        "title": "Quota par mailbox",
+                        "description": "Modifier le quota de stockage par mailbox."
                       },
                       "zero_value": "Illimité"
                     },

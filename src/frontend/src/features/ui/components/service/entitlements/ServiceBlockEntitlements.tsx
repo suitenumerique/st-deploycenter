@@ -6,18 +6,19 @@ import {
 import { StoragePickerEntitlementField } from "@/features/ui/components/service/entitlements/fields/StoragePickerEntitlementField";
 
 const getEntitlementsByPriority = (entitlements: Entitlement[]) => {
-  const userOverride = entitlements?.find(
-    (e) => e.account_type === "user" && e.account_id
+  const accountOverride = entitlements?.find(
+    (e) => e.account_type !== "organization" && !!e.account_type && e.account_id
   );
-  const user = entitlements?.find(
-    (e) => e.account_type === "user" && !e.account_id
+  const account = entitlements?.find(
+    (e) =>
+      e.account_type !== "organization" && !!e.account_type && !e.account_id
   );
   const organization = entitlements?.find(
     (e) => e.account_type === "organization" && !e.account_id
   );
   return {
-    userOverride,
-    user,
+    accountOverride,
+    account,
     organization,
   };
 };

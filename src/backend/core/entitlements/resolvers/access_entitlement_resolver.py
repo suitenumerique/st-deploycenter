@@ -1,6 +1,5 @@
-from enum import StrEnum
 import logging
-
+from enum import StrEnum
 
 logger = logging.getLogger(__name__)
 

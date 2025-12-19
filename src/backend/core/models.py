@@ -1001,10 +1001,10 @@ class ServiceSubscription(BaseModel):
         if self.service.type != "messages":
             return
 
-        # User level entitlement.
+        # Mailbox level entitlement.
         if not self.entitlements.filter(
             type=Entitlement.EntitlementType.MESSAGES_STORAGE,
-            account_type="user",
+            account_type="mailbox",
             account_id="",
         ).exists():
             self.entitlements.create(
@@ -1012,7 +1012,7 @@ class ServiceSubscription(BaseModel):
                 config={
                     "max_storage": 1000 * 1000 * 1000 * 5,  # 5GB
                 },
-                account_type="user",
+                account_type="mailbox",
                 account_id="",
             )
 
