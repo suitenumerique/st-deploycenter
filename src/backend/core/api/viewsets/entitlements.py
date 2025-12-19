@@ -100,7 +100,7 @@ class EntitlementView(APIView):
             scrape_organization = False
 
             # Determine if we need to scrape organization metrics.
-            # We scrape organization metrics only if we at least one organization entitlement.
+            # We scrape organization metrics only if we have at least one organization entitlement.
             for _entitlement_type, entitlements_of_type in entitlements_by_type.items():
                 entitlements_by_priority = get_entitlements_by_priority(
                     entitlements_of_type

@@ -1,7 +1,7 @@
 """
 Declare and configure the models for the deploycenter core application
 """
-# pylint: disable=too-many-lines,too-many-instance-attributes
+# pylint: disable=too-many-lines,too-many-instance-attributes,import-outside-toplevel,cyclic-import
 
 import uuid
 from enum import StrEnum
@@ -909,7 +909,12 @@ class ServiceSubscription(BaseModel):
         Save the service subscription.
         """
         super().save(*args, **kwargs)
-        self._create_default_entitlements()
+
+        from core.services import get_service_handler  # noqa: PLC0415
+
+        service_handler = get_service_handler(self.service)
+        if service_handler:
+            service_handler.create_default_entitlements(self)
 
     @property
     def idp_name(self):
@@ -967,70 +972,6 @@ class ServiceSubscription(BaseModel):
         super().clean()
         self.validate_proconnect_subscription()
         self.validate_can_activate()
-
-    def _create_default_entitlements(self):
-        """
-        Create default entitlements for the service subscription.
-        """
-        self._create_default_drive_entitlements()
-        self._create_default_messages_entitlements()
-
-    def _create_default_drive_entitlements(self):
-        """
-        Create default drive entitlements for the service subscription.
-        """
-        if self.service.type != "drive":
-            return
-        if self.entitlements.filter(
-            type=Entitlement.EntitlementType.DRIVE_STORAGE
-        ).exists():
-            return
-        self.entitlements.create(
-            type=Entitlement.EntitlementType.DRIVE_STORAGE,
-            config={
-                "max_storage": 1000 * 1000 * 1000 * 10,  # 10GB
-            },
-            account_type="user",
-            account_id="",
-        )
-
-    def _create_default_messages_entitlements(self):
-        """
-        Create default messages entitlements for the service subscription.
-        """
-        if self.service.type != "messages":
-            return
-
-        # Mailbox level entitlement.
-        if not self.entitlements.filter(
-            type=Entitlement.EntitlementType.MESSAGES_STORAGE,
-            account_type="mailbox",
-            account_id="",
-        ).exists():
-            self.entitlements.create(
-                type=Entitlement.EntitlementType.MESSAGES_STORAGE,
-                config={
-                    "max_storage": 1000 * 1000 * 1000 * 5,  # 5GB
-                },
-                account_type="mailbox",
-                account_id="",
-            )
-
-        # If there is no organization level entitlement, create one.
-        # Organization level entitlement.
-        if not self.entitlements.filter(
-            type=Entitlement.EntitlementType.MESSAGES_STORAGE,
-            account_type="organization",
-            account_id="",
-        ).exists():
-            self.entitlements.create(
-                type=Entitlement.EntitlementType.MESSAGES_STORAGE,
-                config={
-                    "max_storage": 1000 * 1000 * 1000 * 50,  # 50GB
-                },
-                account_type="organization",
-                account_id="",
-            )
 
 
 class Metric(models.Model):
