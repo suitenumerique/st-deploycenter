@@ -65,12 +65,38 @@
               "entitlements": {
                 "drive_storage": {
                   "max_storage": {
-                    "label": "Quota per user",
-                    "modal": {
-                      "title": "Change the quota per user",
-                      "description": "Change the quota per user of this service."
+                    "user": {
+                      "label": "User storage quota",
+                      "modal": {
+                        "title": "User storage quota",
+                        "description": "Change the user storage quota of this service."
+                      },
+                      "zero_value": "Unlimited"
+                    }
+                  }
+                }
+              }
+            },
+            "messages": {
+              "entitlements": {
+                "messages_storage": {
+                  "max_storage": {
+                    "user": {
+                      "label": "User storage quota",
+                      "modal": {
+                        "title": "User storage quota",
+                        "description": "Change the user storage quota of this service."
+                      },
+                      "zero_value": "Unlimited"
                     },
-                    "zero_value": "Unlimited"
+                    "organization": {
+                      "label": "Organization storage quota",
+                      "modal": {
+                        "title": "Organization storage quota",
+                        "description": "Change the organization storage quota of this service."
+                      },
+                      "zero_value": "Unlimited"
+                    }
                   }
                 }
               }
@@ -167,12 +193,38 @@
               "entitlements": {
                 "drive_storage": {
                   "max_storage": {
-                    "label": "Quota par utilisateur",
-                    "modal": {
-                      "title": "Quota par utilisateur",
-                      "description": "Modifier le quota de stockage par utilisateur."
+                    "user": {
+                      "label": "Quota par utilisateur",
+                      "modal": {
+                        "title": "Quota par utilisateur",
+                        "description": "Modifier le quota de stockage par utilisateur."
+                      },
+                      "zero_value": "Illimité"
+                    }
+                  }
+                }
+              }
+            },
+            "messages": {
+              "entitlements": {
+                "messages_storage": {
+                  "max_storage": {
+                    "user": {
+                      "label": "Quota par utilisateur",
+                      "modal": {
+                        "title": "Quota par utilisateur",
+                        "description": "Modifier le quota de stockage par utilisateur."
+                      },
+                      "zero_value": "Illimité"
                     },
-                    "zero_value": "Illimité"
+                    "organization": {
+                      "label": "Quota d'organisation",
+                      "modal": {
+                        "title": "Quota d'organisation",
+                        "description": "Modifier le quota de stockage de l'organisation."
+                      },
+                      "zero_value": "Illimité"
+                    }
                   }
                 }
               }

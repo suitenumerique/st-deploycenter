@@ -218,6 +218,12 @@
       font-weight: 400;
     }
   }
+
+  &__entitlements {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
 }
 
 .dc__service__attribute__error {

@@ -1,22 +1,13 @@
-import {
-  Entitlement,
-  Organization,
-  ServiceSubscription,
-} from "@/features/api/Repository";
+import { Organization, ServiceSubscription } from "@/features/api/Repository";
 import { useTranslation } from "react-i18next";
 import { Service } from "@/features/api/Repository";
-import {
-  Button,
-  Switch,
-  Tooltip,
-  useModals,
-} from "@openfun/cunningham-react";
+import { Button, Switch, Tooltip, useModals } from "@openfun/cunningham-react";
 import { Icon, IconSize } from "@gouvfr-lasuite/ui-kit";
 import { useEffect, useState } from "react";
 import { useMutationUpdateOrganizationServiceSubscription } from "@/hooks/useQueries";
 import { useOperatorContext } from "@/features/layouts/components/GlobalLayout";
 import { MutateOptions } from "@tanstack/react-query";
-import { StoragePickerEntitlementField } from "./entitlements/fields/StoragePickerEntitlementField";
+import { ServiceBlockEntitlements } from "@/features/ui/components/service/entitlements/ServiceBlockEntitlements";
 
 export type EntitlementFields = {
   fields: Record<string, { type: string }>;
@@ -54,6 +45,17 @@ const ENTITLEMENTS_FIELDS: Record<
   drive: {
     entitlements: {
       drive_storage: {
+        fields: {
+          max_storage: {
+            type: "storage_picker",
+          },
+        },
+      },
+    },
+  },
+  messages: {
+    entitlements: {
+      messages_storage: {
         fields: {
           max_storage: {
             type: "storage_picker",
@@ -112,7 +114,7 @@ export const useServiceBlock = (
   };
 };
 
-type ServiceBlockProps = {
+export type ServiceBlockProps = {
   service: Service;
   organization: Organization;
   content?: React.ReactNode;
@@ -134,16 +136,18 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
   return (
     <div
       className={`dc__service__block ${
-        !canSwitch
-          ? "dc__service__block--disabled"
-          : ""
+        !canSwitch ? "dc__service__block--disabled" : ""
       }`}
     >
       <div className="dc__service__block__header">
         <div className="dc__service__block__header__title">
           {props.service.logo && (
             <div className="dc__service__block__header__logo">
-              <a href={props.service.url} target="_blank" rel="noopener noreferrer">
+              <a
+                href={props.service.url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 <img src={props.service.logo} alt={props.service.name} />
               </a>
             </div>
@@ -154,7 +158,11 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
             </div>
             {props.service.instance_name && (
               <div className="dc__service__block__header__instance_name">
-                <a href={props.service.url} target="_blank" rel="noopener noreferrer">
+                <a
+                  href={props.service.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
                   {props.service.instance_name}
                 </a>
               </div>
@@ -208,10 +216,10 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
               isExternallyManaged
                 ? "organizations.services.externally_managed"
                 : isPopulationLimitExceeded
-                  ? "organizations.services.population_limit_exceeded"
-                  : isMissingRequiredServices
-                    ? "organizations.services.missing_required_services"
-                  : "organizations.services.cannot_activate"
+                ? "organizations.services.population_limit_exceeded"
+                : isMissingRequiredServices
+                ? "organizations.services.missing_required_services"
+                : "organizations.services.cannot_activate"
             )}
           >
             <div
@@ -222,10 +230,10 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
                 isExternallyManaged
                   ? t("organizations.services.externally_managed")
                   : isPopulationLimitExceeded
-                    ? t("organizations.services.population_limit_exceeded")
-                    : isMissingRequiredServices
-                      ? t("organizations.services.missing_required_services")
-                    : t("organizations.services.cannot_activate")
+                  ? t("organizations.services.population_limit_exceeded")
+                  : isMissingRequiredServices
+                  ? t("organizations.services.missing_required_services")
+                  : t("organizations.services.cannot_activate")
               }
             >
               <Switch checked={props.checked} disabled={true} />
@@ -262,71 +270,4 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
       </div>
     </div>
   );
-};
-
-const ServiceBlockEntitlements = (props: ServiceBlockProps) => {
-  return (
-    <div className="dc__service__block__entitlements">
-      {Object.entries(props.entitlementsFields).map(
-        ([entitlementType, entitlementFields]) => (
-          <ServiceBlockEntitlement
-            key={entitlementType}
-            entitlementName={entitlementType}
-            entitlementFields={entitlementFields}
-            {...props}
-          />
-        )
-      )}
-    </div>
-  );
-};
-
-type ServiceBlockEntitlementProps = {
-  entitlementName: string;
-  entitlementFields: EntitlementFields;
-} & ServiceBlockProps;
-
-const ServiceBlockEntitlement = (props: ServiceBlockEntitlementProps) => {
-  const entitlement = props.service.subscription?.entitlements?.find(
-    (e) => e.type === props.entitlementName
-  );
-  if (!entitlement) {
-    return null;
-  }
-  return (
-    <div className="dc__service__block__entitlement">
-      <div className="dc__service__block__entitlement__fields">
-        {Object.entries(props.entitlementFields.fields).map(
-          ([fieldName, field]) => {
-            return (
-              <ServiceBlockEntitlementField
-                key={fieldName}
-                fieldName={fieldName}
-                field={field}
-                entitlement={entitlement}
-                {...props}
-              />
-            );
-          }
-        )}
-      </div>
-    </div>
-  );
-};
-
-export type ServiceBlockEntitlementFieldProps = {
-  fieldName: string;
-  field: { type: string };
-  entitlement: Entitlement;
-} & ServiceBlockEntitlementProps;
-
-const ServiceBlockEntitlementField = (
-  props: ServiceBlockEntitlementFieldProps
-) => {
-  switch (props.field.type) {
-    case "storage_picker":
-      return <StoragePickerEntitlementField {...props} />;
-    default:
-      return <div>Unknown field type: {props.field.type}</div>;
-  }
 };

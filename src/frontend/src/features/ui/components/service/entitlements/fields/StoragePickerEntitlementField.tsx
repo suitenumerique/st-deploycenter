@@ -1,4 +1,3 @@
-import { ServiceBlockEntitlementFieldProps } from "@/features/ui/components/service/ServiceBlock";
 import {
   Button,
   Input,
@@ -14,6 +13,8 @@ import { ServiceAttribute } from "@/features/ui/components/service/ServiceAttrib
 import { useMutationUpdateEntitlement } from "@/hooks/useQueries";
 import { useOperatorContext } from "@/features/layouts/components/GlobalLayout";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Entitlement } from "@/features/api/Repository";
+import { ServiceBlockEntitlementFieldProps } from "@/features/ui/components/service/entitlements/ServiceBlockEntitlements";
 
 const DECIMALS = 2;
 // Order matters ! The biggest unit should be first.
@@ -62,10 +63,11 @@ const toBytes = (value: number, unit: string) => {
  */
 const getTranslationPrefix = (
   serviceType: string,
-  entitlementName: string,
-  fieldName: string
+  entitlement: Entitlement,
+  fieldName: string,
+  priority: string
 ) => {
-  return `organizations.services.types.${serviceType}.entitlements.${entitlementName}.${fieldName}`;
+  return `organizations.services.types.${serviceType}.entitlements.${entitlement.type}.${fieldName}.${priority}`;
 };
 
 export const StoragePickerEntitlementField = (
@@ -83,8 +85,9 @@ export const StoragePickerEntitlementField = (
   });
   const translationPrefix = getTranslationPrefix(
     props.service.type,
-    props.entitlementName,
-    props.fieldName
+    props.entitlement,
+    props.fieldName,
+    props.priority
   );
   return (
     <>
@@ -94,7 +97,9 @@ export const StoragePickerEntitlementField = (
       )}
       <ServiceAttribute
         name={t(`${translationPrefix}.label`)}
-        value={value ? `${value} ${unit}` : t(`${translationPrefix}.zero_value`)}
+        value={
+          value ? `${value} ${unit}` : t(`${translationPrefix}.zero_value`)
+        }
         onClick={() => modal.open()}
         interactive={true}
       />
@@ -108,8 +113,9 @@ const StoragePickerEntitlementFieldModal = (
 ) => {
   const translationPrefix = getTranslationPrefix(
     props.service.type,
-    props.entitlementName,
-    props.fieldName
+    props.entitlement,
+    props.fieldName,
+    props.priority
   );
   const { t } = useTranslation();
 
