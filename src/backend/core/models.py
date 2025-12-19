@@ -973,6 +973,7 @@ class ServiceSubscription(BaseModel):
         Create default entitlements for the service subscription.
         """
         self._create_default_drive_entitlements()
+        self._create_default_messages_entitlements()
 
     def _create_default_drive_entitlements(self):
         """
@@ -989,9 +990,47 @@ class ServiceSubscription(BaseModel):
             config={
                 "max_storage": 1000 * 1000 * 1000 * 10,  # 10GB
             },
-            account_type="",
+            account_type="user",
             account_id="",
         )
+
+    def _create_default_messages_entitlements(self):
+        """
+        Create default messages entitlements for the service subscription.
+        """
+        if self.service.type != "messages":
+            return
+
+        # User level entitlement.
+        if not self.entitlements.filter(
+            type=Entitlement.EntitlementType.MESSAGES_STORAGE,
+            account_type="user",
+            account_id="",
+        ).exists():
+            self.entitlements.create(
+                type=Entitlement.EntitlementType.MESSAGES_STORAGE,
+                config={
+                    "max_storage": 1000 * 1000 * 1000 * 5,  # 5GB
+                },
+                account_type="user",
+                account_id="",
+            )
+
+        # If there is no organization level entitlement, create one.
+        # Organization level entitlement.
+        if not self.entitlements.filter(
+            type=Entitlement.EntitlementType.MESSAGES_STORAGE,
+            account_type="organization",
+            account_id="",
+        ).exists():
+            self.entitlements.create(
+                type=Entitlement.EntitlementType.MESSAGES_STORAGE,
+                config={
+                    "max_storage": 1000 * 1000 * 1000 * 50,  # 50GB
+                },
+                account_type="organization",
+                account_id="",
+            )
 
 
 class Metric(models.Model):
@@ -1095,6 +1134,7 @@ class Entitlement(BaseModel):
         """
 
         DRIVE_STORAGE = "drive_storage"
+        MESSAGES_STORAGE = "messages_storage"
 
     service_subscription = models.ForeignKey(
         ServiceSubscription,
