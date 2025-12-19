@@ -1,48 +1,42 @@
 import logging
 
-from core import models
+from core.entitlements.resolvers.entitlement_resolver import EntitlementResolver
 
 logger = logging.getLogger(__name__)
 
 
-class DriveStorageEntitlementResolver:
+class DriveStorageEntitlementResolver(EntitlementResolver):
     """
     Drive storage entitlement resolver.
     """
 
-    def resolve(self, context):
+    resolve_level_prefix = "can_upload"
+
+    def _resolve_entitlement(self, context, entitlement, metric):
         """
         Resolve the drive storage entitlement.
         """
-        metric = (
-            models.Metric.objects.filter(
-                service=context["service"],
-                organization=context["organization"],
-                account_type=context["account_type"],
-                account_id=context["account_id"],
-                key="storage_used",
-            )
-            .order_by("-timestamp")
-            .first()
-        )
         if not metric:
-            logger.warning(
-                "No metrics found for service %s, organization %s, account type %s, account id %s",
-                context["service"].name,
-                context["organization"].name,
-                context["account_type"],
-                context["account_id"],
-            )
-            return {"can_upload": False}
+            self._log_metric_not_found_warning(context, entitlement)
+            return (False, {"can_upload": False})
 
-        entitlement = context["entitlement"]
         max_storage = entitlement.config.get("max_storage") or 0
 
         # If max storage is 0 or undefined, the entitlement is unlimited
         if max_storage == 0:
-            return {"can_upload": True}
-
+            return (True, {"can_upload": True})
         if metric.value > max_storage:
-            return {"can_upload": False}
+            return (False, {"can_upload": False})
+        return (True, {"can_upload": True})
 
-        return {"can_upload": True}
+    def _get_metric(self, context, entitlement):
+        """
+        Get the metric for the given entitlement.
+        """
+        return super()._get_metric(
+            context,
+            entitlement,
+            {
+                "key": "storage_used",
+            },
+        )

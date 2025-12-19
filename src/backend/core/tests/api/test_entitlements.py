@@ -1,6 +1,11 @@
 # pylint: disable=invalid-name
 """
 Test users API endpoints in the deploycenter core app.
+
+This one does not test entitlements for a specific service, but rather the entitlements list endpoint
+in general, and how it deals with different scenarios such as error handling, etc.
+
+For service-specific entitlements tests, see test_entitlements_{service_name}.py files.
 """
 
 import json
@@ -330,128 +335,6 @@ def test_api_entitlements_list_service_token_mismatch(webhook_server):  # pylint
     }
 
 
-@pytest.mark.django_db()
-def test_api_entitlements_list(webhook_server):
-    """Test the entitlements list endpoint."""
-    user = factories.UserFactory()
-    client = APIClient()
-    client.force_login(user)
-
-    operator = factories.OperatorFactory()
-    organization = factories.OrganizationFactory(siret="12345678900001")
-    factories.OperatorOrganizationRoleFactory(
-        operator=operator, organization=organization
-    )
-
-    port = webhook_server.server_address[1]
-    metrics_usage_endpoint = f"http://localhost:{port}/metrics/usage"
-
-    service = factories.ServiceFactory(
-        config={
-            "entitlements_api_key": "test_token",
-            "usage_metrics_endpoint": metrics_usage_endpoint,
-            "metrics_auth_token": "test_token",
-        },
-    )
-    service_subscription = factories.ServiceSubscriptionFactory(
-        organization=organization, service=service, operator=operator
-    )
-    factories.EntitlementFactory(
-        service_subscription=service_subscription,
-        type=models.Entitlement.EntitlementType.DRIVE_STORAGE,
-        config={
-            "max_storage": 1000,
-        },
-    )
-
-    # Test that we can upload to the drive
-    response = client.get(
-        "/api/v1.0/entitlements/",
-        query_params={
-            "service_id": service.id,
-            "account_type": "user",
-            "account_id": "xyz",
-            "siret": organization.siret,
-        },
-        headers={"X-Service-Auth": "Bearer test_token"},
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert_equals_partial(
-        data,
-        {
-            "operator": {
-                "id": str(operator.id),
-                "name": operator.name,
-            },
-            "entitlements": {
-                "can_access": True,
-                "can_upload": True,
-            },
-        },
-    )
-
-    # Metrics should be stored in the database
-    metrics = models.Metric.objects.filter(service=service, organization=organization)
-    assert metrics.count() == 1
-    assert metrics.first().value == 500
-    assert metrics.first().key == "storage_used"
-    assert metrics.first().account_type == "user"
-    assert metrics.first().account_id == "xyz"
-    assert metrics.first().organization == organization
-
-    # Metrics endpoint should have been called
-    assert len(MockServiceServer.requests_received) == 1
-    assert MockServiceServer.requests_received[0]["method"] == "GET"
-    assert (
-        MockServiceServer.requests_received[0]["path"]
-        == "/metrics/usage?account_type=user&account_id=xyz&limit=1000&offset=0"
-    )
-    assert (
-        MockServiceServer.requests_received[0]["headers"]["Authorization"]
-        == "Bearer test_token"
-    )
-
-    # Simulate storage used exceeding the max storage size
-    MockServiceServer.MOCK_STORAGE_USED = 1001
-
-    # Test that we cannot upload more than the max storage size
-    response = client.get(
-        "/api/v1.0/entitlements/",
-        query_params={
-            "service_id": service.id,
-            "account_type": "user",
-            "account_id": "xyz",
-            "siret": organization.siret,
-        },
-        headers={"X-Service-Auth": "Bearer test_token"},
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert_equals_partial(
-        data,
-        {
-            "operator": {
-                "id": str(operator.id),
-                "name": operator.name,
-            },
-            "entitlements": {
-                "can_upload": False,
-                "can_access": True,
-            },
-        },
-    )
-
-    # Metrics should be stored in the database
-    metrics = models.Metric.objects.filter(service=service, organization=organization)
-    assert metrics.count() == 1
-    assert metrics.first().value == 1001
-    assert metrics.first().key == "storage_used"
-    assert metrics.first().account_type == "user"
-    assert metrics.first().account_id == "xyz"
-    assert metrics.first().organization == organization
-
-
 def test_api_entitlements_list_usage_metrics_endpoint_not_reachable():
     """
     Test the entitlements list endpoint error handling.
@@ -487,6 +370,8 @@ def test_api_entitlements_list_usage_metrics_endpoint_not_reachable():
         config={
             "max_storage": 1000,
         },
+        account_type="user",
+        account_id="",
     )
 
     # Test that we can upload to the drive
@@ -552,6 +437,8 @@ def test_api_entitlements_list_usage_metrics_endpoint_error(buggy_service_server
         config={
             "max_storage": 1000,
         },
+        account_type="user",
+        account_id="",
     )
 
     # Test that we can upload to the drive
@@ -591,77 +478,4 @@ def test_api_entitlements_list_usage_metrics_endpoint_error(buggy_service_server
     assert (
         BuggyServiceServer.requests_received[0]["headers"]["Authorization"]
         == "Bearer test_token"
-    )
-
-
-@pytest.mark.parametrize(
-    "entitlement_config,storage_used",
-    [
-        ({"max_storage": 0}, 1000000),  # Explicitly set to 0
-        ({}, 5000000),  # Missing max_storage key - should default to 0
-    ],
-)
-def test_api_entitlements_list_unlimited_storage(
-    webhook_server, entitlement_config, storage_used
-):
-    """
-    Test that when max_storage is 0 or missing, can_upload is always True (unlimited storage).
-    """
-    user = factories.UserFactory()
-    client = APIClient()
-    client.force_login(user)
-
-    operator = factories.OperatorFactory()
-    organization = factories.OrganizationFactory(siret="12345678900001")
-    factories.OperatorOrganizationRoleFactory(
-        operator=operator, organization=organization
-    )
-
-    port = webhook_server.server_address[1]
-    metrics_usage_endpoint = f"http://localhost:{port}/metrics/usage"
-
-    service = factories.ServiceFactory(
-        config={
-            "entitlements_api_key": "test_token",
-            "usage_metrics_endpoint": metrics_usage_endpoint,
-            "metrics_auth_token": "test_token",
-        },
-    )
-    service_subscription = factories.ServiceSubscriptionFactory(
-        organization=organization, service=service, operator=operator
-    )
-    factories.EntitlementFactory(
-        service_subscription=service_subscription,
-        type=models.Entitlement.EntitlementType.DRIVE_STORAGE,
-        config=entitlement_config,
-    )
-
-    # Set a high storage usage value
-    MockServiceServer.MOCK_STORAGE_USED = storage_used
-
-    # Test that can_upload is True even with high storage usage
-    response = client.get(
-        "/api/v1.0/entitlements/",
-        query_params={
-            "service_id": service.id,
-            "account_type": "user",
-            "account_id": "xyz",
-            "siret": organization.siret,
-        },
-        headers={"X-Service-Auth": "Bearer test_token"},
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert_equals_partial(
-        data,
-        {
-            "operator": {
-                "id": str(operator.id),
-                "name": operator.name,
-            },
-            "entitlements": {
-                "can_access": True,
-                "can_upload": True,  # Should be True even with high usage when max_storage is 0 or missing
-            },
-        },
     )

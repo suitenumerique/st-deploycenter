@@ -441,31 +441,3 @@ def test_api_subscription_entitlements_cannot_patch_role():
         format="json",
     )
     assert response.status_code == 403
-
-
-def test_api_subscription_entitlements_default_drive():
-    """When a drive service subscription is created, a default drive storage entitlement should be created."""
-    user = factories.UserFactory()
-    client = APIClient()
-    client.force_login(user)
-    operator = factories.OperatorFactory()
-    factories.UserOperatorRoleFactory(user=user, operator=operator)
-    organization = factories.OrganizationFactory()
-    factories.OperatorOrganizationRoleFactory(
-        operator=operator, organization=organization
-    )
-    service = factories.ServiceFactory(type="drive")
-
-    # Assert that the entitlement does not exist before subscription creation
-    assert not models.Entitlement.objects.exists()
-
-    factories.ServiceSubscriptionFactory(
-        organization=organization, service=service, operator=operator
-    )
-    entitlement = models.Entitlement.objects.get(
-        service_subscription__organization=organization,
-        service_subscription__service=service,
-        service_subscription__operator=operator,
-        type=models.Entitlement.EntitlementType.DRIVE_STORAGE,
-    )
-    assert entitlement.config["max_storage"] == 1000 * 1000 * 1000 * 10
