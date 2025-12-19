@@ -21,5 +21,5 @@ def assert_equals_partial(actual, expected, debug=False):
                 assert_equals_partial(actual[key], value, debug)
             else:
                 assert actual[key] == value, (
-                    f"Expected {value} but got {actual[key]} for key {key}"
+                    f"Key {key}: Expected {value} but got {actual[key]}"
                 )
