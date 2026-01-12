@@ -972,6 +972,80 @@ class ServiceSubscription(BaseModel):
         super().clean()
         self.validate_proconnect_subscription()
         self.validate_can_activate()
+        
+
+class AccountServiceLink(BaseModel):
+    """
+    Through model representing a link between an account and a service.
+    """
+
+    account = models.ForeignKey(
+        "Account",
+        on_delete=models.CASCADE,
+        related_name="service_links",
+        verbose_name=_("account"),
+        help_text=_("Account this service link is associated with"),
+    )
+
+    service = models.ForeignKey(
+        Service,
+        on_delete=models.CASCADE,
+        related_name="service_links",
+        verbose_name=_("service"),
+        help_text=_("Service this account is associated with"),
+    )
+    
+    roles = models.JSONField(
+        _("roles"),
+        default=list,
+        blank=True,
+        help_text=_("Array of role strings for this account"),
+    )
+
+
+class Account(BaseModel):
+    """
+    An account is an entity to which metrics are attached to.
+    This entity is used as a reference to resolve entitlements.
+    It can be a user, a mailbox, etc. It depends on the service's use case.
+    """
+
+    email = models.EmailField(
+        _("email"),
+        max_length=255,
+        help_text=_("Email address of the account"),
+    )
+
+    external_id = models.CharField(
+        _("external ID"),
+        max_length=255,
+        help_text=_("External ID of the account"),
+        default="",
+        blank=True,
+    )
+
+    type = models.CharField(
+        _("account type"),
+        max_length=50,
+        help_text=_("Type of account"),
+        default="",
+        blank=True,
+    )    
+
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name="accounts",
+        verbose_name=_("organization"),
+        help_text=_("Organization this account is associated with"),
+    )
+
+    roles = models.JSONField(
+        _("roles"),
+        default=list,
+        blank=True,
+        help_text=_("Array of role strings for this account"),
+    )
 
 
 class Metric(models.Model):
@@ -1017,20 +1091,12 @@ class Metric(models.Model):
         help_text=_("Organization this metric is associated with"),
     )
 
-    account_type = models.CharField(
-        _("account type"),
-        max_length=50,
-        help_text=_("Type of account"),
-        default="",
-        blank=True,
-    )
-
-    account_id = models.CharField(
-        _("account ID"),
-        max_length=255,
-        help_text=_("ID of the account"),
-        default="",
-        blank=True,
+    account = models.ForeignKey(
+        Account,
+        on_delete=models.CASCADE,
+        related_name="metrics",
+        verbose_name=_("account"),
+        help_text=_("Account this metric is associated with"),
     )
 
     class Meta:
@@ -1043,12 +1109,10 @@ class Metric(models.Model):
             models.Index(fields=["key"]),
             models.Index(fields=["service"]),
             models.Index(fields=["organization"]),
-            models.Index(fields=["account_type"]),
-            models.Index(fields=["account_id"]),
         ]
         constraints = [
             models.UniqueConstraint(
-                fields=["service", "organization", "account_type", "account_id", "key"],
+                fields=["service", "organization", "account", "key"],
                 name="unique_metric_with_account_id",
             ),
         ]

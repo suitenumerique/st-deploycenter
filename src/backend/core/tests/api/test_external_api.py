@@ -247,7 +247,10 @@ def test_external_api_wrong_operator():
     client.credentials(HTTP_AUTHORIZATION=f"Bearer {api_key1}")
 
     response = client.get(f"/api/v1.0/operators/{operator2.id}/organizations/")
-    assert response.status_code == 401
+    assert response.status_code == 403
+    assert response.json() == {
+        "detail": "Vous n'avez pas la permission d'effectuer cette action."
+    }
 
 
 def test_external_api_organization_read_only():
