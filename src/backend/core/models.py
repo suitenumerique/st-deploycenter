@@ -14,6 +14,7 @@ from django.contrib.auth.base_user import AbstractBaseUser
 from django.core import validators
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
 from timezone_field import TimeZoneField
@@ -1047,6 +1048,8 @@ class Account(BaseModel):
         help_text=_("Array of role strings for this account"),
     )
 
+    def __str__(self):
+        return f"{self.id} (external_id: {self.external_id}) - {self.type} - {self.email} - {self.organization.name}"
 
 class Metric(models.Model):
     """
@@ -1097,6 +1100,8 @@ class Metric(models.Model):
         related_name="metrics",
         verbose_name=_("account"),
         help_text=_("Account this metric is associated with"),
+        blank=True,
+        null=True,
     )
 
     class Meta:
@@ -1109,19 +1114,30 @@ class Metric(models.Model):
             models.Index(fields=["key"]),
             models.Index(fields=["service"]),
             models.Index(fields=["organization"]),
+            models.Index(fields=["account"]),
         ]
         constraints = [
+            # Context: in SQL two NULL values are considered different, so we need to handle them separately.
+            # Otherwise we could create duplicate metrics with the same service, organization and key when account is null.
+            # Constraint for metrics without account (account is NULL)
+            models.UniqueConstraint(
+                fields=["service", "organization", "key"],
+                condition=Q(account__isnull=True),
+                name="unique_metric_without_account",
+            ),
+            # Constraint for metrics with account (account is NOT NULL)
             models.UniqueConstraint(
                 fields=["service", "organization", "account", "key"],
-                name="unique_metric_with_account_id",
+                condition=Q(account__isnull=False),
+                name="unique_metric_with_account",
             ),
         ]
 
     def __str__(self):
         org_name = self.organization.name if self.organization else "Unknown"
         account_info = ""
-        if self.account_type and self.account_id:
-            account_info = f" with account ({self.account_type},{self.account_id})"
+        if self.account:
+            account_info = f" with account ({self.account})"
         return f"{self.key}: {self.value} for {self.service.name} - {org_name}{account_info}"
 
 

@@ -71,7 +71,6 @@ class AccountViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.
         def has_object_permission(self, request, view, obj):
             return permissions.request_has_role_in_organization(request, obj.organization.id)
 
-    # TODO: Add permission classes that is based on object permissions
     authentication_classes = [
         ExternalManagementApiKeyAuthentication,
     ] + [*api_settings.DEFAULT_AUTHENTICATION_CLASSES]
