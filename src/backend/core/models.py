@@ -1015,6 +1015,8 @@ class Account(BaseModel):
         _("email"),
         max_length=255,
         help_text=_("Email address of the account"),
+        default="",
+        blank=True,
     )
 
     external_id = models.CharField(
@@ -1117,19 +1119,12 @@ class Metric(models.Model):
             models.Index(fields=["account"]),
         ]
         constraints = [
-            # Context: in SQL two NULL values are considered different, so we need to handle them separately.
-            # Otherwise we could create duplicate metrics with the same service, organization and key when account is null.
-            # Constraint for metrics without account (account is NULL)
-            models.UniqueConstraint(
-                fields=["service", "organization", "key"],
-                condition=Q(account__isnull=True),
-                name="unique_metric_without_account",
-            ),
-            # Constraint for metrics with account (account is NOT NULL)
             models.UniqueConstraint(
                 fields=["service", "organization", "account", "key"],
-                condition=Q(account__isnull=False),
                 name="unique_metric_with_account",
+                # account ForeignKey can be null, so we need to consider NULL values as equal.
+                # See https://www.postgresql.org/about/featurematrix/detail/unique-nulls-not-distinct/
+                nulls_distinct=False
             ),
         ]
 
