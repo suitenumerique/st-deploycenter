@@ -145,7 +145,7 @@ def test_api_subscription_entitlements_list():
                         "max_storage": 1000,
                     },
                     "account_type": "",
-                    "account_id": "",
+                    "account": None,
                 }
             ],
         },
@@ -214,17 +214,31 @@ def test_api_subscription_entitlements_list_filtering():
             "max_storage": 1000,
         },
         account_type="",
-        account_id="",
+        account=None,
     )
 
+    entitlement_with_account_type = factories.EntitlementFactory(
+        service_subscription=subscription,
+        type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
+        config={
+            "max_storage": 1000,
+        },
+        account_type="user",
+        account=None,
+    )
+
+    account = factories.AccountFactory(
+        organization=organization_ok1,
+        type="user",
+        external_id="xyz",
+    )
     entitlement_with_account = factories.EntitlementFactory(
         service_subscription=subscription,
         type=models.Entitlement.EntitlementType.DRIVE_STORAGE,
         config={
             "max_storage": 1000,
         },
-        account_type="user",
-        account_id="xyz",
+        account=account,
     )
 
     # Test that the entitlements can be listed and are not empty
@@ -235,7 +249,7 @@ def test_api_subscription_entitlements_list_filtering():
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["count"] == 2
+    assert data["count"] == 3
 
     # Test that the entitlements can be filtered by account type.
     response = client.get(
@@ -249,6 +263,20 @@ def test_api_subscription_entitlements_list_filtering():
     assert response.status_code == 200
     data = response.json()
     assert data["count"] == 1
+    assert data["results"][0]["id"] == str(entitlement_with_account_type.id)
+
+    # Test that the entitlements can be filtered by account external id.
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/"
+        f"services/{service1.id}/subscription/entitlements/",
+        format="json",
+        query_params={
+            "account__external_id": "xyz",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["count"] == 1
     assert data["results"][0]["id"] == str(entitlement_with_account.id)
 
     # Test that the entitlements can be filtered by account id.
@@ -257,7 +285,7 @@ def test_api_subscription_entitlements_list_filtering():
         f"services/{service1.id}/subscription/entitlements/",
         format="json",
         query_params={
-            "account_id": "xyz",
+            "account__id": account.id,
         },
     )
     assert response.status_code == 200
@@ -354,7 +382,7 @@ def test_api_subscription_entitlements_patch():
                 "max_storage": 1000,
             },
             "account_type": "",
-            "account_id": "",
+            "account": None
         },
     )
 
@@ -378,7 +406,7 @@ def test_api_subscription_entitlements_patch():
                 "max_storage": 2000,
             },
             "account_type": "",
-            "account_id": "",
+            "account": None,
         },
     )
 

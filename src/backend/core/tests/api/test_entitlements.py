@@ -371,10 +371,11 @@ def test_api_entitlements_list_usage_metrics_endpoint_not_reachable():
             "max_storage": 1000,
         },
         account_type="user",
-        account_id="",
+        account=None,
     )
 
     # Test that we can upload to the drive
+    
     response = client.get(
         "/api/v1.0/entitlements/",
         query_params={
@@ -438,7 +439,7 @@ def test_api_entitlements_list_usage_metrics_endpoint_error(buggy_service_server
             "max_storage": 1000,
         },
         account_type="user",
-        account_id="",
+        account=None,
     )
 
     # Test that we can upload to the drive

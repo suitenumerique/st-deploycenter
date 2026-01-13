@@ -24,5 +24,5 @@ class DriveServiceHandler(ServiceHandler):
                 "max_storage": 1000 * 1000 * 1000 * 10,  # 10GB
             },
             account_type="user",
-            account_id="",
+            account=None,
         )

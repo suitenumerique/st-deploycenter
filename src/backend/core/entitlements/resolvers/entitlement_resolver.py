@@ -152,11 +152,11 @@ class EntitlementResolver(ABC):
             )
 
         if entitlement.account_type == "organization":
-            filters["account_type"] = entitlement.account_type
-            filters["account_id"] = context["organization"].id
+            filters["account__type"] = entitlement.account_type
+            filters["account__external_id"] = context["organization"].id
         else:
-            filters["account_type"] = entitlement.account_type
-            filters["account_id"] = context["account_id"]
+            filters["account__type"] = entitlement.account_type
+            filters["account__external_id"] = context["account_id"]
 
         metric = (
             models.Metric.objects.filter(

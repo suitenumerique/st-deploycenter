@@ -352,7 +352,7 @@ class EntitlementSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = models.Entitlement
-        fields = ["id", "type", "config", "account_type", "account_id"]
+        fields = ["id", "type", "config", "account_type", "account"]
         read_only_fields = ["id", "type"]
 
 

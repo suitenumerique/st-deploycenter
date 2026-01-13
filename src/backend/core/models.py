@@ -1184,12 +1184,14 @@ class Entitlement(BaseModel):
         blank=True,
     )
 
-    account_id = models.CharField(
-        _("account ID"),
-        max_length=255,
-        help_text=_("ID of the account"),
-        default="",
+    account = models.ForeignKey(
+        Account,
+        on_delete=models.CASCADE,
+        related_name="entitlements",
+        verbose_name=_("account"),
+        help_text=_("Account this entitlement is associated with"),
         blank=True,
+        null=True,
     )
 
     class Meta:
