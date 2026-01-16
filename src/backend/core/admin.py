@@ -1,4 +1,4 @@
-# pylint: disable=line-too-long
+# pylint: disable=line-too-long,too-many-lines
 """Admin classes and registrations for core app."""
 
 import secrets
@@ -80,7 +80,9 @@ class PasswordlessUserCreationForm(forms.ModelForm):
         if email:
             # Check if email is already used by another user
             existing_user = models.User.objects.filter(email=email).first()
-            if existing_user and (not self.instance.pk or existing_user.pk != self.instance.pk):
+            if existing_user and (
+                not self.instance.pk or existing_user.pk != self.instance.pk
+            ):
                 raise forms.ValidationError(
                     _("A user with this identity email address already exists.")
                 )
