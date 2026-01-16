@@ -50,7 +50,7 @@ export const HeaderRight = () => {
             }
             iconPosition="right"
           >
-            {t("my_account")}
+            {user.email}
           </Button>
         </DropdownMenu>
       ) : (

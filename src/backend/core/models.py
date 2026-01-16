@@ -673,7 +673,8 @@ class Service(BaseModel):
     instance_name = models.CharField(
         _("instance name"),
         max_length=255,
-        default="",
+        blank=True,
+        null=True,
         help_text=_("Name of the instance of the service"),
     )
 
