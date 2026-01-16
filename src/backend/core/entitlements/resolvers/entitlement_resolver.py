@@ -19,13 +19,13 @@ def get_entitlements_by_priority(entitlements):
 
     for entitlement in entitlements:
         if entitlement.account_type == "organization":
-            if entitlement.account_id:
+            if entitlement.account:
                 raise ValueError(
-                    f"Organization entitlement must not have an account ID: {entitlement.account_id}"
+                    f"Organization entitlement must not have an account: {entitlement.account}"
                 )
             organization = entitlement
         elif entitlement.account_type:
-            if entitlement.account_id:
+            if entitlement.account:
                 account_override = entitlement
             else:
                 account = entitlement
