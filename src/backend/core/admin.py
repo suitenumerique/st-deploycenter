@@ -58,6 +58,44 @@ class ServiceForm(forms.ModelForm):
         return instance
 
 
+class PasswordlessUserCreationForm(forms.ModelForm):
+    """Custom form for creating passwordless OIDC users with only identity email."""
+
+    email = forms.EmailField(
+        label=_("Identity email address"),
+        required=True,
+        help_text=_(
+            "Required. The identity email address that will be used to merge "
+            "the account when the user connects with OIDC."
+        ),
+    )
+
+    class Meta:
+        model = models.User
+        fields = ("email",)
+
+    def clean_email(self):
+        """Validate that the email is unique."""
+        email = self.cleaned_data.get("email")
+        if email:
+            # Check if email is already used by another user
+            existing_user = models.User.objects.filter(email=email).first()
+            if existing_user and (not self.instance.pk or existing_user.pk != self.instance.pk):
+                raise forms.ValidationError(
+                    _("A user with this identity email address already exists.")
+                )
+        return email
+
+    def save(self, commit=True):
+        """Save the user, setting an unusable password for passwordless users."""
+        user = super().save(commit=False)
+        # Set an unusable password for passwordless users
+        user.set_unusable_password()
+        if commit:
+            user.save()
+        return user
+
+
 class BulkSiretImportForm(forms.ModelForm):
     """Form for bulk importing SIRETs or SIRENs to create OperatorOrganizationRole entries."""
 
@@ -220,7 +258,7 @@ class UserAdmin(auth_admin.UserAdmin):
             None,
             {
                 "classes": ("wide",),
-                "fields": ("email", "password1", "password2"),
+                "fields": ("admin_email", "password1", "password2"),
             },
         ),
     )
@@ -253,6 +291,61 @@ class UserAdmin(auth_admin.UserAdmin):
     )
     search_fields = ("id", "sub", "admin_email", "email", "full_name")
     autocomplete_fields = []
+
+    def get_urls(self):
+        """Add custom URLs for passwordless user creation."""
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "add-passwordless/",
+                self.admin_site.admin_view(self.add_passwordless_view),
+                name="core_user_add_passwordless",
+            ),
+        ]
+        return custom_urls + urls
+
+    def add_passwordless_view(self, request):
+        """View for creating passwordless OIDC users."""
+        if request.method == "POST":
+            form = PasswordlessUserCreationForm(request.POST)
+            if form.is_valid():
+                user = form.save()
+                messages.success(
+                    request,
+                    _('Passwordless user "%(name)s" was created successfully.')
+                    % {"name": user.email or user.id},
+                )
+                return HttpResponseRedirect(
+                    reverse("admin:core_user_change", args=[user.pk])
+                )
+        else:
+            form = PasswordlessUserCreationForm()
+
+        # Render the form using Django admin template
+        context = {
+            **self.admin_site.each_context(request),
+            "title": _("Add passwordless OIDC user"),
+            "form": form,
+            "opts": self.model._meta,  # pylint: disable=protected-access # noqa: SLF001
+            "has_view_permission": self.has_view_permission(request),
+            "has_add_permission": self.has_add_permission(request),
+            "has_change_permission": self.has_change_permission(request, None),
+            "has_delete_permission": self.has_delete_permission(request, None),
+            "is_passwordless": True,
+        }
+        return render(
+            request,
+            "admin/core/user/add_passwordless.html",
+            context,
+        )
+
+    def changelist_view(self, request, extra_context=None):
+        """Add passwordless user creation link to changelist view."""
+        extra_context = extra_context or {}
+        extra_context["add_passwordless_url"] = reverse(
+            "admin:core_user_add_passwordless"
+        )
+        return super().changelist_view(request, extra_context)
 
 
 @admin.register(models.Operator)
@@ -906,7 +999,7 @@ class MetricAdmin(admin.ModelAdmin):
     """Admin class for the Metric model"""
 
     list_display = ("key", "value", "service", "organization", "timestamp")
-    list_filter = ("timestamp", "organization__operator_roles__operator")
+    list_filter = ("timestamp", "organization__operator_roles__operator", "service")
     search_fields = ("key", "organization__name", "service__name", "service__type")
     ordering = ("-timestamp", "key")
     readonly_fields = ("id", "timestamp")

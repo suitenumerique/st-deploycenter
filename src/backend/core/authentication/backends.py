@@ -104,6 +104,9 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
         if user:
             if not user.is_active:
                 raise SuspiciousOperation(_("User account is disabled"))
+            # Update sub if user doesn't have one (for passwordless users created in admin)
+            if not user.sub:
+                claims["sub"] = sub
             self.update_user_if_needed(user, claims)
 
         elif self.should_create_user(email):
@@ -130,6 +133,8 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
         if has_changed:
             updated_claims = {key: value for key, value in claims.items() if value}
             self.UserModel.objects.filter(id=user.id).update(**updated_claims)
+            # Refresh user instance to reflect changes
+            user.refresh_from_db()
 
     def should_create_user(self, email):
         """Check if a user should be created based on the email address."""

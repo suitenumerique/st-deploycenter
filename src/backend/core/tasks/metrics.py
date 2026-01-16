@@ -460,7 +460,7 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
                 )
                 continue
 
-            logger.info("Organization found: %s", organization)
+            # logger.info("Organization found: %s", organization)
 
             account = item.get("account", {})
             account_type = ""
