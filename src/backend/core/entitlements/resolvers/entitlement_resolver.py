@@ -9,9 +9,9 @@ logger = logging.getLogger(__name__)
 def get_entitlements_by_priority(entitlements):
     """
     It sort entitlements by their hierarchy:
-    <account>_override = (account_type="<account>", account_id="xyz)
-    <account> = (account_type="<account>", account_id=None)
-    organization = (account_type="organization", account_id=None)
+    <account>_override = (account_type="<account>", account=Account object)
+    <account> = (account_type="<account>", account=None)
+    organization = (account_type="organization", account=None)
     """
     account_override = None
     account = None
@@ -56,15 +56,15 @@ class EntitlementResolver(ABC):
 
     def resolve(self, context):
         """
-        Resolve the messages storage entitlement based on their priority.
+        Resolve the metric based entitlements according to their priority.
 
         Basically in real terms it translates to:
         Your entitlement should comply to (this first one is the highest priority):
-        - An entitlement for a specific account type - can be considered as an blocking override (ex: account_type="user", account_id="xyz")
-        - An entitlement for organization (account_type="organization", account_id=None)
-        - An entitlement for account type (ex: account_type="user", account_id=None)
+        - An entitlement for a specific account type - can be considered as an blocking override (ex: account_type="user", account=Account object)
+        - An entitlement for organization (account_type="organization", account=None)
+        - An entitlement for account type (ex: account_type="user", account=None)
 
-        There is no entitlement for a specific organization (account_type="organization", account_id="xyz")
+        There is no entitlement for a specific organization (account_type="organization", account=Account object)
         because as an entitlement is already bounds to an organization via the service subscription. it would
         make no sense.
 
@@ -73,13 +73,13 @@ class EntitlementResolver(ABC):
         Example:
         We have a storage entitlement on drive that tells if a user can store new files.
         In order to be able to store new file it goes like:
-        - If there is a user override (account_type="user", account_id="xyz"),
+        - If there is a user override (account_type="user", account=Account object),
             we only consider this one. Whether it lowers or raises its storage compared
             to the default user or organization entitlement. It is an override.
-        - If there is an organization entitlement (account_type="organization", account_id=None),
+        - If there is an organization entitlement (account_type="organization", account=None),
             we should make sure the entire organization have free storage left. If not,
             we should return false immediately.
-        - We can now check the default user entitlement (account_type="user", account_id=None).
+        - We can now check the default user entitlement (account_type="user", account=None).
             At this point, there is no user override, and if there is an organization entitlement
             it tells that the organization still have free storage left. So we can finally check
             that the user has free storage left for the default user entitlement.
@@ -87,7 +87,7 @@ class EntitlementResolver(ABC):
         The same goes for any account type, it could be mailbox, etc.
 
         This method also return in the object the last level at which the entitlement was compliant or not via
-        "_reason_level" key.
+        "_resolve_level" key.
 
         Example:
         {
@@ -179,7 +179,6 @@ class EntitlementResolver(ABC):
             f"{self.resolve_level_prefix}_resolve_level": resolve_level,
         }
 
-    @abstractmethod
     def _resolve_entitlement(self, context, entitlement, metric):
         """
         Resolve the entitlement.
@@ -195,11 +194,42 @@ class EntitlementResolver(ABC):
         Log a warning when a metric is not found.
         """
         logger.warning(
-            "No metric found for entitlement %s - %s, service %s, organization %s, account type %s, account id %s",
+            "No metric found for entitlement %s - %s, service %s, organization %s, account type %s, account external id %s",
             entitlement.id,
             entitlement.type,
             context["service"].name,
             context["organization"].name,
             entitlement.account_type,
-            entitlement.account_id,
+            entitlement.account.external_id if entitlement.account else None,
         )
+
+    def _get_account(self, context):
+        """
+        Get the account for the given context.
+        """
+        if not context.get("organization"):
+            raise ValueError(
+                f"Organization is required for the given context. Service {context['service'].name}"
+            )   
+        if not context.get("account_type"):
+            raise ValueError(
+                f"Account type is required for the given context. Service {context['service'].name}, organization {context['organization'].name}"
+            )
+        if not (context.get("account_id") or context.get("account_email")):
+            raise ValueError(
+                f"Account ID or account is required for the given context. Service {context['service'].name}, organization {context['organization'].name}, account type {context['account_type']}, account id {context['account_id']}"
+            )
+        query = models.Account.objects.filter(
+            type=context["account_type"],
+            organization=context["organization"],
+        )
+        if context.get("account_id"):
+            query = query.filter(
+                external_id=context["account_id"],
+            )
+        if context.get("account_email"):
+            query = query.filter(
+                email=context["account_email"],
+            )
+        account = query.first()
+        return account

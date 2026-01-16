@@ -172,7 +172,7 @@ def test_api_subscription_entitlements_list():
 
 
 def test_api_subscription_entitlements_list_filtering():
-    """Authenticated users should be able to filter entitlements by account_type, account_id, and type."""
+    """Authenticated users should be able to filter entitlements by account_type, account__external_id, and type."""
     user = factories.UserFactory()
     user2 = factories.UserFactory()
     client = APIClient()

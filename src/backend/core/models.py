@@ -1198,16 +1198,15 @@ class Entitlement(BaseModel):
         db_table = "deploycenter_entitlement"
         verbose_name = _("entitlement")
         verbose_name_plural = _("entitlements")
-        unique_together = ["service_subscription", "type", "account_type", "account_id"]
+        unique_together = ["service_subscription", "type", "account_type", "account"]
         indexes = [
             models.Index(fields=["service_subscription"]),
         ]
-
     def __str__(self):
-        return f"{self.service_subscription.organization.name} - {self.type} - {self.account_type} - {self.account_id}"
+        return f"{self.service_subscription.organization.name} - {self.type} - {self.account_type} - {self.account.id if self.account else None}"
 
     def clean(self):
-        """Validate that the type is a valid EntitlementType."""
+        """Validate that the type is a valid EntitlementType and account organization matches."""
         super().clean()
         if self.type and self.type not in self.EntitlementType.values:
             valid_types = ", ".join(self.EntitlementType.values)
@@ -1222,3 +1221,22 @@ class Entitlement(BaseModel):
                     }
                 }
             )
+        
+        # Validate that account organization matches service_subscription organization
+        if self.account is not None :
+            if self.service_subscription is not None and self.account.organization_id != self.service_subscription.organization_id:
+                raise ValidationError(
+                    {
+                        "account": _(
+                            "The account's organization must match the service subscription's organization."
+                        )
+                    }
+                )
+            if self.account.type != self.account_type:
+                raise ValidationError(
+                    {
+                        "account": _(
+                            "The account's type must match the entitlement's account type."
+                        )
+                    }
+                )

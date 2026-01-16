@@ -2,6 +2,7 @@
 Entitlements API viewsets.
 """
 
+from core.entitlements.resolvers.admin_entitlement_resolver import AdminEntitlementResolver
 import rest_framework as drf
 from rest_framework import serializers
 from rest_framework.response import Response
@@ -28,9 +29,24 @@ class EntitlementViewSerializer(serializers.Serializer):
 
     # service_subscription_id = serializers.UUIDField(required=True)
     account_type = serializers.CharField(required=True)
-    account_id = serializers.CharField(required=True)
+    account_id = serializers.CharField(required=False)
+    account_email = serializers.EmailField(required=False)
     siret = serializers.CharField(required=True)
     service_id = serializers.IntegerField(required=True)
+
+    def validate(self, attrs):
+        """
+        Validate that at least one of account_id or account_email is provided.
+        """
+        account_id = attrs.get("account_id")
+        account_email = attrs.get("account_email")
+
+        if not account_id and not account_email:
+            raise serializers.ValidationError(
+                "Either 'account_id' or 'account_email' must be provided."
+            )
+
+        return attrs
 
 
 class EntitlementView(APIView):
@@ -68,12 +84,14 @@ class EntitlementView(APIView):
 
         # Response building.
         account_type = serializer.validated_data["account_type"]
-        account_id = serializer.validated_data["account_id"]
+        account_id = serializer.validated_data.get("account_id")
+        account_email = serializer.validated_data.get("account_email")
 
         operator_data = None
         entitlement_context = {
             "account_type": account_type,
             "account_id": account_id,
+            "account_email": account_email,
             "organization": organization,
             "service": service,
             "service_subscription": service_subscription,
@@ -110,13 +128,14 @@ class EntitlementView(APIView):
 
             # Scrape metrics.
             if scrape_account:
-                scrape_service_usage_metrics(
-                    service,
-                    {
-                        "account_type": account_type,
-                        "account_id": account_id,
-                    },
-                )
+                scrape_filters = {
+                    "account_type": account_type,
+                }
+                if account_id:
+                    scrape_filters["account_id"] = account_id
+                if account_email:
+                    scrape_filters["account_email"] = account_email
+                scrape_service_usage_metrics(service, scrape_filters)
             if scrape_organization:
                 scrape_service_usage_metrics(
                     service,
@@ -133,5 +152,8 @@ class EntitlementView(APIView):
                     {**entitlement_context, "entitlements": entitlements_of_type}
                 )
                 entitlements_data = {**entitlements_data, **entitlement_data}
+
+            # Resolve admin entitlement.
+            entitlements_data = {**entitlements_data, **AdminEntitlementResolver().resolve(entitlement_context)}
 
         return Response({"operator": operator_data, "entitlements": entitlements_data})

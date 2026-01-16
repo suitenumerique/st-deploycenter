@@ -233,7 +233,7 @@ class OrganizationServiceSubscriptionEntitlementViewSet(
 
     GET /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/entitlements/
         Get the entitlements for the given organization and service.
-        Supports filtering by type, account_type, and account_id.
+        Supports filtering.
     """
 
     queryset = models.Entitlement.objects.all()
