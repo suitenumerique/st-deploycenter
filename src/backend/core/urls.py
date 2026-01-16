@@ -3,6 +3,7 @@ URL configuration for core app.
 """
 # pylint: disable=line-too-long
 
+from core.api.viewsets.accounts import AccountViewSet, OrganizationAccountsViewSet
 from django.conf import settings
 from django.urls import include, path, re_path
 
@@ -37,6 +38,12 @@ operator_organization_router.register(r"organizations", OperatorOrganizationView
 organization_service_router = DefaultRouter()
 organization_service_router.register(r"services", OrganizationServiceViewSet)
 
+account_router = DefaultRouter()
+account_router.register(r"accounts", AccountViewSet)
+
+organization_accounts_router = DefaultRouter()
+organization_accounts_router.register(r"accounts", OrganizationAccountsViewSet)
+
 
 organization_subscription_entitlements_router = DefaultRouter()
 organization_subscription_entitlements_router.register(
@@ -66,6 +73,7 @@ urlpatterns = [
                         ]
                     ),
                 ),
+                *account_router.urls,
                 path("config/", ConfigView.as_view(), name="api-config"),
                 re_path(
                     r"^operators/(?P<operator_id>[0-9a-z-]*)/",
@@ -77,6 +85,7 @@ urlpatterns = [
                                 include(
                                     [
                                         *organization_service_router.urls,
+                                        *organization_accounts_router.urls,
                                         re_path(
                                             r"^services/(?P<service_id>[0-9a-z-]*)/",
                                             include(

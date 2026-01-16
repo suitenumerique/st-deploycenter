@@ -43,6 +43,8 @@ def test_subscription_entitlements_default():
         service_subscription__service=service,
         service_subscription__operator=operator,
         type=models.Entitlement.EntitlementType.DRIVE_STORAGE,
+        account_type="user",
+        account=None,
     )
     assert entitlement.config["max_storage"] == 1000 * 1000 * 1000 * 10
 
@@ -97,7 +99,7 @@ def test_api_entitlements_user_can_upload():
         service_subscription=service_subscription,
         type=models.Entitlement.EntitlementType.DRIVE_STORAGE,
         account_type="user",
-        account_id="",
+        account=None,
         config={
             "max_storage": 1000,
         },
@@ -136,8 +138,8 @@ def test_api_entitlements_user_can_upload():
     assert metrics.count() == 1
     assert metrics.first().value == 500
     assert metrics.first().key == "storage_used"
-    assert metrics.first().account_type == "user"
-    assert metrics.first().account_id == "xyz"
+    assert metrics.first().account.type == "user"
+    assert metrics.first().account.external_id == "xyz"
     assert metrics.first().organization == organization
 
     # Metrics endpoint should have been called
@@ -199,8 +201,8 @@ def test_api_entitlements_user_can_upload():
     assert metrics.count() == 1
     assert metrics.first().value == 1001
     assert metrics.first().key == "storage_used"
-    assert metrics.first().account_type == "user"
-    assert metrics.first().account_id == "xyz"
+    assert metrics.first().account.type == "user"
+    assert metrics.first().account.external_id == "xyz"
     assert metrics.first().organization == organization
 
 
@@ -263,7 +265,7 @@ def test_api_entitlements_user_override_can_upload(
         service_subscription=service_subscription,
         type=models.Entitlement.EntitlementType.DRIVE_STORAGE,
         account_type="user",
-        account_id="",
+        account=None,
         config={
             "max_storage": 500,
         },
@@ -298,11 +300,13 @@ def test_api_entitlements_user_override_can_upload(
     )
 
     # Create a new entitlement as user override.
+    # Get the account created from metrics scraping.
+    account = models.Account.objects.get(external_id="xyz", type="user", organization=organization)
     factories.EntitlementFactory(
         service_subscription=service_subscription,
         type=models.Entitlement.EntitlementType.DRIVE_STORAGE,
         account_type="user",
-        account_id="xyz",
+        account=account,
         config={
             "max_storage": override_max_storage,
         },
@@ -341,8 +345,8 @@ def test_api_entitlements_user_override_can_upload(
     assert metrics.count() == 1
     assert metrics.first().value == user_storage_used
     assert metrics.first().key == "storage_used"
-    assert metrics.first().account_type == "user"
-    assert metrics.first().account_id == "xyz"
+    assert metrics.first().account.type == "user"
+    assert metrics.first().account.external_id == "xyz"
     assert metrics.first().organization == organization
 
     # Metrics endpoint should have been called
@@ -408,7 +412,7 @@ def test_api_entitlements_list_unlimited_storage(entitlement_config, storage_use
         type=models.Entitlement.EntitlementType.DRIVE_STORAGE,
         config=entitlement_config,
         account_type="user",
-        account_id="",
+        account=None,
     )
 
     # Test that can_upload is True even with high storage usage

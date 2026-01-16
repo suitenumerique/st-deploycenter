@@ -114,6 +114,7 @@ class OrganizationServiceViewSet(viewsets.ReadOnlyModelViewSet):
         return context
 
 
+
 class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
     """ViewSet for OrganizationServiceSubscription model.
 
@@ -126,9 +127,6 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
 
     DELETE /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/
         Delete the subscription for the given organization and service.
-
-    GET /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/entitlements/
-        Get the entitlements for the given organization and service.
 
     Supports both user authentication and external API key authentication.
     """
@@ -235,7 +233,7 @@ class OrganizationServiceSubscriptionEntitlementViewSet(
 
     GET /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/entitlements/
         Get the entitlements for the given organization and service.
-        Supports filtering by type, account_type, and account_id.
+        Supports filtering.
     """
 
     queryset = models.Entitlement.objects.all()
@@ -249,7 +247,7 @@ class OrganizationServiceSubscriptionEntitlementViewSet(
         permissions.OperatorAndOrganizationAccessPermission,
     ]
     filter_backends = [DjangoFilterBackend]
-    filterset_fields = ["type", "account_type", "account_id"]
+    filterset_fields = ["type", "account_type", "account__id", "account__external_id"]
 
     def get_queryset(self):
         queryset = models.Entitlement.objects.filter(

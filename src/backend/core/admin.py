@@ -1015,11 +1015,23 @@ class MetricAdmin(admin.ModelAdmin):
     )
 
 
+@admin.register(models.Account)
+class AccountAdmin(admin.ModelAdmin):
+    """Admin class for the Account model"""
+
+    list_display = ("id", "external_id", "type", "email", "organization")
+    list_filter = ("type", "organization__operator_roles__operator")
+    search_fields = ("external_id", "email", "organization__name")
+    ordering = ("organization__name", "type", "external_id")
+    readonly_fields = ("id", "created_at", "updated_at")
+    autocomplete_fields = ["organization"]
+
+
 @admin.register(models.Entitlement)
 class EntitlementAdmin(admin.ModelAdmin):
     """Admin class for the Entitlement model"""
 
-    list_display = ("service_subscription", "type", "account_type", "account_id")
+    list_display = ("service_subscription", "type", "account_type", "account")
     list_filter = ("type", "account_type", "created_at")
     search_fields = (
         "service_subscription__organization__name",

@@ -46,7 +46,7 @@ def test_subscription_entitlements_default():
         service_subscription__operator=operator,
         type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
         account_type="mailbox",
-        account_id="",
+        account=None,
     )
     assert entitlement_mailbox.config["max_storage"] == 1000 * 1000 * 1000 * 5
 
@@ -56,7 +56,7 @@ def test_subscription_entitlements_default():
         service_subscription__operator=operator,
         type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
         account_type="organization",
-        account_id="",
+        account=None,
     )
     assert entitlement_organization.config["max_storage"] == 1000 * 1000 * 1000 * 50
 
@@ -116,7 +116,7 @@ def test_api_entitlements_mailbox_can_store():
         service_subscription=service_subscription,
         type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
         account_type="mailbox",
-        account_id="",
+        account=None,
         config={
             "max_storage": 1000,
         },
@@ -155,8 +155,8 @@ def test_api_entitlements_mailbox_can_store():
     assert metrics.count() == 1
     assert metrics.first().value == 500
     assert metrics.first().key == "storage_used"
-    assert metrics.first().account_type == "mailbox"
-    assert metrics.first().account_id == "xyz"
+    assert metrics.first().account.type == "mailbox"
+    assert metrics.first().account.external_id == "xyz"
     assert metrics.first().organization == organization
 
     # Metrics endpoint should have been called
@@ -219,8 +219,8 @@ def test_api_entitlements_mailbox_can_store():
     assert metrics.count() == 1
     assert metrics.first().value == 1001
     assert metrics.first().key == "storage_used"
-    assert metrics.first().account_type == "mailbox"
-    assert metrics.first().account_id == "xyz"
+    assert metrics.first().account.type == "mailbox"
+    assert metrics.first().account.external_id == "xyz"
     assert metrics.first().organization == organization
 
 
@@ -332,7 +332,7 @@ def test_api_entitlements_organization_can_store(
         service_subscription=service_subscription,
         type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
         account_type="organization",
-        account_id="",
+        account=None,
         config={
             "max_storage": 10000,
         },
@@ -341,7 +341,7 @@ def test_api_entitlements_organization_can_store(
         service_subscription=service_subscription,
         type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
         account_type="mailbox",
-        account_id="",
+        account=None,
         config={
             "max_storage": 1000,
         },
@@ -385,14 +385,14 @@ def test_api_entitlements_organization_can_store(
     metrics_mailbox = models.Metric.objects.filter(
         service=service,
         organization=organization,
-        account_type="mailbox",
-        account_id="xyz",
+        account__type="mailbox",
+        account__external_id="xyz",
     )
     assert metrics_mailbox.count() == 1
     assert metrics_mailbox.first().value == mailbox_storage_used
     assert metrics_mailbox.first().key == "storage_used"
-    assert metrics_mailbox.first().account_type == "mailbox"
-    assert metrics_mailbox.first().account_id == "xyz"
+    assert metrics_mailbox.first().account.type == "mailbox"
+    assert metrics_mailbox.first().account.external_id == "xyz"
     assert metrics_mailbox.first().organization == organization
 
     # Metrics endpoint should have been called
@@ -406,14 +406,14 @@ def test_api_entitlements_organization_can_store(
     metrics_organization = models.Metric.objects.filter(
         service=service,
         organization=organization,
-        account_type="organization",
-        account_id=organization.id,
+        account__type="organization",
+        account__external_id=str(organization.id),
     )
     assert metrics_organization.count() == 1
     assert metrics_organization.first().value == organization_storage_used
     assert metrics_organization.first().key == "storage_used"
-    assert metrics_organization.first().account_type == "organization"
-    assert metrics_organization.first().account_id == str(organization.id)
+    assert metrics_organization.first().account.type == "organization"
+    assert metrics_organization.first().account.external_id == str(organization.id)
     assert metrics_organization.first().organization == organization
 
     # Metrics endpoint should have been called
@@ -516,7 +516,7 @@ def test_api_entitlements_mailbox_override_can_store(
         service_subscription=service_subscription,
         type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
         account_type="organization",
-        account_id="",
+        account=None,
         config={
             "max_storage": 1000,
         },
@@ -525,7 +525,7 @@ def test_api_entitlements_mailbox_override_can_store(
         service_subscription=service_subscription,
         type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
         account_type="mailbox",
-        account_id="",
+        account=None,
         config={
             "max_storage": 500,
         },
@@ -559,11 +559,12 @@ def test_api_entitlements_mailbox_override_can_store(
     )
 
     # Create a new entitlement as mailbox override.
+    account = models.Account.objects.get(external_id="xyz", type="mailbox", organization=organization)
     factories.EntitlementFactory(
         service_subscription=service_subscription,
         type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
         account_type="mailbox",
-        account_id="xyz",
+        account=account,
         config={
             "max_storage": override_max_storage,
         },
@@ -607,14 +608,14 @@ def test_api_entitlements_mailbox_override_can_store(
     metrics_mailbox = models.Metric.objects.filter(
         service=service,
         organization=organization,
-        account_type="mailbox",
-        account_id="xyz",
+        account__type="mailbox",
+        account__external_id="xyz",
     )
     assert metrics_mailbox.count() == 1
     assert metrics_mailbox.first().value == mailbox_storage_used
     assert metrics_mailbox.first().key == "storage_used"
-    assert metrics_mailbox.first().account_type == "mailbox"
-    assert metrics_mailbox.first().account_id == "xyz"
+    assert metrics_mailbox.first().account.type == "mailbox"
+    assert metrics_mailbox.first().account.external_id == "xyz"
     assert metrics_mailbox.first().organization == organization
 
     # Metrics endpoint should have been called
@@ -624,14 +625,14 @@ def test_api_entitlements_mailbox_override_can_store(
     metrics_organization = models.Metric.objects.filter(
         service=service,
         organization=organization,
-        account_type="organization",
-        account_id=organization.id,
+        account__type="organization",
+        account__external_id=str(organization.id),
     )
     assert metrics_organization.count() == 1
     assert metrics_organization.first().value == 800
     assert metrics_organization.first().key == "storage_used"
-    assert metrics_organization.first().account_type == "organization"
-    assert metrics_organization.first().account_id == str(organization.id)
+    assert metrics_organization.first().account.type == "organization"
+    assert metrics_organization.first().account.external_id == str(organization.id)
     assert metrics_organization.first().organization == organization
 
     # Metrics endpoint should have been called
@@ -702,7 +703,7 @@ def test_api_entitlements_list_unlimited_storage(entitlement_config, storage_use
         type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
         config=entitlement_config,
         account_type="mailbox",
-        account_id="",
+        account=None,
     )
 
     # Test that can_store is True even with high storage usage
