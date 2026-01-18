@@ -126,30 +126,6 @@ class Base(Configuration):
         },
     }
 
-    # Media
-    AWS_S3_ENDPOINT_URL = values.Value(
-        environ_name="AWS_S3_ENDPOINT_URL", environ_prefix=None
-    )
-    AWS_S3_ACCESS_KEY_ID = values.Value(
-        environ_name="AWS_S3_ACCESS_KEY_ID", environ_prefix=None
-    )
-    AWS_S3_SECRET_ACCESS_KEY = values.Value(
-        environ_name="AWS_S3_SECRET_ACCESS_KEY", environ_prefix=None
-    )
-    AWS_S3_REGION_NAME = values.Value(
-        environ_name="AWS_S3_REGION_NAME", environ_prefix=None
-    )
-    AWS_STORAGE_BUCKET_NAME = values.Value(
-        "st-deploycenter-media-storage",
-        environ_name="AWS_STORAGE_BUCKET_NAME",
-        environ_prefix=None,
-    )
-    AWS_S3_UPLOAD_POLICY_EXPIRATION = values.Value(
-        24 * 60 * 60,  # 24h
-        environ_name="AWS_S3_UPLOAD_POLICY_EXPIRATION",
-        environ_prefix=None,
-    )
-
     # Internationalization
     # https://docs.djangoproject.com/en/3.1/topics/i18n/
 
@@ -221,7 +197,6 @@ class Base(Configuration):
         "django_celery_results",
         "django_filters",
         "rest_framework",
-        "parler",
         # Django
         "django.contrib.admin",
         "django.contrib.auth",
@@ -487,20 +462,6 @@ class Base(Configuration):
         Delegate to the module function to enable easier testing.
         """
         return get_release()
-
-    # pylint: disable=invalid-name
-    @property
-    def PARLER_LANGUAGES(self):
-        """
-        Return languages for Parler computed from the LANGUAGES and LANGUAGE_CODE settings.
-        """
-        return {
-            self.SITE_ID: tuple({"code": code} for code, _name in self.LANGUAGES),
-            "default": {
-                "fallbacks": [self.LANGUAGE_CODE],
-                "hide_untranslated": False,
-            },
-        }
 
     @classmethod
     def post_setup(cls):

@@ -144,7 +144,7 @@ class TestOrganizationModel:
     def test_get_mail_domain_status_unmatched_criteria(self):
         """RNPT criteria are not matched, we should get INVALID."""
         organization = factories.OrganizationFactory(
-            rpnt=["1.1", "2.1"],
+            rpnt=["2.1"],
             adresse_messagerie="contact@commune.fr",
             site_internet="https://www.commune.fr",
         )
@@ -156,7 +156,7 @@ class TestOrganizationModel:
     def test_get_mail_domain_status_valid_website_invalid_email(self):
         """RPNPT website and email domains are not valid. We should get the website domain as the mail domain."""
         organization = factories.OrganizationFactory(
-            rpnt=["1.1", "1.2"],
+            rpnt=["1.1"],
             adresse_messagerie="contact@wanadoo.fr",
             site_internet="https://www.commune.fr",
         )
@@ -171,7 +171,7 @@ class TestOrganizationModel:
         # sake of the test, we set them to different values to make sure the code use the one from
         # addresse_messagerie.
         organization = factories.OrganizationFactory(
-            rpnt=["1.1", "1.2", "2.1", "2.2", "2.3"],
+            rpnt=["2.1", "2.2"],
             adresse_messagerie="contact@commune.fr",
             site_internet="https://www.commune2.fr",
         )

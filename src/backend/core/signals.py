@@ -2,6 +2,7 @@
 # pylint: disable=unused-argument
 
 import logging
+from contextvars import ContextVar
 
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
@@ -10,6 +11,19 @@ from core.models import ServiceSubscription
 from core.webhooks import WebhookClient
 
 logger = logging.getLogger(__name__)
+
+# Context variable for request user (works in sync and async contexts)
+_request_user: ContextVar = ContextVar("request_user", default=None)
+
+
+def set_request_user(user):
+    """Store the current request user in context variable."""
+    _request_user.set(user)
+
+
+def get_request_user():
+    """Retrieve the current request user from context variable."""
+    return _request_user.get()
 
 
 @receiver(post_save, sender=ServiceSubscription)
@@ -40,8 +54,10 @@ def handle_subscription_save(sender, instance, created, **kwargs):
     webhook_configs = service.config.get("webhooks", [])
     if webhook_configs:
         client = WebhookClient(webhook_configs)
+        # Get the user who performed the action, if available
+        user = get_request_user()
         results = client.send_webhooks(
-            f"subscription.{event_type}", instance, organization, service
+            f"subscription.{event_type}", instance, organization, service, user
         )
 
         # Log webhook results
@@ -86,8 +102,10 @@ def handle_subscription_delete(sender, instance, **kwargs):
     webhook_configs = service.config.get("webhooks", [])
     if webhook_configs:
         client = WebhookClient(webhook_configs)
+        # Get the user who performed the action, if available
+        user = get_request_user()
         results = client.send_webhooks(
-            "subscription.deleted", instance, organization, service
+            "subscription.deleted", instance, organization, service, user
         )
 
         # Log webhook results

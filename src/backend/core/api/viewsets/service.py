@@ -15,6 +15,7 @@ from rest_framework.settings import api_settings
 
 from core import models
 from core.authentication import ExternalManagementApiKeyAuthentication
+from core.signals import set_request_user
 
 from .. import permissions, serializers
 
@@ -187,6 +188,9 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
         Partially update or create the subscription for the operator-organization-service triple.
         Creates the subscription if it doesn't exist (upsert behavior).
         """
+        # Store the user in thread-local storage for webhook context
+        set_request_user(request.user)
+
         queryset = self.get_queryset()
         subscription = queryset.first()
 
@@ -223,6 +227,9 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
         """
         Delete the subscription for the operator-organization-service triple.
         """
+        # Store the user in thread-local storage for webhook context
+        set_request_user(request.user)
+
         subscription = self.get_object()
         subscription.delete()
         return Response({}, status=status.HTTP_204_NO_CONTENT)

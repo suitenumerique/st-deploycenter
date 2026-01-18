@@ -118,8 +118,10 @@ export type ServiceBlockProps = {
   service: Service;
   organization: Organization;
   content?: React.ReactNode;
+  disabled?: boolean;
   showGoto?: boolean;
   entitlementsFields?: EntitlementsFields;
+  confirmationText?: React.ReactNode;
 } & ReturnType<typeof useServiceBlock>;
 
 export const ServiceBlock = (props: ServiceBlockProps) => {
@@ -131,7 +133,7 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
     props.service.activation_blocked_reason === "population_limit_exceeded";
   const isMissingRequiredServices =
     props.service.activation_blocked_reason === "missing_required_services";
-  const canSwitch = !isExternallyManaged && props.service.can_activate;
+  const canSwitch = !isExternallyManaged && props.service.can_activate && !props.disabled;
 
   return (
     <div
@@ -177,7 +179,9 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
                 if (!(await props.canActivateSubscription())) {
                   return;
                 }
-                const decision = await modals.confirmationModal();
+                const decision = await modals.confirmationModal({
+                  children: props.confirmationText,
+                });
                 if (decision === "yes") {
                   props.onChangeSubscription(
                     { is_active: true },

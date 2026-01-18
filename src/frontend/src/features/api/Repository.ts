@@ -42,6 +42,10 @@ export type Organization = {
   rpnt: string[];
   mail_domain: string | null;
   mail_domain_status: MailDomainStatus;
+  siret: string | null;
+  adresse_messagerie: string | null;
+  site_internet: string | null;
+  telephone: string | null;
 };
 
 export type ServiceSubscription = {

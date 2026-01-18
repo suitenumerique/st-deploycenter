@@ -289,6 +289,10 @@ back-poetry-outdated: ## show outdated dependencies
 	@$(COMPOSE) run --rm --build backend-poetry poetry show --outdated
 .PHONY: back-poetry-outdated
 
+back-poetry-tree: ## show dependencies as a tree
+	@$(COMPOSE) run --rm --build backend-dev pipdeptree
+.PHONY: back-poetry-tree
+
 pip-audit: ## check the dependencies
 	@$(COMPOSE) run --rm --no-deps -e HOME=/tmp --build backend-dev pip-audit
 .PHONY: pip-audit

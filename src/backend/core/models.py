@@ -541,18 +541,20 @@ class Organization(BaseModel):
 
         rpnt_set = set(self.rpnt)
 
-        website_valid = {"1.1", "1.2"}
-        email_valid = {"2.1", "2.2", "2.3"}
+        website_valid = {"1.1"}
+        email_valid = {"2.1", "2.2"}
+
+        # Email domain is valid
+        if email_valid.issubset(rpnt_set):
+            return (self.adresse_messagerie_domain, self.MailDomainStatus.VALID)
 
         # Website domain is valid.
         if website_valid.issubset(rpnt_set):
-            # Email domain is valid and matches the website domain.
-            if email_valid.issubset(rpnt_set):
-                return (self.adresse_messagerie_domain, self.MailDomainStatus.VALID)
             # Email domain is invalid or does not match the website domain.
             # Set the email domain to the website domain as it should be anyway once
             # it will be valid.
             return (self.site_internet_domain, self.MailDomainStatus.NEED_EMAIL_SETUP)
+
         # Website domain is invalid.
         return (None, self.MailDomainStatus.INVALID)
 
@@ -942,13 +944,13 @@ class ServiceSubscription(BaseModel):
         if self.service.type != "proconnect":
             return
 
+        if not self.metadata.get("idp_id"):
+            raise ValidationError("IDP is required for ProConnect subscription.")
+
         if not self.organization.mail_domain:
             raise ValidationError(
                 "Mail domain is required for ProConnect subscription."
             )
-
-        if not self.metadata.get("idp_id"):
-            raise ValidationError("IDP is required for ProConnect subscription.")
 
     def validate_can_activate(self):
         """

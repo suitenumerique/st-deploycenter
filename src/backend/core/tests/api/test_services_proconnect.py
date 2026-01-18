@@ -232,13 +232,22 @@ def test_api_organization_proconnect_subscription_cannot_update_idp_id_when_acti
     # But we should be able to update other metadata fields
     response = client.patch(
         f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/subscription/",
-        {"metadata": {"idp_id": "1", "other_field": "value"}},
+        {
+            "metadata": {
+                "idp_id": "1",
+                "other_field": "value",
+                "domains": ["domain.com"],
+            }
+        },
         format="json",
     )
     assert response.status_code == 200
     subscription.refresh_from_db()
     assert subscription.metadata.get("idp_id") == "1"
-    assert subscription.metadata.get("other_field") == "value"
+    assert (
+        subscription.metadata.get("other_field") is None
+    )  # No other updates allowed for ProConnect
+    assert subscription.metadata.get("domains") == ["commune.fr"]  # Domain is forced
 
     # We should be able to update idp_id if we deactivate first
     response = client.patch(

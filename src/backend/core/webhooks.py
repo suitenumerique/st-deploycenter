@@ -56,6 +56,8 @@ class WebhookConfig:
         if self.method not in ["GET", "POST", "PUT", "PATCH", "DELETE"]:
             raise ValueError(f"Unsupported HTTP method: {self.method}")
 
+        self.event_types = config.get("event_types", [])
+
         self.body_template = config.get("body", {})
         self.headers_template = config.get("headers", {})
         self.timeout = config.get("timeout", 10)
@@ -199,6 +201,7 @@ class WebhookClient:
         subscription,
         organization,
         service,
+        user=None,
     ) -> List[Dict[str, Any]]:
         """
         Send webhook notifications for a subscription event.
@@ -208,6 +211,7 @@ class WebhookClient:
             subscription: ServiceSubscription instance
             organization: Organization instance
             service: Service instance
+            user: User instance who performed the action (optional)
 
         Returns:
             List of results from each webhook attempt
@@ -223,6 +227,9 @@ class WebhookClient:
             "subscription_metadata": subscription.metadata,
             "subscription_idp_name": subscription.idp_name,
             "subscription_is_active": subscription.is_active,
+            "subscription_domains": ",".join(
+                subscription.metadata.get("domains") or []
+            ),
             # Organization data
             "organization_id": str(organization.id),
             "organization_name": organization.name,
@@ -243,10 +250,19 @@ class WebhookClient:
             # Operator
             "operator_id": subscription.operator.id,
             "operator_name": subscription.operator.name,
+            # User who performed the action (if available)
+            "user_id": str(user.id) if user else "",
+            "user_email": user.email if user else "",
+            "user_name": user.full_name if user else "",
         }
 
         for webhook_config in self.webhook_configs:
             try:
+                if (
+                    event_type not in webhook_config.event_types
+                    and len(webhook_config.event_types) > 0
+                ):
+                    continue
                 result = self._send_single_webhook(webhook_config, context_data)
                 results.append(result)
             except Exception as e:  # pylint: disable=broad-exception-caught
