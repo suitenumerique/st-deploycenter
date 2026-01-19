@@ -178,3 +178,15 @@ class EntitlementFactory(factory.django.DjangoModelFactory):
 
     service_subscription = factory.SubFactory(ServiceSubscriptionFactory)
     type = models.Entitlement.EntitlementType.DRIVE_STORAGE
+
+
+class AccountFactory(factory.django.DjangoModelFactory):
+    """Factory for Account model."""
+
+    class Meta:
+        model = models.Account
+
+    email = factory.Faker("email")
+    external_id = factory.Faker("uuid4")
+    type = "user"
+    organization = factory.SubFactory(OrganizationFactory)

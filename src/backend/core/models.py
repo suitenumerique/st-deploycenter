@@ -977,6 +977,118 @@ class ServiceSubscription(BaseModel):
         self.validate_can_activate()
 
 
+class AccountServiceLink(BaseModel):
+    """
+    Through model representing a link between an account and a service.
+    """
+
+    account = models.ForeignKey(
+        "Account",
+        on_delete=models.CASCADE,
+        related_name="service_links",
+        verbose_name=_("account"),
+        help_text=_("Account this service link is associated with"),
+    )
+
+    service = models.ForeignKey(
+        Service,
+        on_delete=models.CASCADE,
+        related_name="service_links",
+        verbose_name=_("service"),
+        help_text=_("Service this account is associated with"),
+    )
+
+    roles = models.JSONField(
+        _("roles"),
+        default=list,
+        blank=True,
+        help_text=_("Array of role strings for this account"),
+    )
+
+    class Meta:
+        db_table = "deploycenter_account_service_link"
+        verbose_name = _("account service link")
+        verbose_name_plural = _("account service links")
+        unique_together = ["account", "service"]
+        indexes = [
+            models.Index(fields=["account"]),
+            models.Index(fields=["service"]),
+        ]
+
+    def __str__(self):
+        return f"{self.account.email} - {self.service.name}"
+
+
+class Account(BaseModel):
+    """
+    An account is an entity to which metrics are attached to.
+    This entity is used as a reference to resolve entitlements.
+    It can be a user, a mailbox, etc. It depends on the service's use case.
+    """
+
+    email = models.EmailField(
+        _("email"),
+        max_length=255,
+        help_text=_("Email address of the account"),
+        default="",
+        blank=True,
+    )
+
+    external_id = models.CharField(
+        _("external ID"),
+        max_length=255,
+        help_text=_("External ID of the account"),
+        default="",
+        blank=True,
+    )
+
+    type = models.CharField(
+        _("account type"),
+        max_length=50,
+        help_text=_("Type of account"),
+        default="",
+        blank=True,
+    )
+
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name="accounts",
+        verbose_name=_("organization"),
+        help_text=_("Organization this account is associated with"),
+    )
+
+    roles = models.JSONField(
+        _("roles"),
+        default=list,
+        blank=True,
+        help_text=_("Array of role strings for this account"),
+    )
+
+    class Meta:
+        db_table = "deploycenter_account"
+        verbose_name = _("account")
+        verbose_name_plural = _("accounts")
+        ordering = ["created_at", "organization__name", "type", "external_id"]
+        indexes = [
+            models.Index(fields=["organization"]),
+            models.Index(fields=["type"]),
+            models.Index(fields=["email"]),
+            models.Index(fields=["external_id"]),
+            # The query used in store_service_usage_metrics task.
+            models.Index(fields=["external_id", "type", "organization"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["external_id", "type", "organization"],
+                name="unique_account_per_org_type",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.id} (external_id: {self.external_id}) - {self.type} - {self.email} - {self.organization.name}"
+
+
 class Metric(models.Model):
     """
     Metrics that can be linked to services and to organizations.
@@ -1020,20 +1132,14 @@ class Metric(models.Model):
         help_text=_("Organization this metric is associated with"),
     )
 
-    account_type = models.CharField(
-        _("account type"),
-        max_length=50,
-        help_text=_("Type of account"),
-        default="",
+    account = models.ForeignKey(
+        Account,
+        on_delete=models.CASCADE,
+        related_name="metrics",
+        verbose_name=_("account"),
+        help_text=_("Account this metric is associated with"),
         blank=True,
-    )
-
-    account_id = models.CharField(
-        _("account ID"),
-        max_length=255,
-        help_text=_("ID of the account"),
-        default="",
-        blank=True,
+        null=True,
     )
 
     class Meta:
@@ -1046,21 +1152,23 @@ class Metric(models.Model):
             models.Index(fields=["key"]),
             models.Index(fields=["service"]),
             models.Index(fields=["organization"]),
-            models.Index(fields=["account_type"]),
-            models.Index(fields=["account_id"]),
+            models.Index(fields=["account"]),
         ]
         constraints = [
             models.UniqueConstraint(
-                fields=["service", "organization", "account_type", "account_id", "key"],
-                name="unique_metric_with_account_id",
+                fields=["service", "organization", "account", "key"],
+                name="unique_metric_with_account",
+                # account ForeignKey can be null, so we need to consider NULL values as equal.
+                # See https://www.postgresql.org/about/featurematrix/detail/unique-nulls-not-distinct/
+                nulls_distinct=False,
             ),
         ]
 
     def __str__(self):
         org_name = self.organization.name if self.organization else "Unknown"
         account_info = ""
-        if self.account_type and self.account_id:
-            account_info = f" with account ({self.account_type},{self.account_id})"
+        if self.account:
+            account_info = f" with account ({self.account})"
         return f"{self.key}: {self.value} for {self.service.name} - {org_name}{account_info}"
 
 
@@ -1112,28 +1220,36 @@ class Entitlement(BaseModel):
         blank=True,
     )
 
-    account_id = models.CharField(
-        _("account ID"),
-        max_length=255,
-        help_text=_("ID of the account"),
-        default="",
+    account = models.ForeignKey(
+        Account,
+        on_delete=models.CASCADE,
+        related_name="entitlements",
+        verbose_name=_("account"),
+        help_text=_("Account this entitlement is associated with"),
         blank=True,
+        null=True,
     )
 
     class Meta:
         db_table = "deploycenter_entitlement"
         verbose_name = _("entitlement")
         verbose_name_plural = _("entitlements")
-        unique_together = ["service_subscription", "type", "account_type", "account_id"]
+        unique_together = ["service_subscription", "type", "account_type", "account"]
         indexes = [
             models.Index(fields=["service_subscription"]),
         ]
 
     def __str__(self):
-        return f"{self.service_subscription.organization.name} - {self.type} - {self.account_type} - {self.account_id}"
+        account_id = self.account.id if self.account else None
+        return (
+            f"{self.service_subscription.organization.name} - "
+            f"{self.type} - "
+            f"{self.account_type} - "
+            f"{account_id}"
+        )
 
     def clean(self):
-        """Validate that the type is a valid EntitlementType."""
+        """Validate that the type is a valid EntitlementType and account organization matches."""
         super().clean()
         if self.type and self.type not in self.EntitlementType.values:
             valid_types = ", ".join(self.EntitlementType.values)
@@ -1148,3 +1264,26 @@ class Entitlement(BaseModel):
                     }
                 }
             )
+
+        # Validate that account organization matches service_subscription organization
+        if self.account is not None:
+            if (
+                self.service_subscription is not None
+                and self.account.organization_id
+                != self.service_subscription.organization_id
+            ):
+                raise ValidationError(
+                    {
+                        "account": _(
+                            "The account's organization must match the service subscription's organization."
+                        )
+                    }
+                )
+            if self.account.type != self.account_type:
+                raise ValidationError(
+                    {
+                        "account": _(
+                            "The account's type must match the entitlement's account type."
+                        )
+                    }
+                )
