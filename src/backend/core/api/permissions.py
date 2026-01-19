@@ -107,38 +107,75 @@ class OperatorAccessPermission(permissions.BasePermission):
         return has_role
 
 
-def user_has_role_in_organization(request, organization_id, operator_id):
-    """Check if the user has a role in a organization's operator."""
+def user_has_role_in_organization(request, organization_id, operator_id=None):
+    """
+    Check if the user has a role in a organization's operator.
+
+    Args:
+        request: The request object.
+        organization_id: The ID of the organization.
+        operator_id: The ID of the operator. If not provided, the method will
+            verify if there is at least one operator linked to this organization.
+
+    Returns:
+        True if the request has a role in the organization, False otherwise.
+
+    """
     if not request.user or not request.user.is_authenticated:
         return False
 
-    try:
-        operator = models.Operator.objects.get(
-            id=operator_id, user_roles__user=request.user
-        )
-    except models.Operator.DoesNotExist:
-        return False
+    if operator_id:
+        try:
+            operator = models.Operator.objects.get(
+                id=operator_id, user_roles__user=request.user
+            )
+        except models.Operator.DoesNotExist:
+            return False
 
-    # Make sure the organization is managed by the operator
+        # Make sure the organization is managed by the operator
+        return models.Organization.objects.filter(
+            id=organization_id, operator_roles__operator=operator
+        ).exists()
+
+    operators = models.Operator.objects.filter(user_roles__user=request.user)
     return models.Organization.objects.filter(
-        id=organization_id, operator_roles__operator=operator
+        id=organization_id, operator_roles__operator__in=operators
     ).exists()
 
 
-def request_has_role_in_organization(request, organization_id, operator_id):
+def request_has_role_in_organization(request, organization_id, operator_id=None):
     """
     Check if the request has a role in a organization.
     Supports both user authentication and external API key authentication.
+
+    Args:
+        request: The request object.
+        organization_id: The ID of the organization.
+        operator_id: The ID of the operator. Not required.
+            If provided:
+                - If the request is authenticated via external API key, the operator_id in
+                    URL must match the authenticated operator. And will also verify if the organization
+                    is managed by the authenticated operator.
+                - If the request is authenticated via user, the method will verify if
+                    this user has a role in the organization's operator. And this operator manages the organization.
+            If not provided:
+                - If the request is authenticated via external API key, the method will only verify
+                    if the organization is managed by the authenticated operator.
+                - If the request is authenticated via user, the method will verify among the
+                    operators linked to the user, if there is at least one operator that manages the organization.
+
+    Returns:
+        True if the request has a role in the organization, False otherwise.
     """
-    if not organization_id or not operator_id:
+    if not organization_id:
         return False
 
     # If authenticated via external API key, check if operator manages the organization
     if request.auth and isinstance(request.auth, models.Operator):
         operator = request.auth
 
-        # Verify the operator_id in URL matches the authenticated operator
-        if str(operator.id) != str(operator_id):
+        # Verify the operator_id in URL matches the authenticated operator if provided
+        if operator_id and str(operator.id) != str(operator_id):
             return False
 
         # Check if operator manages the organization

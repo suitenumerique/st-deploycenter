@@ -76,8 +76,7 @@ class ExternalManagementApiKeyAuthentication(BaseAuthentication):
 
         This method checks if the Authorization header is present in the request, ensures it
         contains a valid token with the correct format, and verifies the token against the
-        external_management_api_key in the Operator's config. The operator_id must be provided
-        in the URL path.
+        external_management_api_key in the Operator's config.
 
         Returns:
             tuple: (None, operator) if authentication is successful, where operator is the
@@ -104,26 +103,12 @@ class ExternalManagementApiKeyAuthentication(BaseAuthentication):
         if not hasattr(request, "resolver_match") or not request.resolver_match:
             return None
 
-        operator_id = request.resolver_match.kwargs.get("operator_id")
-        if not operator_id:
-            return None
-
         try:
-            operator = models.Operator.objects.get(id=operator_id)
+            operator = models.Operator.objects.get(
+                config__external_management_api_key=token
+            )
         except models.Operator.DoesNotExist:
             return None
-
-        # Check if the token matches the external_management_api_key in operator.config
-        config = operator.config or {}
-        api_key = config.get("external_management_api_key")
-
-        if not api_key:
-            return None
-
-        # Use constant-time comparison to prevent timing attacks
-        if not secrets.compare_digest(token, api_key):
-            # Token doesn't match - this is an authentication failure for this method
-            raise AuthenticationFailed("Invalid external management API key.")
 
         # Authentication is successful, return (None, operator) to store operator in request
         return (None, operator)
