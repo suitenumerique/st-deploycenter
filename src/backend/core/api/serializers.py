@@ -366,30 +366,35 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
         if instance.service.type != "proconnect":
             return
 
-        # Check if subscription is active (either already active or being set to active)
         is_active = attrs.get("is_active", instance.is_active)
-        if not is_active:
-            return
-
-        if "metadata" not in attrs:
-            return
-
-        new_metadata = attrs["metadata"]
-        if not isinstance(new_metadata, dict) or not "idp_id" in new_metadata:
-            return
-
         current_idp_id = instance.metadata.get("idp_id")
-        new_idp_id = new_metadata.get("idp_id")
-        if current_idp_id == new_idp_id:
-            return
-        raise serializers.ValidationError(
-            {
-                "metadata": (
-                    "Cannot update idp_id for an active ProConnect subscription. "
-                    "Deactivate the subscription first to change the IDP."
-                )
-            }
-        )
+        new_idp_id = attrs.get("metadata", {}).get("idp_id")
+
+        # Are we changing an IDP while a subscription is active?
+        if is_active and new_idp_id and current_idp_id != new_idp_id:
+            raise serializers.ValidationError(
+                {
+                    "metadata": (
+                        "Cannot update idp_id for an active ProConnect subscription. "
+                        "Deactivate the subscription first to change the IDP."
+                    )
+                }
+            )
+
+        # When activating a subscription, we must have a valid domain.
+        if is_active and not (
+            instance.organization.mail_domain or instance.metadata.get("domains")
+        ):
+            raise serializers.ValidationError(
+                {"metadata": "Mail domain is required for ProConnect subscription."}
+            )
+
+        # Build the metadata dict explicitly. Domains cannot be overridden from the REST API for now.
+        attrs["metadata"] = {
+            "idp_id": new_idp_id or current_idp_id,
+            "domains": instance.metadata.get("domains", False)
+            or [instance.organization.mail_domain],
+        }
 
     def validate(self, attrs):
         """Validate subscription data."""

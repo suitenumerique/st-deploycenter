@@ -28,7 +28,6 @@ Dependencies
   - Celery (for background tasks)
   - Redis (for caching and task queues)
   - PostgreSQL (preferred databases for production)
-  - Minio (file storage for production)
   - OIDC prodiver (for managing authentication)
 
 Django-Specific Guidelines

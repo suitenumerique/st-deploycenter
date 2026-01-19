@@ -12,7 +12,8 @@ import {
   Tooltip,
   usePagination,
 } from "@openfun/cunningham-react";
-import { Badge, Icon, IconSize } from "@gouvfr-lasuite/ui-kit";
+import { Badge, Icon } from "@gouvfr-lasuite/ui-kit";
+import { RpntBadge } from "@/features/ui/components/organization/RpntBadge";
 import Link from "next/link";
 import { useOperatorOrganizations } from "@/hooks/useQueries";
 import { Breadcrumbs } from "@/features/ui/components/breadcrumbs/Breadcrumbs";
@@ -263,27 +264,9 @@ export default function Operator() {
             headerName: "RPNT",
             size: 100,
             enableSorting: false,
-            renderCell: (params) => {
-              if ((params.row.rpnt || []).includes("a")) {
-                return (
-                  <Badge type="success">
-                    <Icon name="check" size={IconSize.SMALL} />
-                  </Badge>
-                );
-              } else if ((params.row.rpnt || []).includes("1.a") || (params.row.rpnt || []).includes("2.a")) {
-                return (
-                  <Badge type="warning">
-                    <Icon name="warning" size={IconSize.SMALL} />
-                  </Badge>
-                );
-              } else {
-                return (
-                  <Badge type="danger">
-                    <Icon name="close" size={IconSize.SMALL} />
-                  </Badge>
-                );
-              }
-            },
+            renderCell: (params) => (
+              <RpntBadge rpnt={params.row.rpnt} siret={params.row.siret} />
+            ),
           },
         ]}
         rows={organizations?.results || []}

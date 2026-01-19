@@ -1,128 +1,4 @@
 {
-  "en": {
-    "translation": {
-      "common": {
-        "cancel": "Cancel",
-        "save": "Save"
-      },
-      "app_title": "Operator Space",
-      "home": {
-        "title": "Operator Space",
-        "subtitle": "Where the magic operates"
-      },
-      "login": "Login",
-      "logout": "Logout",
-      "my_account": "My account",
-      "operators": {
-        "title": "Operators",
-        "subtitle": "Choose the operator to access the communities"
-      },
-      "organizations": {
-        "title": "Organizations",
-        "subtitle": "List of organizations in your scope",
-        "empty": "No organization found",
-        "rpnt": {
-          "yes": "Yes"
-        },
-        "services": {
-          "title": "Services",
-          "subtitle": "List of services available for this organization",
-          "status": "Active",
-          "goto": "Access service",
-          "externally_managed": "This service is managed externally and cannot be modified here.",
-          "cannot_activate": "This service cannot be activated for this organization.",
-          "population_limit_exceeded": "This service is only available for municipalities with fewer than 3,500 inhabitants or EPCIs with fewer than 15,000 inhabitants.",
-          "missing_required_services": "This service cannot be activated for this organization. ProConnect is required.",
-          "idp": {
-            "label": "IDP",
-            "none": "None",
-            "required": "IDP is required",
-            "modal": {
-              "title": "Change the IDP",
-              "help": "Select an IDP for the organization.",
-              "label": "Identity provider",
-              "close": "Close"
-            }
-          },
-          "values": {
-            "users": "Users"
-          },
-          "mail_domain": {
-            "label": "NDD",
-            "none": "None",
-            "required": "Mail domain is required",
-            "need_email_setup": "The mail domain is not valid. Please set it to the website domain.",
-            "invalid": "The mail domain is not valid. Please set it to the website domain."
-          },
-          "proconnect": {
-            "activation_delay": "ProConnect activation may take up to 48 hours"
-          },
-          "help_center": {
-            "label": "Help Centre"
-          },
-          "types": {
-            "drive": {
-              "entitlements": {
-                "drive_storage": {
-                  "max_storage": {
-                    "user": {
-                      "label": "User storage quota",
-                      "modal": {
-                        "title": "User storage quota",
-                        "description": "Change the user storage quota of this service."
-                      },
-                      "zero_value": "Unlimited"
-                    }
-                  }
-                }
-              }
-            },
-            "messages": {
-              "entitlements": {
-                "messages_storage": {
-                  "max_storage": {
-                    "mailbox": {
-                      "label": "Mailbox storage quota",
-                      "modal": {
-                        "title": "Mailbox storage quota",
-                        "description": "Change the mailbox storage quota of this service."
-                      },
-                      "zero_value": "Unlimited"
-                    },
-                    "organization": {
-                      "label": "Organization storage quota",
-                      "modal": {
-                        "title": "Organization storage quota",
-                        "description": "Change the organization storage quota of this service."
-                      },
-                      "zero_value": "Unlimited"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "entitlements": {
-            "fields": {
-              "storage_picker": {
-                "input_placeholder": "Value",
-                "unit_placeholder": "Unit"
-              }
-            }
-          }
-        },
-        "details": {
-          "population": "Population"
-        },
-        "search": "Search for an organization or a territory"
-      },
-      "api": {
-        "error": {
-          "unexpected": "An unexpected error occurred"
-        }
-      }
-    }
-  },
   "fr": {
     "translation": {
       "common": {
@@ -161,32 +37,8 @@
           "cannot_activate": "Ce service ne peut pas être activé pour cette collectivité.",
           "population_limit_exceeded": "Ce service est uniquement disponible pour les communes de moins de 3 500 habitants ou les EPCI de moins de 15 000 habitants.",
           "missing_required_services": "Ce service ne peut pas être activé pour cette collectivité. ProConnect est requis.",
-          "idp": {
-            "label": "Fournisseur d'identité",
-            "none": "Aucun",
-            "required": "FI requis",
-            "modal": {
-              "title": "Modification du FI",
-              "help": "Selectionnez un FI pour l'organisation.",
-              "label": "Fournisseur d'identité",
-              "close": "Fermer"
-            }
-          },
           "values": {
             "users": "Utilisateurs"
-          },
-          "mail_domain": {
-            "label": "Nom de domaine",
-            "none": "Aucun",
-            "required": "Le domaine mail est requis",
-            "need_email_setup": "Le domaine mail utilisé est celui du site internet, veuillez le raccorder à votre fournisseur de messagerie.",
-            "invalid": "Aucun domaine mail valide trouvé sur la base du RPNT. Veuillez contacter le support."
-          },
-          "proconnect": {
-            "activation_delay": "L'activation de ProConnect peut prendre jusqu'à 48 heures"
-          },
-          "help_center": {
-            "label": "Centre d'aide"
           },
           "types": {
             "drive": {
@@ -240,7 +92,11 @@
           }
         },
         "details": {
-          "population": "Population"
+          "population": "Population",
+          "rpnt": "RPNT",
+          "contact": "Informations déclarées",
+          "email_missing": "Email non déclaré",
+          "website_missing": "Site internet non déclaré"
         },
         "search": "Rechercher une organisation adhérente ou un territoire"
       },

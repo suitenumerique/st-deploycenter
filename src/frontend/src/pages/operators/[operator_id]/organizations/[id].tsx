@@ -11,6 +11,7 @@ import { Breadcrumbs } from "@/features/ui/components/breadcrumbs/Breadcrumbs";
 import { useMemo } from "react";
 import { useBreadcrumbOperator } from "@/features/ui/components/breadcrumbs/Parts";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { RpntBadge } from "@/features/ui/components/organization/RpntBadge";
 import { ServiceBlockDispatcher } from "@/features/ui/components/service/ServiceBlockDispatcher";
 
 export default function Organization() {
@@ -50,6 +51,7 @@ export default function Organization() {
       return priorityB - priorityA; // descending order, nulls at the end
     });
   }, [services]);
+
 
   return (
     <Container
@@ -101,6 +103,41 @@ export default function Organization() {
                 {organization?.population}
               </span>
             </div>
+            {organization?.siret && (
+              <div className="dc__organization__header__details__item">
+                <span className="dc__organization__header__details__item__label">
+                  {t("organizations.details.rpnt")}
+                </span>
+                <span className="dc__organization__header__details__item__value">
+                  <RpntBadge rpnt={organization.rpnt} siret={organization.siret} />
+                </span>
+              </div>
+            )}
+            {organization && (
+            <div className="dc__organization__header__details__item">
+                <span className="dc__organization__header__details__item__label">
+                  {t("organizations.details.contact")}
+                </span>
+                <span className="dc__organization__header__details__item__value dc__organization__header__details__item__value--contact">
+                  <div>
+                    {organization.site_internet ? (
+                      <a href={organization.site_internet} target="_blank" rel="noopener noreferrer">
+                        {organization.site_internet.replace("https://", "").replace("http://", "").replace("www.", "").replace(/\/$/, "")}
+                      </a>
+                    ) : (
+                      <span>{t("organizations.details.website_missing")}</span>
+                    )}
+                  </div>
+                  <div>
+                    {organization.adresse_messagerie ? (
+                      <a href={`mailto:${organization.adresse_messagerie}`}>{organization.adresse_messagerie}</a>
+                    ) : (
+                      <span>{t("organizations.details.email_missing")}</span>
+                    )}
+                  </div>
+                </span>
+              </div>
+            )}
           </div>
         </div>
         <div>
