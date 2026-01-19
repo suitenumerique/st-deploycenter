@@ -15,6 +15,7 @@ pytestmark = pytest.mark.django_db
 
 # pylint: disable=assignment-from-none
 # pylint: disable=duplicate-code
+# pylint: disable=unused-argument
 
 
 @pytest.mark.django_db()
@@ -46,7 +47,7 @@ def test_subscription_entitlements_default():
         service_subscription__operator=operator,
         type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
         account_type="mailbox",
-        account_id="",
+        account=None,
     )
     assert entitlement_mailbox.config["max_storage"] == 1000 * 1000 * 1000 * 5
 
@@ -56,19 +57,25 @@ def test_subscription_entitlements_default():
         service_subscription__operator=operator,
         type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
         account_type="organization",
-        account_id="",
+        account=None,
     )
     assert entitlement_organization.config["max_storage"] == 1000 * 1000 * 1000 * 50
 
 
 @pytest.mark.django_db()
 @responses.activate
-def test_api_entitlements_mailbox_can_store():
+@pytest.mark.parametrize(
+    "account_key,account_key_value,account_key_http_alias",
+    [["external_id", "xyz", "id"], ["email", "test@example.com", "email"]],
+)
+def test_api_entitlements_mailbox_can_store(
+    account_key, account_key_value, account_key_http_alias
+):
     """Test the can_store entitlement for a mailbox entitlement."""
     metrics_usage_endpoint = "https://messages.suite.anct.gouv.fr/metrics/usage"
     params = {
         "account_type": "mailbox",
-        "account_id": "xyz",
+        f"account_{account_key_http_alias}": account_key_value,
         "limit": 1000,
         "offset": 0,
     }
@@ -84,6 +91,7 @@ def test_api_entitlements_mailbox_can_store():
                     "account": {
                         "type": "mailbox",
                         "id": "xyz",
+                        "email": "test@example.com",
                     },
                     "metrics": {"storage_used": 500},
                 }
@@ -116,7 +124,7 @@ def test_api_entitlements_mailbox_can_store():
         service_subscription=service_subscription,
         type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
         account_type="mailbox",
-        account_id="",
+        account=None,
         config={
             "max_storage": 1000,
         },
@@ -128,7 +136,7 @@ def test_api_entitlements_mailbox_can_store():
         query_params={
             "service_id": service.id,
             "account_type": "mailbox",
-            "account_id": "xyz",
+            f"account_{account_key_http_alias}": account_key_value,
             "siret": organization.siret,
         },
         headers={"X-Service-Auth": "Bearer test_token"},
@@ -155,8 +163,9 @@ def test_api_entitlements_mailbox_can_store():
     assert metrics.count() == 1
     assert metrics.first().value == 500
     assert metrics.first().key == "storage_used"
-    assert metrics.first().account_type == "mailbox"
-    assert metrics.first().account_id == "xyz"
+    assert metrics.first().account.type == "mailbox"
+    assert metrics.first().account.external_id == "xyz"
+    assert metrics.first().account.email == "test@example.com"
     assert metrics.first().organization == organization
 
     # Metrics endpoint should have been called
@@ -178,6 +187,7 @@ def test_api_entitlements_mailbox_can_store():
                     "account": {
                         "type": "mailbox",
                         "id": "xyz",
+                        "email": "test@example.com",
                     },
                     "metrics": {"storage_used": 1001},
                 }
@@ -192,7 +202,7 @@ def test_api_entitlements_mailbox_can_store():
         query_params={
             "service_id": service.id,
             "account_type": "mailbox",
-            "account_id": "xyz",
+            f"account_{account_key_http_alias}": account_key_value,
             "siret": organization.siret,
         },
         headers={"X-Service-Auth": "Bearer test_token"},
@@ -219,8 +229,9 @@ def test_api_entitlements_mailbox_can_store():
     assert metrics.count() == 1
     assert metrics.first().value == 1001
     assert metrics.first().key == "storage_used"
-    assert metrics.first().account_type == "mailbox"
-    assert metrics.first().account_id == "xyz"
+    assert metrics.first().account.type == "mailbox"
+    assert metrics.first().account.external_id == "xyz"
+    assert metrics.first().account.email == "test@example.com"
     assert metrics.first().organization == organization
 
 
@@ -250,8 +261,18 @@ def test_api_entitlements_mailbox_can_store():
         ),  # Mailbox and organization have no free space left
     ],
 )
+@pytest.mark.parametrize(
+    "account_key,account_key_value,account_key_http_alias",
+    [["external_id", "xyz", "id"], ["email", "test@example.com", "email"]],
+)
 def test_api_entitlements_organization_can_store(
-    organization_storage_used, mailbox_storage_used, can_store, resolve_level
+    organization_storage_used,
+    mailbox_storage_used,
+    can_store,
+    resolve_level,
+    account_key,
+    account_key_value,
+    account_key_http_alias,
 ):
     """Test the can_store entitlement for an organization and mailbox entitlement."""
 
@@ -265,7 +286,7 @@ def test_api_entitlements_organization_can_store(
     metrics_usage_endpoint = "https://messages.suite.anct.gouv.fr/metrics/usage"
     params_mailbox = {
         "account_type": "mailbox",
-        "account_id": "xyz",
+        f"account_{account_key_http_alias}": account_key_value,
         "limit": 1000,
         "offset": 0,
     }
@@ -281,6 +302,7 @@ def test_api_entitlements_organization_can_store(
                     "account": {
                         "type": "mailbox",
                         "id": "xyz",
+                        "email": "test@example.com",
                     },
                     "metrics": {"storage_used": mailbox_storage_used},
                 }
@@ -306,6 +328,7 @@ def test_api_entitlements_organization_can_store(
                     "account": {
                         "type": "organization",
                         "id": str(organization.id),
+                        "email": "test@example.com",
                     },
                     "metrics": {"storage_used": organization_storage_used},
                 }
@@ -332,7 +355,7 @@ def test_api_entitlements_organization_can_store(
         service_subscription=service_subscription,
         type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
         account_type="organization",
-        account_id="",
+        account=None,
         config={
             "max_storage": 10000,
         },
@@ -341,7 +364,7 @@ def test_api_entitlements_organization_can_store(
         service_subscription=service_subscription,
         type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
         account_type="mailbox",
-        account_id="",
+        account=None,
         config={
             "max_storage": 1000,
         },
@@ -353,7 +376,7 @@ def test_api_entitlements_organization_can_store(
         query_params={
             "service_id": service.id,
             "account_type": "mailbox",
-            "account_id": "xyz",
+            f"account_{account_key_http_alias}": account_key_value,
             "siret": organization.siret,
         },
         headers={"X-Service-Auth": "Bearer test_token"},
@@ -385,14 +408,15 @@ def test_api_entitlements_organization_can_store(
     metrics_mailbox = models.Metric.objects.filter(
         service=service,
         organization=organization,
-        account_type="mailbox",
-        account_id="xyz",
+        account__type="mailbox",
+        **{f"account__{account_key}": account_key_value},
     )
     assert metrics_mailbox.count() == 1
     assert metrics_mailbox.first().value == mailbox_storage_used
     assert metrics_mailbox.first().key == "storage_used"
-    assert metrics_mailbox.first().account_type == "mailbox"
-    assert metrics_mailbox.first().account_id == "xyz"
+    assert metrics_mailbox.first().account.type == "mailbox"
+    assert metrics_mailbox.first().account.external_id == "xyz"
+    assert metrics_mailbox.first().account.email == "test@example.com"
     assert metrics_mailbox.first().organization == organization
 
     # Metrics endpoint should have been called
@@ -406,14 +430,15 @@ def test_api_entitlements_organization_can_store(
     metrics_organization = models.Metric.objects.filter(
         service=service,
         organization=organization,
-        account_type="organization",
-        account_id=organization.id,
+        account__type="organization",
+        account__external_id=str(organization.id),
     )
     assert metrics_organization.count() == 1
     assert metrics_organization.first().value == organization_storage_used
     assert metrics_organization.first().key == "storage_used"
-    assert metrics_organization.first().account_type == "organization"
-    assert metrics_organization.first().account_id == str(organization.id)
+    assert metrics_organization.first().account.type == "organization"
+    assert metrics_organization.first().account.external_id == str(organization.id)
+    assert metrics_organization.first().account.email == "test@example.com"
     assert metrics_organization.first().organization == organization
 
     # Metrics endpoint should have been called
@@ -433,8 +458,18 @@ def test_api_entitlements_organization_can_store(
         (300, 400, True, False),  # Override by lower max storage.
     ],
 )
+@pytest.mark.parametrize(
+    "account_key,account_key_value,account_key_http_alias",
+    [["external_id", "xyz", "id"], ["email", "test@example.com", "email"]],
+)
 def test_api_entitlements_mailbox_override_can_store(
-    override_max_storage, mailbox_storage_used, can_store_before_override, can_store
+    override_max_storage,
+    mailbox_storage_used,
+    can_store_before_override,
+    can_store,
+    account_key,
+    account_key_value,
+    account_key_http_alias,
 ):
     """Test the can_store entitlement with a mailbox override."""
 
@@ -444,7 +479,7 @@ def test_api_entitlements_mailbox_override_can_store(
     metrics_usage_endpoint = "https://messages.suite.anct.gouv.fr/metrics/usage"
     params = {
         "account_type": "mailbox",
-        "account_id": "xyz",
+        f"account_{account_key_http_alias}": account_key_value,
         "limit": 1000,
         "offset": 0,
     }
@@ -460,6 +495,7 @@ def test_api_entitlements_mailbox_override_can_store(
                     "account": {
                         "type": "mailbox",
                         "id": "xyz",
+                        "email": "test@example.com",
                     },
                     "metrics": {"storage_used": mailbox_storage_used},
                 }
@@ -516,7 +552,7 @@ def test_api_entitlements_mailbox_override_can_store(
         service_subscription=service_subscription,
         type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
         account_type="organization",
-        account_id="",
+        account=None,
         config={
             "max_storage": 1000,
         },
@@ -525,7 +561,7 @@ def test_api_entitlements_mailbox_override_can_store(
         service_subscription=service_subscription,
         type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
         account_type="mailbox",
-        account_id="",
+        account=None,
         config={
             "max_storage": 500,
         },
@@ -537,7 +573,7 @@ def test_api_entitlements_mailbox_override_can_store(
         query_params={
             "service_id": service.id,
             "account_type": "mailbox",
-            "account_id": "xyz",
+            f"account_{account_key_http_alias}": account_key_value,
             "siret": organization.siret,
         },
         headers={"X-Service-Auth": "Bearer test_token"},
@@ -559,11 +595,14 @@ def test_api_entitlements_mailbox_override_can_store(
     )
 
     # Create a new entitlement as mailbox override.
+    account = models.Account.objects.get(
+        external_id="xyz", type="mailbox", organization=organization
+    )
     factories.EntitlementFactory(
         service_subscription=service_subscription,
         type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
         account_type="mailbox",
-        account_id="xyz",
+        account=account,
         config={
             "max_storage": override_max_storage,
         },
@@ -575,7 +614,7 @@ def test_api_entitlements_mailbox_override_can_store(
         query_params={
             "service_id": service.id,
             "account_type": "mailbox",
-            "account_id": "xyz",
+            f"account_{account_key_http_alias}": account_key_value,
             "siret": organization.siret,
         },
         headers={"X-Service-Auth": "Bearer test_token"},
@@ -607,14 +646,14 @@ def test_api_entitlements_mailbox_override_can_store(
     metrics_mailbox = models.Metric.objects.filter(
         service=service,
         organization=organization,
-        account_type="mailbox",
-        account_id="xyz",
+        account__type="mailbox",
+        **{f"account__{account_key}": account_key_value},
     )
     assert metrics_mailbox.count() == 1
     assert metrics_mailbox.first().value == mailbox_storage_used
     assert metrics_mailbox.first().key == "storage_used"
-    assert metrics_mailbox.first().account_type == "mailbox"
-    assert metrics_mailbox.first().account_id == "xyz"
+    assert metrics_mailbox.first().account.type == "mailbox"
+    assert metrics_mailbox.first().account.external_id == "xyz"
     assert metrics_mailbox.first().organization == organization
 
     # Metrics endpoint should have been called
@@ -624,18 +663,80 @@ def test_api_entitlements_mailbox_override_can_store(
     metrics_organization = models.Metric.objects.filter(
         service=service,
         organization=organization,
-        account_type="organization",
-        account_id=organization.id,
+        account__type="organization",
+        account__external_id=str(organization.id),
     )
     assert metrics_organization.count() == 1
     assert metrics_organization.first().value == 800
     assert metrics_organization.first().key == "storage_used"
-    assert metrics_organization.first().account_type == "organization"
-    assert metrics_organization.first().account_id == str(organization.id)
+    assert metrics_organization.first().account.type == "organization"
+    assert metrics_organization.first().account.external_id == str(organization.id)
     assert metrics_organization.first().organization == organization
 
     # Metrics endpoint should have been called
     assert response_mock_organization.call_count == 2
+
+    # Make sure another account is not affected by the override.
+    metrics_usage_endpoint = "https://messages.suite.anct.gouv.fr/metrics/usage"
+    params = {
+        "account_type": "mailbox",
+        "account_id": "abc",
+        "limit": 1000,
+        "offset": 0,
+    }
+    response_mock = responses.add(
+        responses.GET,
+        metrics_usage_endpoint,
+        match=[matchers.query_param_matcher(params)],
+        json={
+            "count": 1,
+            "results": [
+                {
+                    "siret": "12345678900001",
+                    "account": {
+                        "type": "mailbox",
+                        "id": "abc",
+                        "email": "abc@example.com",
+                    },
+                    "metrics": {"storage_used": mailbox_storage_used},
+                }
+            ],
+        },
+        status=200,
+    )
+    response = client.get(
+        "/api/v1.0/entitlements/",
+        query_params={
+            "service_id": service.id,
+            "account_type": "mailbox",
+            "account_id": "abc",
+            "siret": organization.siret,
+        },
+        headers={"X-Service-Auth": "Bearer test_token"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert_equals_partial(
+        data,
+        {
+            "operator": {
+                "id": str(operator.id),
+                "name": operator.name,
+            },
+            "entitlements": {
+                "can_access": True,
+                "can_store": can_store_before_override,
+                "can_store_resolve_level": "mailbox",
+            },
+        },
+    )
+    metrics_mailbox = models.Metric.objects.filter(
+        service=service,
+        organization=organization,
+        account__type="mailbox",
+    )
+    assert metrics_mailbox.count() == 2
+    assert response_mock.call_count == 1
 
 
 @pytest.mark.parametrize(
@@ -645,15 +746,25 @@ def test_api_entitlements_mailbox_override_can_store(
         ({}, 5000000),  # Missing max_storage key - should default to 0
     ],
 )
+@pytest.mark.parametrize(
+    "account_key,account_key_value,account_key_http_alias",
+    [["external_id", "xyz", "id"], ["email", "test@example.com", "email"]],
+)
 @responses.activate
-def test_api_entitlements_list_unlimited_storage(entitlement_config, storage_used):
+def test_api_entitlements_list_unlimited_storage(
+    entitlement_config,
+    storage_used,
+    account_key,
+    account_key_value,
+    account_key_http_alias,
+):
     """
     Test that when max_storage is 0 or missing, can_upload is always True (unlimited storage).
     """
     metrics_usage_endpoint = "https://messages.suite.anct.gouv.fr/metrics/usage"
     params = {
         "account_type": "mailbox",
-        "account_id": "xyz",
+        f"account_{account_key_http_alias}": account_key_value,
         "limit": 1000,
         "offset": 0,
     }
@@ -669,6 +780,7 @@ def test_api_entitlements_list_unlimited_storage(entitlement_config, storage_use
                     "account": {
                         "type": "mailbox",
                         "id": "xyz",
+                        "email": "test@example.com",
                     },
                     "metrics": {"storage_used": storage_used},
                 }
@@ -702,7 +814,7 @@ def test_api_entitlements_list_unlimited_storage(entitlement_config, storage_use
         type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
         config=entitlement_config,
         account_type="mailbox",
-        account_id="",
+        account=None,
     )
 
     # Test that can_store is True even with high storage usage
@@ -711,7 +823,7 @@ def test_api_entitlements_list_unlimited_storage(entitlement_config, storage_use
         query_params={
             "service_id": service.id,
             "account_type": "mailbox",
-            "account_id": "xyz",
+            f"account_{account_key_http_alias}": account_key_value,
             "siret": organization.siret,
         },
         headers={"X-Service-Auth": "Bearer test_token"},

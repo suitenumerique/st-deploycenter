@@ -11,7 +11,7 @@ def assert_equals_partial(actual, expected, debug=False):
         assert len(actual) == len(expected)
         for i, item in enumerate(actual):
             assert_equals_partial(item, expected[i], debug)
-    else:
+    elif isinstance(actual, dict):
         for key, value in expected.items():
             if debug:
                 print(f"Asserting {key}: {value}")  # noqa: T201
@@ -23,3 +23,5 @@ def assert_equals_partial(actual, expected, debug=False):
                 assert actual[key] == value, (
                     f"Key {key}: Expected {value} but got {actual[key]}"
                 )
+    else:
+        assert actual == expected, f"Expected {expected} but got {actual}"

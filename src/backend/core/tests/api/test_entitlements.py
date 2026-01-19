@@ -12,6 +12,8 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+from django.core.exceptions import ValidationError
+
 import pytest
 from rest_framework.test import APIClient
 
@@ -371,10 +373,11 @@ def test_api_entitlements_list_usage_metrics_endpoint_not_reachable():
             "max_storage": 1000,
         },
         account_type="user",
-        account_id="",
+        account=None,
     )
 
     # Test that we can upload to the drive
+
     response = client.get(
         "/api/v1.0/entitlements/",
         query_params={
@@ -438,7 +441,7 @@ def test_api_entitlements_list_usage_metrics_endpoint_error(buggy_service_server
             "max_storage": 1000,
         },
         account_type="user",
-        account_id="",
+        account=None,
     )
 
     # Test that we can upload to the drive
@@ -479,3 +482,70 @@ def test_api_entitlements_list_usage_metrics_endpoint_error(buggy_service_server
         BuggyServiceServer.requests_received[0]["headers"]["Authorization"]
         == "Bearer test_token"
     )
+
+
+def test_entitlement_account_organization_mismatch():
+    """Test that ValidationError is raised when account organization doesn't match service_subscription organization."""
+    operator = factories.OperatorFactory()
+    organization1 = factories.OrganizationFactory()
+    organization2 = factories.OrganizationFactory()
+
+    service = factories.ServiceFactory()
+    service_subscription = factories.ServiceSubscriptionFactory(
+        organization=organization1,
+        service=service,
+        operator=operator,
+    )
+
+    # Create an account with a different organization
+    account = factories.AccountFactory(organization=organization2)
+
+    # Create an entitlement with mismatched organizations
+    entitlement = models.Entitlement(
+        service_subscription=service_subscription,
+        type=models.Entitlement.EntitlementType.DRIVE_STORAGE,
+        account_type="user",
+        account=account,
+    )
+
+    # Validation should fail
+    with pytest.raises(ValidationError) as exc_info:
+        entitlement.save()
+
+    assert "account" in exc_info.value.error_dict
+    assert "organization must match" in str(exc_info.value.error_dict["account"][0])
+
+    assert models.Entitlement.objects.count() == 0
+
+
+def test_entitlement_account_type_mismatch():
+    """Test that ValidationError is raised when account type doesn't match entitlement account_type."""
+    operator = factories.OperatorFactory()
+    organization = factories.OrganizationFactory()
+
+    service = factories.ServiceFactory()
+    service_subscription = factories.ServiceSubscriptionFactory(
+        organization=organization,
+        service=service,
+        operator=operator,
+    )
+
+    # Create an account with type "mailbox"
+    account = factories.AccountFactory(organization=organization, type="mailbox")
+
+    # Create an entitlement with account_type "user" (mismatch)
+    entitlement = models.Entitlement(
+        service_subscription=service_subscription,
+        type=models.Entitlement.EntitlementType.DRIVE_STORAGE,
+        account_type="user",
+        account=account,
+    )
+
+    # Validation should fail
+    with pytest.raises(ValidationError) as exc_info:
+        entitlement.save()
+
+    assert "account" in exc_info.value.error_dict
+    assert "type must match" in str(exc_info.value.error_dict["account"][0])
+
+    assert models.Entitlement.objects.count() == 0
