@@ -22,12 +22,12 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, max_retries=3)
-def import_dpnt_dataset(self, force_update: bool = False, max_rows: int = None):  # pylint: disable=unused-argument
+def import_dpnt_dataset(self, force_update: bool = True, max_rows: int = None):  # pylint: disable=unused-argument
     """
     Import the DPNT (Données de la Présence Numérique des Territoires) dataset from data.gouv.fr.
 
     Args:
-        force_update: If True, updates existing organizations. If False, only creates new ones.
+        force_update: If True (default), updates existing organizations. If False, only creates new ones.
         max_rows: Maximum number of rows to process, for each type (None for all rows)
 
     Returns:
