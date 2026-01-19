@@ -52,15 +52,17 @@ class MetricModelTest(TestCase):
                 value="200.00",
             )
 
-    def test_unique_constraint_with_account_type(self):
+    def test_unique_constraint_with_account(self):
         """Test that the unique constraint works correctly."""
         # Create first metric
+        account = factories.AccountFactory(organization=self.organization)
+
         factories.MetricFactory(
             organization=self.organization,
             service=self.service,
             key="unique_metric",
             value="100.00",
-            account_type="user",
+            account=account,
         )
 
         # Try to create another metric with same service, organization, and key
@@ -71,36 +73,15 @@ class MetricModelTest(TestCase):
                 service=self.service,
                 key="unique_metric",
                 value="200.00",
-                account_type="user",
-            )
-
-    def test_unique_constraint_with_account_id(self):
-        """Test that the unique constraint works correctly."""
-        # Create first metric
-        factories.MetricFactory(
-            organization=self.organization,
-            service=self.service,
-            key="unique_metric",
-            value="100.00",
-            account_type="user",
-            account_id="user_123",
-        )
-
-        # Try to create another metric with same service, organization, and key
-        # This should fail due to unique constraint
-        with self.assertRaises(IntegrityError):
-            factories.MetricFactory(
-                organization=self.organization,
-                service=self.service,
-                key="unique_metric",
-                account_type="user",
-                account_id="user_123",
+                account=account,
             )
 
     def test_unique_constraint_all_at_once(self):
         """
-        Test that we can have the same key with different account types and ids.
+        Test that we can have the same key with account or no account.
         """
+        account = factories.AccountFactory(organization=self.organization)
+
         factories.MetricFactory(
             organization=self.organization,
             service=self.service,
@@ -113,16 +94,7 @@ class MetricModelTest(TestCase):
             service=self.service,
             key="unique_metric",
             value="100.00",
-            account_type="user",
-        )
-
-        factories.MetricFactory(
-            organization=self.organization,
-            service=self.service,
-            key="unique_metric",
-            value="100.00",
-            account_type="user",
-            account_id="user_123",
+            account=account,
         )
 
     def test_different_service_allows_duplicate(self):

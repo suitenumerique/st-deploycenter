@@ -17,7 +17,7 @@ from django.utils import timezone
 import requests
 from celery import shared_task
 
-from ..models import Metric, Organization, Service
+from ..models import Account, Metric, Organization, Service
 
 logger = logging.getLogger(__name__)
 
@@ -462,12 +462,21 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
 
             # logger.info("Organization found: %s", organization)
 
-            account = item.get("account", {})
-            account_type = ""
-            account_id = ""
-            if account:
-                account_type = account.get("type") or ""
-                account_id = account.get("id") or ""
+            # Get or create Account if account data is provided
+            account = None
+            account_data = item.get("account", {})
+            if account_data:
+                account_type = account_data.get("type") or ""
+                account_id = account_data.get("id") or ""
+                account_email = account_data.get("email") or ""
+
+                if account_id:
+                    account, _ = Account.objects.update_or_create(
+                        external_id=account_id,
+                        type=account_type,
+                        organization=organization,
+                        defaults={"email": account_email},
+                    )
 
             # Extract metrics
             metrics = item.get("metrics", {})
@@ -480,15 +489,15 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
                 if value is None:
                     continue
 
+                account_id_for_key = account.id if account else None
                 metrics_to_create[
-                    (service.id, organization.id, account_type, account_id, metric_name)
+                    (service.id, organization.id, account_id_for_key, metric_name)
                 ] = Metric(
                     key=metric_name,
                     value=value,
                     service=service,
                     organization=organization,
-                    account_type=account_type,
-                    account_id=account_id,
+                    account=account,
                     timestamp=timestamp,
                 )
 
@@ -508,8 +517,7 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
             unique_fields=[
                 "service",
                 "organization",
-                "account_type",
-                "account_id",
+                "account",
                 "key",
             ],
         )

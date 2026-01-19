@@ -218,7 +218,7 @@ def test_store_service_metrics(mock_metrics_server, test_service, test_organizat
     # Make sure we have 40 distinct account combinations
     # Group by account_type, account_id and count the number of distinct accounts
     distinct_accounts = (
-        stored_metrics.values("account_type", "account_id")
+        stored_metrics.values("account__type", "account__external_id")
         .annotate(count=Count("*"))
         .distinct()
     )
@@ -351,14 +351,13 @@ def test_metrics_storage_with_existing_non_usage_metrics_data(
     normal_metric = metrics[0]
     assert normal_metric.key == "storage_used"
     assert normal_metric.value == 2000
-    assert normal_metric.account_type == ""
-    assert normal_metric.account_id == ""
+    assert normal_metric.account is None
 
     usage_metric = metrics[1]
     assert usage_metric.key == "storage_used"
     assert usage_metric.value == 1000
-    assert usage_metric.account_type == "user"
-    assert usage_metric.account_id == "xyz"
+    assert usage_metric.account.type == "user"
+    assert usage_metric.account.external_id == "xyz"
 
     # Now store usage metrics again.
     updated_metrics = [
@@ -383,14 +382,13 @@ def test_metrics_storage_with_existing_non_usage_metrics_data(
     usage_metric = metrics[0]
     assert usage_metric.key == "storage_used"
     assert usage_metric.value == 3000
-    assert usage_metric.account_type == "user"
-    assert usage_metric.account_id == "xyz"
+    assert usage_metric.account.type == "user"
+    assert usage_metric.account.external_id == "xyz"
 
     normal_metric = metrics[1]
     assert normal_metric.key == "storage_used"
     assert normal_metric.value == 2000
-    assert normal_metric.account_type == ""
-    assert normal_metric.account_id == ""
+    assert normal_metric.account is None
 
 
 @pytest.mark.django_db
@@ -446,3 +444,66 @@ def test_metrics_error_handling_with_invalid_token(mock_metrics_server):
     # Should return empty list due to connection error
     metrics_data = fetch_metrics_from_service(invalid_service)
     assert len(metrics_data) == 0
+
+
+@pytest.mark.django_db
+def test_metrics_storage_update_existing_account_attributes(
+    mock_metrics_server, test_service, test_organizations
+):
+    """Test that updating the account attributes (email only) froms /metrics works correctly."""
+    # First, store some metrics
+    initial_metrics = [
+        {
+            "siret": "12345678900",
+            "account": {
+                "type": "user",
+                "id": "xyz",
+            },
+            "metrics": {
+                "storage_used": 1000,
+            },
+        }
+    ]
+
+    initial_stored = store_service_metrics(test_service, initial_metrics)
+    assert initial_stored == 1
+
+    # Verify initial metrics exist
+    metrics = models.Metric.objects.all()
+    assert len(metrics) == 1
+    initial_storage_used_metric = metrics[0]
+    assert initial_storage_used_metric.key == "storage_used"
+    assert initial_storage_used_metric.value == 1000
+    assert initial_storage_used_metric.account is not None
+    account = initial_storage_used_metric.account
+    assert account.type == "user"
+    assert account.external_id == "xyz"
+    assert account.email == ""
+
+    # Now add email to the account from /metrics
+    new_metrics = [
+        {
+            "siret": "12345678900",
+            "account": {
+                "type": "user",
+                "id": "xyz",
+                "email": "test@example.com",
+            },
+            "metrics": {
+                "storage_used": 1000,
+            },
+        }
+    ]
+    store_service_metrics(test_service, new_metrics)
+
+    # Verify that the account attributes were updated
+    metrics = models.Metric.objects.all()
+    assert len(metrics) == 1
+    new_storage_used_metric = metrics[0]
+    assert new_storage_used_metric.key == "storage_used"
+    assert new_storage_used_metric.value == 1000
+    assert new_storage_used_metric.account is not None
+    account = new_storage_used_metric.account
+    assert account.type == "user"
+    assert account.external_id == "xyz"
+    assert account.email == "test@example.com"
