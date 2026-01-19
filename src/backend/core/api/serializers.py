@@ -338,12 +338,21 @@ class ServiceSerializer(serializers.ModelSerializer):
         return {key: config[key] for key in whitelist_keys if key in config}
 
 
+class ServiceLightSerializer(serializers.ModelSerializer):
+    """Serialize services."""
+
+    class Meta:
+        model = models.Service
+        fields = ["id", "name", "instance_name", "type"]
+        read_only_fields = fields
+
+
 class EntitlementSerializer(serializers.ModelSerializer):
     """Serialize entitlements."""
 
     class Meta:
         model = models.Entitlement
-        fields = ["id", "type", "config", "account_type", "account_id"]
+        fields = ["id", "type", "config", "account_type", "account"]
         read_only_fields = ["id", "type"]
 
 
@@ -511,3 +520,25 @@ class OrganizationServiceSerializer(ServiceSerializer):
         if not can_activate and reason:
             data["activation_blocked_reason"] = reason
         return data
+
+
+class AccountServiceLinkSerializer(serializers.ModelSerializer):
+    """Serialize account service links."""
+
+    service = ServiceLightSerializer(read_only=True)
+
+    class Meta:
+        model = models.AccountServiceLink
+        fields = ["id", "roles", "service"]
+        read_only_fields = ["id"]
+
+
+class AccountSerializer(serializers.ModelSerializer):
+    """Serialize accounts."""
+
+    service_links = AccountServiceLinkSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = models.Account
+        fields = ["id", "email", "external_id", "type", "roles", "service_links"]
+        read_only_fields = ["id", "service_links"]
