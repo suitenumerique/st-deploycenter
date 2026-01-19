@@ -8,6 +8,7 @@ from django.urls import include, path, re_path
 
 from rest_framework.routers import DefaultRouter, SimpleRouter
 
+from core.api.viewsets.accounts import AccountViewSet, OrganizationAccountsViewSet
 from core.authentication.urls import urlpatterns as oidc_urls
 
 from .api.viewsets.config import ConfigView
@@ -36,6 +37,12 @@ operator_organization_router.register(r"organizations", OperatorOrganizationView
 
 organization_service_router = DefaultRouter()
 organization_service_router.register(r"services", OrganizationServiceViewSet)
+
+account_router = DefaultRouter()
+account_router.register(r"accounts", AccountViewSet)
+
+organization_accounts_router = DefaultRouter()
+organization_accounts_router.register(r"accounts", OrganizationAccountsViewSet)
 
 
 organization_subscription_entitlements_router = DefaultRouter()
@@ -66,6 +73,7 @@ urlpatterns = [
                         ]
                     ),
                 ),
+                *account_router.urls,
                 path("config/", ConfigView.as_view(), name="api-config"),
                 re_path(
                     r"^operators/(?P<operator_id>[0-9a-z-]*)/",
@@ -77,6 +85,7 @@ urlpatterns = [
                                 include(
                                     [
                                         *organization_service_router.urls,
+                                        *organization_accounts_router.urls,
                                         re_path(
                                             r"^services/(?P<service_id>[0-9a-z-]*)/",
                                             include(
