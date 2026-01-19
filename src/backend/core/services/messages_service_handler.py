@@ -19,7 +19,7 @@ class MessagesServiceHandler(ServiceHandler):
         if not service_subscription.entitlements.filter(
             type=Entitlement.EntitlementType.MESSAGES_STORAGE,
             account_type="mailbox",
-            account_id="",
+            account=None,
         ).exists():
             service_subscription.entitlements.create(
                 type=Entitlement.EntitlementType.MESSAGES_STORAGE,
@@ -27,7 +27,7 @@ class MessagesServiceHandler(ServiceHandler):
                     "max_storage": 1000 * 1000 * 1000 * 5,  # 5GB
                 },
                 account_type="mailbox",
-                account_id="",
+                account=None,
             )
 
         # If there is no organization level entitlement, create one.
@@ -35,7 +35,7 @@ class MessagesServiceHandler(ServiceHandler):
         if not service_subscription.entitlements.filter(
             type=Entitlement.EntitlementType.MESSAGES_STORAGE,
             account_type="organization",
-            account_id="",
+            account=None,
         ).exists():
             service_subscription.entitlements.create(
                 type=Entitlement.EntitlementType.MESSAGES_STORAGE,
@@ -43,5 +43,5 @@ class MessagesServiceHandler(ServiceHandler):
                     "max_storage": 1000 * 1000 * 1000 * 50,  # 50GB
                 },
                 account_type="organization",
-                account_id="",
+                account=None,
             )
