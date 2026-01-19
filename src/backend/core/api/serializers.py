@@ -381,6 +381,14 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
                 }
             )
 
+        # When activating a subscription, we must have a valid domain.
+        if is_active and not (
+            instance.organization.mail_domain or instance.metadata.get("domains")
+        ):
+            raise serializers.ValidationError(
+                {"metadata": "Mail domain is required for ProConnect subscription."}
+            )
+
         # Build the metadata dict explicitly. Domains cannot be overridden from the REST API for now.
         attrs["metadata"] = {
             "idp_id": new_idp_id or current_idp_id,

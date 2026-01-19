@@ -15,7 +15,7 @@ export const ServiceAttribute = ({
       <div className="dc__service__attribute">
         <div className="dc__service__attribute__top">
           {name && <div className="dc__service__attribute__top__name">{name}</div>}
-          {value && <button
+          {value !== null && value !== undefined && value !== "" && <button
               className="dc__service__attribute__top__value"
               onClick={onClick}
               disabled={!interactive}

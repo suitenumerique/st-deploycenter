@@ -94,7 +94,7 @@ export default function Organization() {
               </span>
             </span>
           </div>
-          <div className="dc__organization__header__details" style={{ display: "flex", flexDirection: "row", flexWrap: "wrap", gap: "6rem", alignItems: "center" }}>
+          <div className="dc__organization__header__details">
             <div className="dc__organization__header__details__item">
               <span className="dc__organization__header__details__item__label">
                 {t("organizations.details.population")}
@@ -118,7 +118,7 @@ export default function Organization() {
                 <span className="dc__organization__header__details__item__label">
                   {t("organizations.details.contact")}
                 </span>
-                <span className="dc__organization__header__details__item__value" style={{fontSize: "0.7rem", fontWeight: "normal"}}>
+                <span className="dc__organization__header__details__item__value dc__organization__header__details__item__value--contact">
                   <div>
                     {organization.site_internet ? (
                       <a href={organization.site_internet} target="_blank" rel="noopener noreferrer">

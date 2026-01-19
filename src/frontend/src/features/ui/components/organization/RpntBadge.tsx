@@ -16,9 +16,11 @@ export const RpntBadge = ({ rpnt, siret }: RpntBadgeProps) => {
   if (!rpnt || rpnt.length === 0) {
     badgeType = "danger";
     iconName = "close";
+  // "a" means "1.a" + "2.a" in the RPNT.
   } else if (rpnt.includes("a")) {
     badgeType = "success";
     iconName = "check";
+  // Partial compliance
   } else if (rpnt.includes("1.a") || rpnt.includes("2.a")) {
     badgeType = "warning";
     iconName = "warning";

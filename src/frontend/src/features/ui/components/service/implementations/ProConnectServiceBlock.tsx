@@ -48,9 +48,9 @@ const getProConnectMessage = (
     if (isActive) {
       const message: ProConnectMessage = {};
       if (subscriptionDomains.length === 1) {
-        message.text = <span>Le domaine {domainsList} est actuellement utilisé pour ProConnect.</span>;
+        message.text = <span>Le domaine {domainsList} est actuellement routé vers ce FI.</span>;
       } else {
-        message.text = <span>Les domaines {domainsList} sont actuellement utilisés pour ProConnect.</span>;
+        message.text = <span>Les domaines {domainsList} sont actuellement routés vers ce FI.</span>;
       }
 
       // If the domain is unknown to the RPNT, ask for declaration
@@ -60,6 +60,9 @@ const getProConnectMessage = (
       }
 
       return message;
+
+    // Manage the case where sub is inactive and we had previous domain(s) that are not the single one we can
+    // add here automatically.
     } else if (!(subscriptionDomains.length == 1 && subscriptionDomains[0] === organization.mail_domain)) {
       if (subscriptionDomains.length === 1) {
         return {

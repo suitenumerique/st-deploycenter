@@ -48,8 +48,10 @@
 
   &__details {
     display: flex;
-    flex-direction: column;
-    gap: 16px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6rem;
+    align-items: center;
     margin-top: 20px;
 
     &__item {
@@ -67,6 +69,11 @@
         order: 2;
         font-size: 22px;
         font-weight: 700;
+
+        &--contact {
+          font-size: 0.7rem;
+          font-weight: normal;
+        }
       }
     }
   }
