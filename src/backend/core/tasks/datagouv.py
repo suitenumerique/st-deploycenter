@@ -58,6 +58,14 @@ def upload_deployment_metrics_dataset():
     dataset_id = "68b0a2a1117b75b1b09edc6b"
     resource_id = "8f100b83-73c5-49ce-90ce-03d5c6a1783d"
 
+    metrics_qs = (
+        Metric.objects.select_related("organization", "service")
+        .filter(organization__population__gt=0)
+        .exclude(organization__siret__isnull=True)
+        .exclude(organization__siret="")
+        .filter(service__is_active=True)
+    )
+
     data = {
         f"{metric.organization.siret} {metric.service.id}": {
             "type": metric.organization.type,
@@ -67,13 +75,7 @@ def upload_deployment_metrics_dataset():
             "service": metric.service.id,
             "active": 0,
         }
-        for metric in Metric.objects.select_related("organization", "service")
-        .filter(key="tu", value__gt=0)
-        .filter(organization__population__gt=0)
-        .exclude(organization__siret__isnull=True)
-        .exclude(organization__siret="")
-        .filter(service__is_active=True)
-        .all()
+        for metric in metrics_qs.filter(key="tu", value__gt=0)
     }
 
     logger.info("Produced %s data rows", len(data))
@@ -81,11 +83,9 @@ def upload_deployment_metrics_dataset():
     unique_services = {row["service"] for row in data.values()}
     for service_id in unique_services:
         # Services might have different criteria to define if they are active. For now, we consider yau>0.
-        active_sirets = (
-            Metric.objects.select_related("organization", "service")
-            .filter(service_id=service_id, key="yau", value__gt=0)
-            .values_list("organization__siret", flat=True)
-        )
+        active_sirets = metrics_qs.filter(
+            service_id=service_id, key="yau", value__gt=0
+        ).values_list("organization__siret", flat=True)
         for siret in active_sirets:
             data[f"{siret} {service_id}"]["active"] = 1
 
@@ -101,6 +101,8 @@ def upload_deployment_metrics_dataset():
             writer.writeheader()
             for row in data:
                 writer.writerow(row)
+
+    logger.info("Uploading file to data.gouv.fr")
 
     buffer.seek(0)
     _upload_data_to_data_gouv(
