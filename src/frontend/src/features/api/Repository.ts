@@ -33,6 +33,7 @@ export enum MailDomainStatus {
 export type Organization = {
   id: string;
   name: string;
+  type: string;
   code_postal: string;
   url: string;
   service_subscriptions: ServiceSubscription[];
@@ -123,6 +124,7 @@ export const getOperatorOrganizations = async (
     page?: number;
     search?: string;
     ordering?: string;
+    type?: string;
   }
 ): Promise<PaginatedResponse<Organization>> => {
   const url = new URL(`/`, window.location.origin);

@@ -90,19 +90,47 @@ export default function Organization() {
             <span className="dc__organization__header__top__name">
               {organization?.name}
               <span className="dc__organization__header__top__code_postal">
-                ・{organization?.code_postal}
+                <>
+                {organization?.type === "commune" ? (
+                  <>
+                  ・{organization?.code_postal}
+                  </>
+                ) : (
+                  organization?.type === "region" ? (
+                    <>
+                      ・{t("organizations.filter.types.region")}
+                    </>
+                  ) : (
+                    organization?.type === "departement" ? (
+                      <>
+                      ・{t("organizations.filter.types.departement")}
+                      </>
+                    ) : (
+                      organization?.type === "epci" ? (
+                        <>
+                        ・{t("organizations.filter.types.epci")}
+                        </>
+                      ) : (
+                      <>
+                      {t("organizations.filter.types.other")}
+                      </>
+                    )
+                  )))}
+                </>
               </span>
             </span>
           </div>
           <div className="dc__organization__header__details">
-            <div className="dc__organization__header__details__item">
-              <span className="dc__organization__header__details__item__label">
-                {t("organizations.details.population")}
-              </span>
-              <span className="dc__organization__header__details__item__value">
-                {organization?.population}
-              </span>
-            </div>
+            {organization?.population && (
+              <div className="dc__organization__header__details__item">
+                <span className="dc__organization__header__details__item__label">
+                  {t("organizations.details.population")}
+                </span>
+                <span className="dc__organization__header__details__item__value">
+                  {organization?.population}
+                </span>
+              </div>
+            )}
             {organization?.siret && (
               <div className="dc__organization__header__details__item">
                 <span className="dc__organization__header__details__item__label">

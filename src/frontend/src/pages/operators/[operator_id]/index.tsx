@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import {
   DataGrid,
   Input,
+  Select,
   SortModel,
   Tooltip,
   usePagination,
@@ -59,9 +60,16 @@ export default function Operator() {
     return [];
   }, [router.query.ordering]);
 
+  // Read type filter from URL query parameters, default to empty string
+  const queryParamsType = useMemo(() => {
+    const typeParam = router.query.type;
+    return typeof typeParam === "string" ? typeParam : "";
+  }, [router.query.type]);
+
   const [sortModel, setSortModel] = useState<SortModel>(queryParamsSortModel);
 
   const [search, setSearch] = useState(queryParamsSearch);
+  const [typeFilter, setTypeFilter] = useState(queryParamsType);
   const pagination = usePagination({
     defaultPage: queryParamsPage,
     pageSize: 20,
@@ -73,6 +81,7 @@ export default function Operator() {
       page: pagination.page,
       search,
       ordering: sortModelToOrdering(sortModel),
+      type: typeFilter || undefined,
     }
   );
 
@@ -121,6 +130,16 @@ export default function Operator() {
       updated = true;
     }
 
+    if (typeFilter !== queryParamsType) {
+      if (typeFilter === "") {
+        // Remove type parameter if it's empty
+        delete newQuery.type;
+      } else {
+        newQuery.type = typeFilter;
+      }
+      updated = true;
+    }
+
     if (updated) {
       router.replace(
         {
@@ -138,6 +157,8 @@ export default function Operator() {
     queryParamsPage,
     sortModel,
     queryParamsSortModel,
+    typeFilter,
+    queryParamsType,
     router,
   ]);
 
@@ -190,6 +211,25 @@ export default function Operator() {
           value={search}
           onChange={onSearchChange}
         />
+        <Select
+          label={t("organizations.filter.type")}
+          value={typeFilter}
+          onChange={(e) => {
+            setTypeFilter((e.target.value as string) || "");
+            // Reset pagination to page 1 when filter changes
+            if (pagination.page !== 1) {
+              pagination.setPage(1);
+            }
+          }}
+          options={[
+            { label: t("organizations.filter.types.all_types"), value: "" },
+            { label: t("organizations.filter.types.commune"), value: "commune" },
+            { label: t("organizations.filter.types.epci"), value: "epci" },
+            { label: t("organizations.filter.types.departement"), value: "departement" },
+            { label: t("organizations.filter.types.region"), value: "region" },
+            { label: t("organizations.filter.types.other"), value: "other" },
+          ]}
+        />
       </div>
       <DataGrid
         className="dc__organizations__list"
@@ -209,12 +249,36 @@ export default function Operator() {
             },
           },
           {
+            field: "type",
+            headerName: t("organizations.type"),
+            renderCell: (params) => {
+              const typeLabel =
+                params.row.type === "commune"
+                  ? t("organizations.filter.types.commune")
+                  : params.row.type === "epci"
+                    ? t("organizations.filter.types.epci")
+                    : params.row.type === "departement"
+                      ? t("organizations.filter.types.departement")
+                      : params.row.type === "region"
+                        ? t("organizations.filter.types.region")
+                        : t("organizations.filter.types.other");
+              return <>{typeLabel}</>;
+            },
+          },
+          {
             field: "epci_libelle",
             headerName: "Territoire",
             renderCell: (params) => {
               return (
                 <>
+                  {params.row.type === "commune" ? (<>
                   {params.row.departement_code_insee}・{params.row.epci_libelle}
+                  </>
+                  ) : (params.row.type === "region" ? "" : (
+                    <>
+                    {params.row.departement_code_insee}
+                    </>
+                  ))}
                 </>
               );
             },
