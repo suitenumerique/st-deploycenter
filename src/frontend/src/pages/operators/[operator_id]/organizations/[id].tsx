@@ -110,11 +110,8 @@ export default function Organization() {
                         <>
                         ・{t("organizations.filter.types.epci")}
                         </>
-                      ) : (
-                      <>
-                      {t("organizations.filter.types.other")}
-                      </>
-                    )
+                      ) : ""
+                    
                   )))}
                 </>
               </span>
