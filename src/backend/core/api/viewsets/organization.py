@@ -46,6 +46,11 @@ class OperatorOrganizationViewSet(viewsets.ReadOnlyModelViewSet):
             .all()
         )
 
+        # Filter by type if provided
+        if self.request.query_params.get("type"):
+            type_filter = self.request.query_params.get("type")
+            queryset = queryset.filter(type=type_filter)
+
         if self.request.query_params.get("search"):
             search_query = self.request.query_params.get("search")
 
@@ -58,6 +63,7 @@ class OperatorOrganizationViewSet(viewsets.ReadOnlyModelViewSet):
                     unaccent_immutable(departement_code_insee) ILIKE unaccent_immutable(%s) OR
                     unaccent_immutable(epci_libelle) ILIKE unaccent_immutable(%s) OR
                     siret = %s OR
+                    code_postal = %s OR
                     siren = %s
                     """
                 ],
@@ -65,6 +71,7 @@ class OperatorOrganizationViewSet(viewsets.ReadOnlyModelViewSet):
                     f"%{search_query}%",
                     f"%{search_query}%",
                     f"%{search_query}%",
+                    search_query,
                     search_query,
                     search_query,
                 ],
@@ -78,14 +85,16 @@ class OperatorOrganizationViewSet(viewsets.ReadOnlyModelViewSet):
                         CASE 
                             WHEN siret = %s THEN 1
                             WHEN siren = %s THEN 2
-                            WHEN unaccent_immutable(name) ILIKE unaccent_immutable(%s) THEN 3
-                            WHEN unaccent_immutable(departement_code_insee) ILIKE unaccent_immutable(%s) THEN 4
-                            WHEN unaccent_immutable(epci_libelle) ILIKE unaccent_immutable(%s) THEN 5
+                            WHEN code_postal = %s THEN 3
+                            WHEN unaccent_immutable(name) ILIKE unaccent_immutable(%s) THEN 4
+                            WHEN unaccent_immutable(departement_code_insee) ILIKE unaccent_immutable(%s) THEN 5
+                            WHEN unaccent_immutable(epci_libelle) ILIKE unaccent_immutable(%s) THEN 6
                             ELSE 6
                         END
                     """
                 },
                 select_params=[
+                    search_query,
                     search_query,
                     search_query,
                     f"%{search_query}%",

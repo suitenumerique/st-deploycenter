@@ -1,3 +1,14 @@
 .dc__organizations__search {
   margin-bottom: 1rem;
+  display: flex;
+  gap: 1rem;
+  align-items: flex-end;
+
+  .c__input {
+    flex: 1;
+  }
+
+  .c__select {
+    min-width: 200px;
+  }
 }

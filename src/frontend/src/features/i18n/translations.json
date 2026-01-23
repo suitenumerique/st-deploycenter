@@ -98,7 +98,19 @@
           "email_missing": "Email non déclaré",
           "website_missing": "Site internet non déclaré"
         },
-        "search": "Rechercher une organisation adhérente ou un territoire"
+        "search": "Rechercher une organisation adhérente ou un territoire",
+        "type": "Type",
+        "filter": {
+          "type": "Filtrer par type",
+          "types": {
+            "all_types": "Tous les types",
+            "commune": "Commune",
+            "epci": "EPCI",
+            "departement": "Département",
+            "region": "Région",
+            "other": "Autre"
+          }
+        }
       },
       "api": {
         "error": {
