@@ -2,6 +2,8 @@
 Test users API endpoints in the deploycenter core app.
 """
 
+# pylint: disable=too-many-lines
+
 import pytest
 from rest_framework.test import APIClient
 
@@ -873,3 +875,174 @@ def test_api_organization_service_subscription_validation_population_limits():
     )
     assert response.status_code == 400
     assert "population_limit_exceeded" in response.json()["__all__"][0].lower()
+
+
+def test_api_organizations_services_list_includes_other_operator_subscription():
+    """
+    Services list should include other_operator_subscription field showing
+    the subscription from another operator for the same organization.
+    """
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator1 = factories.OperatorFactory(name="Operator 1")
+    operator2 = factories.OperatorFactory(name="Operator 2")
+    factories.UserOperatorRoleFactory(user=user, operator=operator1)
+
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator1, organization=organization
+    )
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator2, organization=organization
+    )
+
+    service = factories.ServiceFactory()
+    factories.OperatorServiceConfigFactory(operator=operator1, service=service)
+
+    # Create subscription from operator2 (not current operator)
+    factories.ServiceSubscriptionFactory(
+        organization=organization, service=service, operator=operator2, is_active=True
+    )
+
+    response = client.get(
+        f"/api/v1.0/operators/{operator1.id}/organizations/{organization.id}/services/"
+    )
+    assert response.status_code == 200
+    content = response.json()
+    results = content["results"]
+
+    service_result = next(r for r in results if r["id"] == service.id)
+    assert "other_operator_subscription" in service_result
+
+    other_sub = service_result["other_operator_subscription"]
+    assert other_sub is not None
+    assert other_sub["operator_id"] == str(operator2.id)
+    assert other_sub["operator_name"] == "Operator 2"
+    assert other_sub["is_active"] is True
+    assert "created_at" in other_sub
+
+    # The current operator has no subscription
+    assert service_result["subscription"] is None
+
+
+def test_api_organizations_services_shows_service_with_only_other_operator_subscription():
+    """
+    Services that only have a subscription from another operator (not current)
+    should still appear in the list for visibility.
+    """
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator1 = factories.OperatorFactory(name="Operator 1")
+    operator2 = factories.OperatorFactory(name="Operator 2")
+    factories.UserOperatorRoleFactory(user=user, operator=operator1)
+
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator1, organization=organization
+    )
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator2, organization=organization
+    )
+
+    # Service with NO config for operator1 but HAS subscription from operator2
+    service = factories.ServiceFactory()
+    factories.ServiceSubscriptionFactory(
+        organization=organization, service=service, operator=operator2
+    )
+
+    response = client.get(
+        f"/api/v1.0/operators/{operator1.id}/organizations/{organization.id}/services/"
+    )
+    assert response.status_code == 200
+    content = response.json()
+
+    # Service should appear even though current operator has no config/subscription
+    service_ids = [r["id"] for r in content["results"]]
+    assert service.id in service_ids
+
+    service_result = next(r for r in content["results"] if r["id"] == service.id)
+    assert (
+        service_result["subscription"] is None
+    )  # No subscription for current operator
+    assert service_result["operator_config"] is None  # No config for current operator
+    assert service_result["other_operator_subscription"] is not None
+    assert (
+        service_result["other_operator_subscription"]["operator_name"] == "Operator 2"
+    )
+
+
+def test_api_organizations_services_other_operator_subscription_permission():
+    """
+    Verify that other_operator_subscription is only visible when current
+    operator manages the organization.
+    """
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator1 = factories.OperatorFactory()
+    operator2 = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator1)
+
+    # Organization NOT managed by operator1
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator2, organization=organization
+    )
+
+    service = factories.ServiceFactory()
+    factories.ServiceSubscriptionFactory(
+        organization=organization, service=service, operator=operator2
+    )
+
+    # Should get 403 because operator1 doesn't manage this org
+    response = client.get(
+        f"/api/v1.0/operators/{operator1.id}/organizations/{organization.id}/services/"
+    )
+    assert response.status_code == 403
+
+
+def test_api_organizations_services_excludes_own_subscription_from_other_operator_subscription():
+    """
+    Verify that when the current operator has a subscription, it doesn't appear
+    in other_operator_subscription.
+    """
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator1 = factories.OperatorFactory(name="Operator 1")
+    factories.UserOperatorRoleFactory(user=user, operator=operator1)
+
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator1, organization=organization
+    )
+
+    service = factories.ServiceFactory()
+    factories.OperatorServiceConfigFactory(operator=operator1, service=service)
+
+    # Create subscription from operator1 (current operator)
+    factories.ServiceSubscriptionFactory(
+        organization=organization, service=service, operator=operator1, is_active=True
+    )
+
+    response = client.get(
+        f"/api/v1.0/operators/{operator1.id}/organizations/{organization.id}/services/"
+    )
+    assert response.status_code == 200
+    content = response.json()
+    results = content["results"]
+
+    service_result = next(r for r in results if r["id"] == service.id)
+
+    # Current operator's subscription should be in "subscription" field
+    assert service_result["subscription"] is not None
+    assert service_result["subscription"]["is_active"] is True
+
+    # other_operator_subscription should be null
+    assert service_result["other_operator_subscription"] is None

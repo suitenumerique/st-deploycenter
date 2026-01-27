@@ -69,6 +69,13 @@ export type Entitlement = {
 
 export const SERVICE_TYPE_PROCONNECT = "proconnect";
 
+export type OtherOperatorSubscription = {
+  operator_id: string;
+  operator_name: string;
+  is_active: boolean;
+  created_at: string;
+};
+
 export type Service = {
   id: string;
   name: string;
@@ -87,6 +94,7 @@ export type Service = {
   config?: {
     help_center_url?: string;
   };
+  other_operator_subscription?: OtherOperatorSubscription | null;
 };
 
 export const sortModelToOrdering = (sortModel: SortModel): string => {

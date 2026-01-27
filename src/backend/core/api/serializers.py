@@ -414,6 +414,23 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class OtherOperatorSubscriptionSerializer(serializers.Serializer):
+    """Serialize subscription info from other operators (read-only)."""
+
+    operator_id = serializers.UUIDField(source="operator.id")
+    operator_name = serializers.CharField(source="operator.name")
+    is_active = serializers.BooleanField()
+    created_at = serializers.DateTimeField()
+
+    def create(self, validated_data):
+        """Not implemented - this serializer is read-only."""
+        raise NotImplementedError("This serializer is read-only")
+
+    def update(self, instance, validated_data):
+        """Not implemented - this serializer is read-only."""
+        raise NotImplementedError("This serializer is read-only")
+
+
 class ServiceSubscriptionWithServiceSerializer(ServiceSubscriptionSerializer):
     """Serialize service subscriptions with the service."""
 
@@ -473,10 +490,15 @@ class OrganizationServiceSerializer(ServiceSerializer):
 
     subscription = serializers.SerializerMethodField(read_only=True)
     operator_config = serializers.SerializerMethodField(read_only=True)
+    other_operator_subscription = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = models.Service
-        fields = ServiceSerializer.Meta.fields + ["subscription", "operator_config"]
+        fields = ServiceSerializer.Meta.fields + [
+            "subscription",
+            "operator_config",
+            "other_operator_subscription",
+        ]
         read_only_fields = fields
 
     def get_subscription(self, obj):
@@ -497,6 +519,34 @@ class OrganizationServiceSerializer(ServiceSerializer):
                 "display_priority": configs[0].display_priority,
                 "externally_managed": configs[0].externally_managed,
             }
+        return None
+
+    def get_other_operator_subscription(self, obj):
+        """
+        Return the subscription from another operator for this service and organization,
+        or None. There can be at most one per (organization, service) due to unique_together.
+        Uses prefetched data when available.
+        """
+        if "organization" not in self.context or "operator_id" not in self.context:
+            return None
+
+        # Use prefetched data if available (Prefetch to_attr returns a list)
+        if hasattr(obj, "other_operator_subscription_prefetched"):
+            other_subs = obj.other_operator_subscription_prefetched
+        else:
+            organization = self.context["organization"]
+            current_operator_id = self.context["operator_id"]
+            other_subs = list(
+                models.ServiceSubscription.objects.filter(
+                    organization=organization,
+                    service=obj,
+                )
+                .exclude(operator_id=current_operator_id)
+                .select_related("operator")
+            )
+
+        if other_subs:
+            return OtherOperatorSubscriptionSerializer(other_subs[0]).data
         return None
 
     def to_representation(self, instance):
