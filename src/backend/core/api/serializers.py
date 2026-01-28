@@ -584,14 +584,15 @@ class AccountServiceLinkSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = models.AccountServiceLink
-        fields = ["id", "roles", "service"]
-        read_only_fields = ["id"]
+        fields = ["roles", "service"]
 
 
 class AccountSerializer(serializers.ModelSerializer):
     """Serialize accounts."""
 
-    service_links = AccountServiceLinkSerializer(many=True, read_only=True)
+    services = AccountServiceLinkSerializer(
+        many=True, read_only=True, source="service_links"
+    )
     roles = serializers.ListField(
         child=serializers.CharField(max_length=100),
         required=False,
@@ -600,5 +601,5 @@ class AccountSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = models.Account
-        fields = ["id", "email", "external_id", "type", "roles", "service_links"]
-        read_only_fields = ["id", "service_links"]
+        fields = ["id", "email", "external_id", "type", "roles", "services"]
+        read_only_fields = ["id", "services"]

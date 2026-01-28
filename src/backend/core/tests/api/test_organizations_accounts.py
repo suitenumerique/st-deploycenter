@@ -306,7 +306,7 @@ def test_api_organizations_accounts_get(account_test_setup, auth_method):
             "external_id": "1234567890",
             "type": "user",
             "roles": ["admin"],
-            "service_links": [],
+            "services": [],
         },
     )
 
@@ -467,7 +467,7 @@ def test_api_organizations_accounts_patch_service_link(account_test_setup, auth_
             "external_id": "1234567890",
             "type": "user",
             "roles": ["admin"],
-            "service_links": [],
+            "services": [],
         },
         format="json",
     )
@@ -508,7 +508,7 @@ def test_api_organizations_accounts_patch_service_link(account_test_setup, auth_
             "external_id": "1234567890",
             "type": "user",
             "roles": ["admin"],
-            "service_links": [
+            "services": [
                 {
                     "roles": ["admin"],
                     "service": {"id": service1.id, "name": "test-service-1"},

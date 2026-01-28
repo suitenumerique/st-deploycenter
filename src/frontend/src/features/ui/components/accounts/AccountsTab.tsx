@@ -9,9 +9,12 @@ import {
 import { Icon } from "@gouvfr-lasuite/ui-kit";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useOrganizationAccounts } from "@/hooks/useQueries";
-import { sortModelToOrdering } from "@/features/api/Repository";
-import { Account } from "@/features/api/Repository";
+import {
+  useOrganizationAccounts,
+  useOrganizationServices,
+} from "@/hooks/useQueries";
+import { sortModelToOrdering, Account } from "@/features/api/Repository";
+import { GLOBAL_ROLES, getServiceRoles } from "@/features/accounts/roles";
 import { AccountModal } from "./AccountModal";
 
 interface AccountsTabProps {
@@ -37,6 +40,11 @@ export const AccountsTab = ({
     pageSize: 20,
   });
 
+  const { data: services } = useOrganizationServices(
+    operatorId,
+    organizationId
+  );
+
   const { data: accounts, isLoading } = useOrganizationAccounts(
     operatorId,
     organizationId,
@@ -48,6 +56,24 @@ export const AccountsTab = ({
       role: roleFilter || undefined,
     }
   );
+
+  const configuredServices = services?.results?.filter(
+    (s) => s.operator_config
+  );
+
+  const roleFilterOptions = [
+    { label: t("accounts.filter.roles.all"), value: "" },
+    ...GLOBAL_ROLES.map((r) => ({
+      label: `${t("accounts.roles.global_title")} : ${t(r.labelKey)}`,
+      value: `org.${r.value}`,
+    })),
+    ...(configuredServices || []).flatMap((service) =>
+      getServiceRoles(service.type).map((r) => ({
+        label: `${service.name} : ${t(r.labelKey)}`,
+        value: `service.${service.id}.${r.value}`,
+      }))
+    ),
+  ];
 
   useEffect(() => {
     if (accounts) {
@@ -112,11 +138,7 @@ export const AccountsTab = ({
               pagination.setPage(1);
             }
           }}
-          options={[
-            { label: t("accounts.filter.roles.all"), value: "" },
-            { label: "admin", value: "admin" },
-            { label: "member", value: "member" },
-          ]}
+          options={roleFilterOptions}
         />
         <Button
           className="dc__accounts__toolbar__add"
@@ -141,22 +163,48 @@ export const AccountsTab = ({
           {
             field: "type",
             headerName: t("accounts.columns.type"),
+            size: 120,
+            renderCell: (params) => (
+              <>
+                {t(
+                  `accounts.filter.types.${params.row.type}`,
+                  params.row.type
+                )}
+              </>
+            ),
           },
           {
             field: "roles",
             headerName: t("accounts.columns.roles"),
             enableSorting: false,
-            renderCell: (params) => (
-              <>{params.row.roles?.join(", ") || "-"}</>
-            ),
-          },
-          {
-            field: "service_links",
-            headerName: t("accounts.columns.services"),
-            enableSorting: false,
-            renderCell: (params) => (
-              <>{params.row.service_links?.length || 0}</>
-            ),
+            renderCell: (params) => {
+              const account = params.row as Account;
+              const parts: string[] = [];
+
+              account.roles?.forEach((role) => {
+                const def = GLOBAL_ROLES.find((r) => r.value === role);
+                const label = def ? t(def.labelKey) : role;
+                parts.push(`${t("accounts.roles.global_title")} : ${label}`);
+              });
+
+              account.services?.forEach((link) => {
+                const serviceDefs = getServiceRoles(link.service.type);
+                link.roles?.forEach((role) => {
+                  const def = serviceDefs.find((r) => r.value === role);
+                  const label = def ? t(def.labelKey) : role;
+                  parts.push(`${link.service.name} : ${label}`);
+                });
+              });
+
+              if (parts.length === 0) return <>-</>;
+              return (
+                <div className="dc__accounts__roles-cell">
+                  {parts.map((part, i) => (
+                    <span key={i}>{part}</span>
+                  ))}
+                </div>
+              );
+            },
           },
           {
             field: "actions",

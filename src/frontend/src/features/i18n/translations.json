@@ -142,8 +142,7 @@
           "email": "Email",
           "external_id": "ID externe",
           "type": "Type",
-          "roles": "Rôles globaux",
-          "services": "Services"
+          "roles": "Rôles"
         },
         "fields": {
           "email": "Email",
@@ -158,6 +157,14 @@
         "edit_modal": {
           "title": "Modifier le compte",
           "service_roles": "Rôles par service"
+        },
+        "roles": {
+          "global_title": "Global",
+          "admin": "Administrateur",
+          "member": "Membre",
+          "service_types": {
+            "rdvsp": "RDV SP"
+          }
         }
       },
       "feedback": {

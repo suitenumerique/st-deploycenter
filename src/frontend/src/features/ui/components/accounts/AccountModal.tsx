@@ -1,5 +1,6 @@
 import {
   Button,
+  Checkbox,
   Input,
   Modal,
   ModalSize,
@@ -8,13 +9,14 @@ import {
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Account } from "@/features/api/Repository";
+import { Account, Service } from "@/features/api/Repository";
 import {
   useMutationCreateAccount,
   useMutationUpdateAccount,
   useMutationUpdateAccountServiceLink,
   useOrganizationServices,
 } from "@/hooks/useQueries";
+import { GLOBAL_ROLES, getServiceRoles } from "@/features/accounts/roles";
 
 interface AccountModalProps {
   operatorId: string;
@@ -45,9 +47,9 @@ export const AccountModal = ({
   const [email, setEmail] = useState("");
   const [externalId, setExternalId] = useState("");
   const [type, setType] = useState("user");
-  const [roles, setRoles] = useState("");
+  const [globalRoles, setGlobalRoles] = useState<string[]>([]);
   const [serviceLinkRoles, setServiceLinkRoles] = useState<
-    Record<string, string>
+    Record<string, string[]>
   >({});
   const [isLoading, setIsLoading] = useState(false);
 
@@ -58,67 +60,75 @@ export const AccountModal = ({
         setEmail(account.email);
         setExternalId(account.external_id || "");
         setType(account.type);
-        setRoles(account.roles?.join(", ") || "");
-        const initialServiceRoles: Record<string, string> = {};
-        account.service_links?.forEach((link) => {
-          initialServiceRoles[link.service.id] = link.roles?.join(", ") || "";
+        setGlobalRoles(account.roles || []);
+        const initialServiceRoles: Record<string, string[]> = {};
+        account.services?.forEach((link) => {
+          initialServiceRoles[link.service.id] = link.roles || [];
         });
         setServiceLinkRoles(initialServiceRoles);
       } else {
         setEmail("");
         setExternalId("");
         setType("user");
-        setRoles("");
+        setGlobalRoles([]);
         setServiceLinkRoles({});
       }
     }
   }, [account, isOpen]);
 
-  const activeServices = services?.results?.filter(
-    (s) => s.subscription?.is_active
+  // Show all services configured for this operator, not just active ones
+  const configuredServices = services?.results?.filter(
+    (s) => s.operator_config
   );
 
-  const getServiceLinkRoles = (serviceId: string) => {
+  const getServiceLinkRolesArray = (serviceId: string): string[] => {
     if (serviceLinkRoles[serviceId] !== undefined) {
       return serviceLinkRoles[serviceId];
     }
     if (account) {
-      const link = account.service_links?.find(
+      const link = account.services?.find(
         (l) => l.service.id === serviceId
       );
-      return link?.roles?.join(", ") || "";
+      return link?.roles || [];
     }
-    return "";
+    return [];
   };
 
-  const parseRoles = (rolesStr: string): string[] => {
-    return rolesStr
-      .split(",")
-      .map((r) => r.trim())
-      .filter(Boolean);
+  const toggleGlobalRole = (role: string) => {
+    setGlobalRoles((prev) =>
+      prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]
+    );
+  };
+
+  const toggleServiceRole = (serviceId: string, role: string) => {
+    setServiceLinkRoles((prev) => {
+      const currentRoles = prev[serviceId] || getServiceLinkRolesArray(serviceId);
+      const newRoles = currentRoles.includes(role)
+        ? currentRoles.filter((r) => r !== role)
+        : [...currentRoles, role];
+      return { ...prev, [serviceId]: newRoles };
+    });
   };
 
   const updateServiceLinks = (accountId: string): Promise<void> => {
-    const serviceUpdates = Object.entries(serviceLinkRoles)
-      .filter(([, rolesStr]) => !isEditMode || rolesStr.trim() !== "" || isEditMode)
-      .map(
-        ([serviceId, rolesStr]) =>
-          new Promise<void>((resolve, reject) => {
-            updateServiceLink(
-              {
-                operatorId,
-                organizationId,
-                accountId,
-                serviceId,
-                data: { roles: parseRoles(rolesStr) },
-              },
-              {
-                onSuccess: () => resolve(),
-                onError: (err) => reject(err),
-              }
-            );
-          })
-      );
+    const serviceUpdates = Object.entries(serviceLinkRoles).map(
+      ([serviceId, roles]) =>
+        new Promise<void>((resolve, reject) => {
+          updateServiceLink(
+            {
+              operatorId,
+              organizationId,
+              accountId,
+              serviceId,
+              data: { roles },
+            },
+            {
+              onSuccess: () => resolve(),
+              onError: (err) => reject(err),
+            }
+          );
+        })
+    );
 
     if (serviceUpdates.length === 0) {
       return Promise.resolve();
@@ -131,8 +141,6 @@ export const AccountModal = ({
     e.preventDefault();
     setIsLoading(true);
 
-    const parsedRoles = parseRoles(roles);
-
     if (isEditMode && account) {
       // Edit mode: update existing account
       updateAccount(
@@ -140,7 +148,7 @@ export const AccountModal = ({
           operatorId,
           organizationId,
           accountId: account.id,
-          data: { roles: parsedRoles },
+          data: { roles: globalRoles },
         },
         {
           onSuccess: () => {
@@ -168,13 +176,13 @@ export const AccountModal = ({
             email,
             external_id: externalId,
             type,
-            roles: parsedRoles,
+            roles: globalRoles,
           },
         },
         {
           onSuccess: (newAccount) => {
             const nonEmptyServiceRoles = Object.entries(serviceLinkRoles).filter(
-              ([, rolesStr]) => rolesStr.trim() !== ""
+              ([, roles]) => roles.length > 0
             );
 
             if (nonEmptyServiceRoles.length === 0) {
@@ -201,6 +209,45 @@ export const AccountModal = ({
   };
 
   const formId = isEditMode ? "edit-account-form" : "add-account-form";
+
+  const renderRoleCheckboxes = (
+    roles: string[],
+    availableRoles: { value: string; labelKey: string }[],
+    onToggle: (role: string) => void
+  ) => {
+    return (
+      <div className="dc__accounts__modal__roles__checkboxes">
+        {availableRoles.map((roleDef) => (
+          <Checkbox
+            key={roleDef.value}
+            label={t(roleDef.labelKey)}
+            checked={roles.includes(roleDef.value)}
+            onChange={() => onToggle(roleDef.value)}
+          />
+        ))}
+      </div>
+    );
+  };
+
+  const renderServiceRoles = (service: Service) => {
+    const serviceRoles = getServiceRoles(service.type);
+    // Skip services with no roles defined
+    if (serviceRoles.length === 0) {
+      return null;
+    }
+    const currentRoles = getServiceLinkRolesArray(service.id);
+
+    return (
+      <div key={service.id} className="dc__accounts__modal__roles__group">
+        <h5 className="dc__accounts__modal__roles__group__title">
+          {service.name}
+        </h5>
+        {renderRoleCheckboxes(currentRoles, serviceRoles, (role) =>
+          toggleServiceRole(service.id, role)
+        )}
+      </div>
+    );
+  };
 
   return (
     <Modal
@@ -294,36 +341,20 @@ export const AccountModal = ({
             </>
           )}
 
-          <Input
-            label={t("accounts.fields.roles")}
-            value={roles}
-            onChange={(e) => setRoles(e.target.value)}
-            fullWidth
-            text={t("accounts.fields.roles_help")}
-          />
-
-          {activeServices && activeServices.length > 0 && (
-            <div className="dc__accounts__edit__services">
-              <h4 className="dc__accounts__edit__services__title">
-                {t("accounts.edit_modal.service_roles")}
-              </h4>
-              {activeServices.map((service) => (
-                <Input
-                  key={service.id}
-                  label={service.name}
-                  value={getServiceLinkRoles(service.id)}
-                  onChange={(e) =>
-                    setServiceLinkRoles((prev) => ({
-                      ...prev,
-                      [service.id]: e.target.value,
-                    }))
-                  }
-                  fullWidth
-                  text={t("accounts.fields.roles_help")}
-                />
-              ))}
+          <div className="dc__accounts__modal__roles">
+            <div className="dc__accounts__modal__roles__group">
+              <h5 className="dc__accounts__modal__roles__group__title">
+                {t("accounts.roles.global_title")}
+              </h5>
+              {renderRoleCheckboxes(globalRoles, GLOBAL_ROLES, toggleGlobalRole)}
             </div>
-          )}
+
+            {configuredServices && configuredServices.length > 0 && (
+              <>
+                {configuredServices.map((service) => renderServiceRoles(service))}
+              </>
+            )}
+          </div>
         </div>
       </form>
     </Modal>

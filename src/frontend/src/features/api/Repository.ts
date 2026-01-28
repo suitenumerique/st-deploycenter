@@ -77,7 +77,6 @@ export type OtherOperatorSubscription = {
 };
 
 export type AccountServiceLink = {
-  id: string;
   roles: string[];
   service: {
     id: string;
@@ -93,7 +92,7 @@ export type Account = {
   external_id: string;
   type: string;
   roles: string[];
-  service_links: AccountServiceLink[];
+  services: AccountServiceLink[];
 };
 
 export type Service = {

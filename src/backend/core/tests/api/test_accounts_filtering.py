@@ -5,7 +5,7 @@ Test account filtering, search, and ordering API endpoints.
 import pytest
 from rest_framework.test import APIClient
 
-from core import factories
+from core import factories, models
 
 pytestmark = pytest.mark.django_db
 
@@ -79,20 +79,20 @@ def test_api_accounts_filter_by_type(filtering_setup):
     assert results[0]["type"] == "mailbox"
 
 
-def test_api_accounts_filter_by_role(filtering_setup):
-    """Filter accounts by role should return accounts containing that role."""
+def test_api_accounts_filter_by_org_role(filtering_setup):
+    """Filter by org.role should match only global/organization-level roles."""
     client = APIClient()
     client.force_login(filtering_setup["user"])
     url = _accounts_url(filtering_setup["operator"], filtering_setup["organization"])
 
-    response = client.get(url, {"role": "admin"})
+    response = client.get(url, {"role": "org.admin"})
     assert response.status_code == 200
     results = response.json()["results"]
     assert len(results) == 2
     emails = {r["email"] for r in results}
     assert emails == {"alice@example.com", "inbox@example.com"}
 
-    response = client.get(url, {"role": "viewer"})
+    response = client.get(url, {"role": "org.viewer"})
     assert response.status_code == 200
     results = response.json()["results"]
     assert len(results) == 1
@@ -150,15 +150,96 @@ def test_api_accounts_combined_filters(filtering_setup):
     client.force_login(filtering_setup["user"])
     url = _accounts_url(filtering_setup["operator"], filtering_setup["organization"])
 
-    # type=user AND role=admin => only alice
-    response = client.get(url, {"type": "user", "role": "admin"})
+    # type=user AND role=org.admin => only alice
+    response = client.get(url, {"type": "user", "role": "org.admin"})
     assert response.status_code == 200
     results = response.json()["results"]
     assert len(results) == 1
     assert results[0]["email"] == "alice@example.com"
 
-    # type=user AND role=admin AND search=bob => no results
-    response = client.get(url, {"type": "user", "role": "admin", "search": "bob"})
+    # type=user AND role=org.admin AND search=bob => no results
+    response = client.get(url, {"type": "user", "role": "org.admin", "search": "bob"})
     assert response.status_code == 200
     results = response.json()["results"]
     assert len(results) == 0
+
+
+def test_api_accounts_filter_by_service_role(filtering_setup):
+    """Filter by service.<id>.role should only match service link roles."""
+    client = APIClient()
+    client.force_login(filtering_setup["user"])
+    url = _accounts_url(filtering_setup["operator"], filtering_setup["organization"])
+
+    service = factories.ServiceFactory()
+
+    # bob has no global "admin" role, but has "admin" in a service link
+    models.AccountServiceLink.objects.create(
+        account=filtering_setup["account2"],
+        service=service,
+        roles=["admin"],
+    )
+
+    # Filter by service.<id>.admin should return only bob
+    response = client.get(url, {"role": f"service.{service.id}.admin"})
+    assert response.status_code == 200
+    results = response.json()["results"]
+    assert len(results) == 1
+    assert results[0]["email"] == "bob@example.com"
+
+    # Filter by org.admin should NOT return bob
+    response = client.get(url, {"role": "org.admin"})
+    assert response.status_code == 200
+    results = response.json()["results"]
+    emails = {r["email"] for r in results}
+    assert "bob@example.com" not in emails
+    assert emails == {"alice@example.com", "inbox@example.com"}
+
+
+def test_api_accounts_filter_by_service_role_scoped_to_service(filtering_setup):
+    """Filter by service.<id>.role should not match roles in other services."""
+    client = APIClient()
+    client.force_login(filtering_setup["user"])
+    url = _accounts_url(filtering_setup["operator"], filtering_setup["organization"])
+
+    service_a = factories.ServiceFactory()
+    service_b = factories.ServiceFactory()
+
+    models.AccountServiceLink.objects.create(
+        account=filtering_setup["account1"],
+        service=service_a,
+        roles=["admin"],
+    )
+    models.AccountServiceLink.objects.create(
+        account=filtering_setup["account2"],
+        service=service_b,
+        roles=["admin"],
+    )
+
+    # Filter on service_a should only return account1
+    response = client.get(url, {"role": f"service.{service_a.id}.admin"})
+    assert response.status_code == 200
+    results = response.json()["results"]
+    assert len(results) == 1
+    assert results[0]["email"] == "alice@example.com"
+
+    # Filter on service_b should only return account2
+    response = client.get(url, {"role": f"service.{service_b.id}.admin"})
+    assert response.status_code == 200
+    results = response.json()["results"]
+    assert len(results) == 1
+    assert results[0]["email"] == "bob@example.com"
+
+
+def test_api_accounts_filter_invalid_role_format(filtering_setup):
+    """Invalid role format should return no results."""
+    client = APIClient()
+    client.force_login(filtering_setup["user"])
+    url = _accounts_url(filtering_setup["operator"], filtering_setup["organization"])
+
+    response = client.get(url, {"role": "admin"})
+    assert response.status_code == 200
+    assert len(response.json()["results"]) == 0
+
+    response = client.get(url, {"role": "invalid"})
+    assert response.status_code == 200
+    assert len(response.json()["results"]) == 0
