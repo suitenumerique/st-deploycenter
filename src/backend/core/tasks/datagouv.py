@@ -61,6 +61,7 @@ def upload_deployment_metrics_dataset():
     metrics_qs = (
         Metric.objects.select_related("organization", "service")
         .filter(organization__population__gt=0)
+        .filter(organization__type__in=["commune", "epci", "departement", "region"])
         .exclude(organization__siret__isnull=True)
         .exclude(organization__siret="")
         .filter(service__is_active=True)
