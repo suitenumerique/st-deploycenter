@@ -3,6 +3,8 @@ API endpoints for Operator model.
 """
 
 from rest_framework import viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
 
 from core import models
 
@@ -17,6 +19,9 @@ class OperatorViewSet(viewsets.ReadOnlyModelViewSet):
 
     GET /api/v1.0/operators/<operator_id>
         Return the operator with the given id based on the user's permissions.
+
+    GET /api/v1.0/operators/<operator_id>/services/
+        Return the list of services configured for this operator.
     """
 
     queryset = models.Operator.objects.all()
@@ -35,3 +40,13 @@ class OperatorViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_serializer_class(self):
         return serializers.OperatorSerializer
+
+    @action(detail=True, methods=["get"])
+    def services(self, request, pk=None):
+        """Return the list of services configured for this operator."""
+        services = models.Service.objects.filter(
+            is_active=True,
+            operatorserviceconfig__operator_id=pk,
+        ).order_by("name")
+        serializer = serializers.ServiceLightSerializer(services, many=True)
+        return Response({"results": serializer.data})

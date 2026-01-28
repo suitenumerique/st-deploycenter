@@ -576,6 +576,11 @@ class AccountServiceLinkSerializer(serializers.ModelSerializer):
     """Serialize account service links."""
 
     service = ServiceLightSerializer(read_only=True)
+    roles = serializers.ListField(
+        child=serializers.CharField(max_length=100),
+        required=False,
+        default=list,
+    )
 
     class Meta:
         model = models.AccountServiceLink
@@ -587,6 +592,11 @@ class AccountSerializer(serializers.ModelSerializer):
     """Serialize accounts."""
 
     service_links = AccountServiceLinkSerializer(many=True, read_only=True)
+    roles = serializers.ListField(
+        child=serializers.CharField(max_length=100),
+        required=False,
+        default=list,
+    )
 
     class Meta:
         model = models.Account

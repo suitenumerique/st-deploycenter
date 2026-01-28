@@ -16,14 +16,11 @@ import {
 import { Badge, Icon } from "@gouvfr-lasuite/ui-kit";
 import { RpntBadge } from "@/features/ui/components/organization/RpntBadge";
 import Link from "next/link";
-import { useOperatorOrganizations } from "@/hooks/useQueries";
+import { useOperatorOrganizations, useOperatorServices } from "@/hooks/useQueries";
 import { Breadcrumbs } from "@/features/ui/components/breadcrumbs/Breadcrumbs";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useBreadcrumbOperator } from "@/features/ui/components/breadcrumbs/Parts";
-import {
-  sortModelToOrdering,
-  orderingToSortModel,
-} from "@/features/api/Repository";
+import { sortModelToOrdering } from "@/features/api/Repository";
 
 export default function Operator() {
   const router = useRouter();
@@ -35,45 +32,16 @@ export default function Operator() {
     operatorQuery: { isLoading: isOperatorLoading },
   } = useOperatorContext();
 
-  // Read page from URL query parameters, default to 1 if invalid
-  const queryParamsPage = useMemo(() => {
-    const pageParam = router.query.page;
-    if (typeof pageParam === "string") {
-      const page = parseInt(pageParam, 10);
-      return isNaN(page) || page < 1 ? 1 : page;
-    }
-    return 1;
-  }, [router.query.page]);
-
-  // Read search from URL query parameters, default to empty string
-  const queryParamsSearch = useMemo(() => {
-    const searchParam = router.query.search;
-    return typeof searchParam === "string" ? searchParam : "";
-  }, [router.query.search]);
-
-  // Read sort ordering from URL query parameters, default to empty array
-  const queryParamsSortModel = useMemo(() => {
-    const orderingParam = router.query.ordering;
-    if (typeof orderingParam === "string" && orderingParam.trim() !== "") {
-      return orderingToSortModel(orderingParam);
-    }
-    return [];
-  }, [router.query.ordering]);
-
-  // Read type filter from URL query parameters, default to empty string
-  const queryParamsType = useMemo(() => {
-    const typeParam = router.query.type;
-    return typeof typeParam === "string" ? typeParam : "";
-  }, [router.query.type]);
-
-  const [sortModel, setSortModel] = useState<SortModel>(queryParamsSortModel);
-
-  const [search, setSearch] = useState(queryParamsSearch);
-  const [typeFilter, setTypeFilter] = useState(queryParamsType);
+  const [sortModel, setSortModel] = useState<SortModel>([]);
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [serviceFilter, setServiceFilter] = useState("");
   const pagination = usePagination({
-    defaultPage: queryParamsPage,
+    defaultPage: 1,
     pageSize: 20,
   });
+
+  const { data: operatorServices } = useOperatorServices(operatorId);
 
   const { data: organizations, isLoading } = useOperatorOrganizations(
     operatorId,
@@ -82,6 +50,7 @@ export default function Operator() {
       search,
       ordering: sortModelToOrdering(sortModel),
       type: typeFilter || undefined,
+      service: serviceFilter || undefined,
     }
   );
 
@@ -93,74 +62,6 @@ export default function Operator() {
       );
     }
   }, [organizations]);
-
-  // Update URL when filters changes.
-  useEffect(() => {
-    const newQuery = { ...router.query };
-    let updated = false;
-    if (search !== queryParamsSearch) {
-      if (search === "") {
-        // Remove search parameter if it's empty
-        delete newQuery.search;
-      } else {
-        newQuery.search = search;
-      }
-      updated = true;
-    }
-
-    if (pagination.page !== queryParamsPage) {
-      if (pagination.page === 1) {
-        // Remove page parameter if it's page 1
-        delete newQuery.page;
-      } else {
-        newQuery.page = pagination.page.toString();
-      }
-      updated = true;
-    }
-
-    const currentOrdering = sortModelToOrdering(queryParamsSortModel);
-    const newOrdering = sortModelToOrdering(sortModel);
-    if (newOrdering !== currentOrdering) {
-      if (newOrdering === "") {
-        // Remove ordering parameter if it's empty
-        delete newQuery.ordering;
-      } else {
-        newQuery.ordering = newOrdering;
-      }
-      updated = true;
-    }
-
-    if (typeFilter !== queryParamsType) {
-      if (typeFilter === "") {
-        // Remove type parameter if it's empty
-        delete newQuery.type;
-      } else {
-        newQuery.type = typeFilter;
-      }
-      updated = true;
-    }
-
-    if (updated) {
-      router.replace(
-        {
-          pathname: router.pathname,
-          query: newQuery,
-        },
-        undefined,
-        { shallow: true }
-      );
-    }
-  }, [
-    search,
-    queryParamsSearch,
-    pagination.page,
-    queryParamsPage,
-    sortModel,
-    queryParamsSortModel,
-    typeFilter,
-    queryParamsType,
-    router,
-  ]);
 
   const breadcrumbOperator = useBreadcrumbOperator(
     operatorId,
@@ -211,25 +112,44 @@ export default function Operator() {
           value={search}
           onChange={onSearchChange}
         />
-        <Select
-          label={t("organizations.filter.type")}
-          value={typeFilter}
-          onChange={(e) => {
-            setTypeFilter((e.target.value as string) || "");
-            // Reset pagination to page 1 when filter changes
-            if (pagination.page !== 1) {
-              pagination.setPage(1);
-            }
-          }}
-          options={[
-            { label: t("organizations.filter.types.all_types"), value: "" },
-            { label: t("organizations.filter.types.commune"), value: "commune" },
-            { label: t("organizations.filter.types.epci"), value: "epci" },
-            { label: t("organizations.filter.types.departement"), value: "departement" },
-            { label: t("organizations.filter.types.region"), value: "region" },
-            { label: t("organizations.filter.types.other"), value: "other" },
-          ]}
-        />
+        <div className="dc__organizations__search__filters">
+          <Select
+            label={t("organizations.filter.type")}
+            value={typeFilter}
+            onChange={(e) => {
+              setTypeFilter((e.target.value as string) || "");
+              // Reset pagination to page 1 when filter changes
+              if (pagination.page !== 1) {
+                pagination.setPage(1);
+              }
+            }}
+            options={[
+              { label: t("organizations.filter.types.all_types"), value: "" },
+              { label: t("organizations.filter.types.commune"), value: "commune" },
+              { label: t("organizations.filter.types.epci"), value: "epci" },
+              { label: t("organizations.filter.types.departement"), value: "departement" },
+              { label: t("organizations.filter.types.region"), value: "region" },
+              { label: t("organizations.filter.types.other"), value: "other" },
+            ]}
+          />
+          <Select
+            label={t("organizations.filter.service")}
+            value={serviceFilter}
+            onChange={(e) => {
+              setServiceFilter((e.target.value as string) || "");
+              if (pagination.page !== 1) {
+                pagination.setPage(1);
+              }
+            }}
+            options={[
+              { label: t("organizations.filter.services.all"), value: "" },
+              ...(operatorServices?.results || []).map((service) => ({
+                label: service.name,
+                value: service.id,
+              })),
+            ]}
+          />
+        </div>
       </div>
       <DataGrid
         className="dc__organizations__list"

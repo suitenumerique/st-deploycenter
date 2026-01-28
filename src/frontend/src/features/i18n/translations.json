@@ -24,6 +24,10 @@
         "rpnt": {
           "yes": "Oui"
         },
+        "tabs": {
+          "services": "Services",
+          "accounts": "Comptes"
+        },
         "services": {
           "title": "Services",
           "subtitle": "Liste des services disponibles pour cette collectivité",
@@ -111,8 +115,59 @@
             "departement": "Département",
             "region": "Région",
             "other": "Autre"
+          },
+          "service": "Filtrer par service",
+          "services": {
+            "all": "Tous les services"
           }
         }
+      },
+      "accounts": {
+        "search": "Rechercher un compte",
+        "empty": "Aucun compte trouvé",
+        "add": "Ajouter",
+        "filter": {
+          "type": "Type",
+          "types": {
+            "all": "Tous",
+            "user": "Utilisateur",
+            "mailbox": "Boîte mail"
+          },
+          "role": "Rôle",
+          "roles": {
+            "all": "Tous"
+          }
+        },
+        "columns": {
+          "email": "Email",
+          "external_id": "ID externe",
+          "type": "Type",
+          "roles": "Rôles globaux",
+          "services": "Services"
+        },
+        "fields": {
+          "email": "Email",
+          "external_id": "ID externe",
+          "type": "Type",
+          "roles": "Rôles globaux",
+          "roles_help": "Séparés par des virgules (ex: admin, member)"
+        },
+        "add_modal": {
+          "title": "Ajouter un compte"
+        },
+        "edit_modal": {
+          "title": "Modifier le compte",
+          "service_roles": "Rôles par service"
+        }
+      },
+      "feedback": {
+        "title": "Vous avez un retour ?",
+        "placeholder": "Partagez votre retour ici...",
+        "email_placeholder": "Votre email...",
+        "submit": "Envoyer",
+        "success": "Merci pour votre retour !",
+        "success2": "En cas de questions, nous reviendrons vers vous rapidement.",
+        "close": "Fermer le formulaire de feedback"
       },
       "api": {
         "error": {

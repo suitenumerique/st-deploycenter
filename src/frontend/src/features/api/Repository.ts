@@ -76,6 +76,26 @@ export type OtherOperatorSubscription = {
   created_at: string;
 };
 
+export type AccountServiceLink = {
+  id: string;
+  roles: string[];
+  service: {
+    id: string;
+    name: string;
+    instance_name: string;
+    type: string;
+  };
+};
+
+export type Account = {
+  id: string;
+  email: string;
+  external_id: string;
+  type: string;
+  roles: string[];
+  service_links: AccountServiceLink[];
+};
+
 export type Service = {
   id: string;
   name: string;
@@ -126,6 +146,21 @@ export const getOperator = async (operatorId: string): Promise<Operator> => {
   return data;
 };
 
+export type ServiceLight = {
+  id: string;
+  name: string;
+  instance_name: string;
+  type: string;
+};
+
+export const getOperatorServices = async (
+  operatorId: string
+): Promise<{ results: ServiceLight[] }> => {
+  const response = await fetchAPI(`operators/${operatorId}/services/`);
+  const data = (await response.json()) as { results: ServiceLight[] };
+  return data;
+};
+
 export const getOperatorOrganizations = async (
   operatorId: string,
   params: {
@@ -133,6 +168,7 @@ export const getOperatorOrganizations = async (
     search?: string;
     ordering?: string;
     type?: string;
+    service?: string;
   }
 ): Promise<PaginatedResponse<Organization>> => {
   const url = new URL(`/`, window.location.origin);
@@ -208,4 +244,67 @@ export const updateEntitlement = async (
   });
   const entitlement = (await response.json()) as Entitlement;
   return entitlement;
+};
+
+export const getOrganizationAccounts = async (
+  operatorId: string,
+  organizationId: string,
+  params: {
+    page?: number;
+    search?: string;
+    ordering?: string;
+    type?: string;
+    role?: string;
+  }
+): Promise<PaginatedResponse<Account>> => {
+  const url = new URL(`/`, window.location.origin);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value) url.searchParams.append(key, value.toString());
+  });
+  const response = await fetchAPI(
+    `operators/${operatorId}/organizations/${organizationId}/accounts/` +
+      url.search
+  );
+  return (await response.json()) as PaginatedResponse<Account>;
+};
+
+export const createOrganizationAccount = async (
+  operatorId: string,
+  organizationId: string,
+  data: { email: string; external_id: string; type: string; roles: string[] }
+): Promise<Account> => {
+  const response = await fetchAPI(
+    `operators/${operatorId}/organizations/${organizationId}/accounts/`,
+    {
+      method: "POST",
+      body: JSON.stringify(data),
+    }
+  );
+  return (await response.json()) as Account;
+};
+
+export const updateAccount = async (
+  accountId: string,
+  data: Partial<Pick<Account, "roles">>
+): Promise<Account> => {
+  const response = await fetchAPI(`accounts/${accountId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+  return (await response.json()) as Account;
+};
+
+export const updateAccountServiceLink = async (
+  accountId: string,
+  serviceId: string,
+  data: { roles: string[] }
+): Promise<AccountServiceLink> => {
+  const response = await fetchAPI(
+    `accounts/${accountId}/services/${serviceId}/`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }
+  );
+  return (await response.json()) as AccountServiceLink;
 };
