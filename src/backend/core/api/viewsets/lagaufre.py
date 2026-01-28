@@ -56,7 +56,13 @@ class LagaufreViewSet(viewsets.ViewSet):
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        operator = models.Operator.objects.get(id=operator_id)
+        try:
+            operator = models.Operator.objects.get(id=operator_id)
+        except models.Operator.DoesNotExist:
+            return Response(
+                {"error": "Operator not found", "services": []},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
         # Validate organization identifier using serializer
         serializer = serializers.OrganizationIdentifierSerializer(

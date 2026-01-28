@@ -1,6 +1,5 @@
 """API filters for deploycenter core application."""
 
-
 import django_filters
 
 from core import models

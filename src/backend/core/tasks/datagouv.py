@@ -81,6 +81,13 @@ def upload_deployment_metrics_dataset():
 
     logger.info("Produced %s data rows", len(data))
 
+    if not data:
+        logger.info("No metrics to upload after filters; skipping data.gouv upload")
+        return {
+            "status": "success",
+            "message": "No data to upload",
+        }
+
     unique_services = {row["service"] for row in data.values()}
     for service_id in unique_services:
         # Services might have different criteria to define if they are active. For now, we consider yau>0.

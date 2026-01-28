@@ -94,11 +94,12 @@ export const AccountsTab = ({
   }, []);
 
   const onSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
     if (searchTimeout.current) {
       clearTimeout(searchTimeout.current);
     }
     searchTimeout.current = setTimeout(() => {
-      setSearch(e.target.value);
+      setSearch(value);
       if (pagination.page !== 1) {
         pagination.setPage(1);
       }

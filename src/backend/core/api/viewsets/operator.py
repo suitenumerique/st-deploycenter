@@ -44,6 +44,9 @@ class OperatorViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=["get"])
     def services(self, request, pk=None):
         """Return the list of services configured for this operator."""
+        # Ensure the user has access to this operator
+        self.get_object()
+
         services = models.Service.objects.filter(
             is_active=True,
             operatorserviceconfig__operator_id=pk,

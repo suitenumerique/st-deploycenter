@@ -81,11 +81,12 @@ export default function Operator() {
   }, []);
 
   const onSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
     if (searchTimeout.current) {
       clearTimeout(searchTimeout.current);
     }
     searchTimeout.current = setTimeout(() => {
-      setSearch(e.target.value);
+      setSearch(value);
       // Reset pagination to page 1 when search changes
       if (pagination.page !== 1) {
         pagination.setPage(1);
@@ -109,7 +110,6 @@ export default function Operator() {
           icon={<Icon name="search" />}
           label={t("organizations.search")}
           fullWidth
-          value={search}
           onChange={onSearchChange}
         />
         <div className="dc__organizations__search__filters">

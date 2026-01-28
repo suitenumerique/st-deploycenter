@@ -255,7 +255,6 @@ class OrganizationServiceSubscriptionEntitlementViewSet(
     authentication_classes = [
         ExternalManagementApiKeyAuthentication,
     ] + [*api_settings.DEFAULT_AUTHENTICATION_CLASSES]
-    # TODO: Check permission on entitlement id
     permission_classes = [
         permissions.IsAuthenticatedWithAnyMethod,
         permissions.OperatorAndOrganizationAccessPermission,
