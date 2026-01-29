@@ -41,6 +41,7 @@ def get_entitlements_by_priority(entitlements):
 def get_context_account(context, throw_not_found=True):
     """
     Get the account for the given context.
+    Uses find_by_identifiers to look up by external_id first, then email fallback.
     """
     if not context.get("organization"):
         raise ValueError(
@@ -50,21 +51,17 @@ def get_context_account(context, throw_not_found=True):
         raise ValueError(
             f"Account type is required for the given context. Service {context['service'].name}, organization {context['organization'].name}"
         )
-    query = models.Account.objects.filter(
-        type=context["account_type"],
+    account = models.Account.find_by_identifiers(
         organization=context["organization"],
+        account_type=context["account_type"],
+        external_id=context.get("account_id") or "",
+        email=context.get("account_email") or "",
     )
-    unique_identifier, unique_identifier_value = get_context_account_unique_identifier(
-        context
-    )
-    query = query.filter(
-        **{unique_identifier: unique_identifier_value},
-    )
-    account = query.first()
     if not account and throw_not_found:
-        account_filters = {unique_identifier: unique_identifier_value}
         raise ValueError(
-            f"Account not found for the given context. Service {context['service'].name}, organization {context['organization'].name}, account type {context['account_type']}, account filters {account_filters}"
+            f"Account not found for the given context. Service {context['service'].name}, "
+            f"organization {context['organization'].name}, account type {context['account_type']}, "
+            f"account_id {context.get('account_id')}, account_email {context.get('account_email')}"
         )
     return account
 

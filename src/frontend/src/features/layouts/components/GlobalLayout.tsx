@@ -4,6 +4,7 @@ import { HeaderRight } from "./header/Header";
 import { HeaderIcon } from "./header/Header";
 import { LeftPanelMobile } from "./left-panel/LeftPanelMobile";
 import { Toaster } from "@/features/ui/components/toaster/Toaster";
+import { FeedbackWidget } from "@/features/ui/components/feedback-widget";
 import { createContext, useContext } from "react";
 import { Operator } from "@/features/api/Repository";
 import { UseQueryResult } from "@tanstack/react-query";
@@ -38,6 +39,7 @@ export const GlobalExplorerLayout = ({
         >
           {children}
           <Toaster />
+          <FeedbackWidget />
         </MainLayout>
       </OperatorContextProvider>
     </GlobalLayout>

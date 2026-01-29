@@ -8,17 +8,21 @@ import { useOrganization, useOrganizationServices } from "@/hooks/useQueries";
 import { useTranslation } from "react-i18next";
 import { SERVICE_TYPE_PROCONNECT } from "@/features/api/Repository";
 import { Breadcrumbs } from "@/features/ui/components/breadcrumbs/Breadcrumbs";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useBreadcrumbOperator } from "@/features/ui/components/breadcrumbs/Parts";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { RpntBadge } from "@/features/ui/components/organization/RpntBadge";
 import { ServiceBlockDispatcher } from "@/features/ui/components/service/ServiceBlockDispatcher";
+import { AccountsTab } from "@/features/ui/components/accounts/AccountsTab";
+
+type Tab = "services" | "accounts";
 
 export default function Organization() {
   const router = useRouter();
   const operatorId = router.query.operator_id as string;
   const organizationId = router.query.id as string;
   const { t } = useTranslation();
+  const [activeTab, setActiveTab] = useState<Tab>("services");
   const {
     operator,
     operatorQuery: { isLoading: isOperatorLoading },
@@ -79,7 +83,9 @@ export default function Organization() {
             ]}
           />
           <div className="dc__container__content__subtitle">
-            {t("organizations.services.subtitle")}
+            {activeTab === "services"
+              ? t("organizations.services.subtitle")
+              : t("accounts.search")}
           </div>
         </>
       }
@@ -169,23 +175,45 @@ export default function Organization() {
           <div className="dc__organization__header__image"></div>
         </div>
       </div>
-      <div
-        className={`dc__services__list ${
-          isServicesFetching ? "dc__services__list--fetching" : ""
-        }`}
-      >
-        {isServicesLoading || !organization || !operator ? (
-          <Spinner />
-        ) : (
-          servicesOrdered?.map((service) => (
-            <ServiceBlockDispatcher
-              key={service.id}
-              service={service}
-              organization={organization}
-            />
-          ))
-        )}
+      <div className="dc__organization__tabs">
+        <button
+          className={`dc__organization__tabs__tab ${activeTab === "services" ? "dc__organization__tabs__tab--active" : ""}`}
+          onClick={() => setActiveTab("services")}
+        >
+          {t("organizations.tabs.services")}
+        </button>
+        <button
+          className={`dc__organization__tabs__tab ${activeTab === "accounts" ? "dc__organization__tabs__tab--active" : ""}`}
+          onClick={() => setActiveTab("accounts")}
+        >
+          {t("organizations.tabs.accounts")}
+        </button>
       </div>
+      {activeTab === "services" && (
+        <div
+          className={`dc__services__list ${
+            isServicesFetching ? "dc__services__list--fetching" : ""
+          }`}
+        >
+          {isServicesLoading || !organization || !operator ? (
+            <Spinner />
+          ) : (
+            servicesOrdered?.map((service) => (
+              <ServiceBlockDispatcher
+                key={service.id}
+                service={service}
+                organization={organization}
+              />
+            ))
+          )}
+        </div>
+      )}
+      {activeTab === "accounts" && (
+        <AccountsTab
+          operatorId={operatorId}
+          organizationId={organizationId}
+        />
+      )}
     </Container>
   );
 }

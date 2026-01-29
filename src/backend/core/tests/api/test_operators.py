@@ -91,6 +91,42 @@ def test_api_operators_retrieve_authenticated_no_role():
     assert response.json() == {"detail": "No Operator matches the given query."}
 
 
+def test_api_operators_services_no_role():
+    """Users should not be able to list services for an operator they have no role on."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    other_operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    service = factories.ServiceFactory(is_active=True)
+    factories.OperatorServiceConfigFactory(operator=other_operator, service=service)
+
+    response = client.get(f"/api/v1.0/operators/{other_operator.id}/services/")
+    assert response.status_code == 404
+
+
+def test_api_operators_services_with_role():
+    """Users should be able to list services for an operator they have a role on."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    service = factories.ServiceFactory(is_active=True)
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    response = client.get(f"/api/v1.0/operators/{operator.id}/services/")
+    assert response.status_code == 200
+    results = response.json()["results"]
+    assert len(results) == 1
+    assert results[0]["id"] == service.id
+
+
 def test_api_operators_exposed_config():
     """Test that the exposed config is the expected one."""
     user = factories.UserFactory()

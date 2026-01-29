@@ -1015,6 +1015,15 @@ class MetricAdmin(admin.ModelAdmin):
     )
 
 
+class AccountServiceLinkInline(admin.TabularInline):
+    """Inline admin for AccountServiceLink inside AccountAdmin."""
+
+    model = models.AccountServiceLink
+    extra = 0
+    readonly_fields = ("id", "created_at", "updated_at")
+    autocomplete_fields = ["service"]
+
+
 @admin.register(models.Account)
 class AccountAdmin(admin.ModelAdmin):
     """Admin class for the Account model"""
@@ -1025,6 +1034,23 @@ class AccountAdmin(admin.ModelAdmin):
     ordering = ("organization__name", "type", "external_id")
     readonly_fields = ("id", "created_at", "updated_at")
     autocomplete_fields = ["organization"]
+    inlines = [AccountServiceLinkInline]
+
+
+@admin.register(models.AccountServiceLink)
+class AccountServiceLinkAdmin(admin.ModelAdmin):
+    """Admin class for the AccountServiceLink model"""
+
+    list_display = ("id", "account", "service", "roles")
+    list_filter = ("service",)
+    search_fields = (
+        "account__email",
+        "account__external_id",
+        "service__name",
+    )
+    ordering = ("account__email", "service__name")
+    readonly_fields = ("id", "created_at", "updated_at")
+    autocomplete_fields = ["account", "service"]
 
 
 @admin.register(models.Entitlement)

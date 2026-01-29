@@ -4,7 +4,8 @@ API endpoints for Account model.
 
 from django.shortcuts import get_object_or_404
 
-from rest_framework import mixins, viewsets
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import filters, mixins, viewsets
 from rest_framework import permissions as drf_permissions
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
@@ -13,6 +14,7 @@ from rest_framework.settings import api_settings
 
 from core import models
 from core.api import permissions, serializers
+from core.api.filters import AccountFilter
 from core.authentication import ExternalManagementApiKeyAuthentication
 
 
@@ -26,6 +28,7 @@ class OrganizationAccountsViewSet(
 
     GET /api/v1.0/operators/<operator_id>/organizations/<organization_id>/accounts/
         Get the accounts for the given organization.
+        Supports filtering by type, role, and search by email/external_id.
     """
 
     queryset = models.Account.objects.all()
@@ -37,11 +40,20 @@ class OrganizationAccountsViewSet(
         permissions.IsAuthenticatedWithAnyMethod,
         permissions.OperatorAndOrganizationAccessPermission,
     ]
+    filter_backends = [
+        DjangoFilterBackend,
+        filters.SearchFilter,
+        filters.OrderingFilter,
+    ]
+    filterset_class = AccountFilter
+    search_fields = ["email", "external_id"]
+    ordering_fields = ["email", "external_id", "type", "created_at"]
+    ordering = ["created_at"]
 
     def get_queryset(self):
         return models.Account.objects.filter(
             organization=self.kwargs["organization_id"]
-        )
+        ).prefetch_related("service_links", "service_links__service")
 
     def get_serializer_context(self):
         """Add organization_id to serializer context."""

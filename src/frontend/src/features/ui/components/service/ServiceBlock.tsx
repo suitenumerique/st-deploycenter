@@ -1,4 +1,8 @@
-import { Organization, ServiceSubscription } from "@/features/api/Repository";
+import {
+  Organization,
+  OtherOperatorSubscription,
+  ServiceSubscription,
+} from "@/features/api/Repository";
 import { useTranslation } from "react-i18next";
 import { Service } from "@/features/api/Repository";
 import { Button, Switch, Tooltip, useModals } from "@openfun/cunningham-react";
@@ -122,6 +126,8 @@ export type ServiceBlockProps = {
   showGoto?: boolean;
   entitlementsFields?: EntitlementsFields;
   confirmationText?: React.ReactNode;
+  isManagedByOtherOperator?: boolean;
+  managingOperatorSubscription?: OtherOperatorSubscription;
 } & ReturnType<typeof useServiceBlock>;
 
 export const ServiceBlock = (props: ServiceBlockProps) => {
@@ -133,7 +139,22 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
     props.service.activation_blocked_reason === "population_limit_exceeded";
   const isMissingRequiredServices =
     props.service.activation_blocked_reason === "missing_required_services";
-  const canSwitch = !isExternallyManaged && props.service.can_activate && !props.disabled;
+  const isManagedByOtherOperator = props.isManagedByOtherOperator ?? false;
+  const canSwitch =
+    !isExternallyManaged &&
+    props.service.can_activate &&
+    !props.disabled &&
+    !isManagedByOtherOperator;
+
+  const disabledReason = isExternallyManaged
+    ? t("organizations.services.externally_managed")
+    : isPopulationLimitExceeded
+      ? t("organizations.services.population_limit_exceeded")
+      : isMissingRequiredServices
+        ? t("organizations.services.missing_required_services")
+        : isManagedByOtherOperator
+          ? t("organizations.services.managed_by_other_operator")
+          : t("organizations.services.cannot_activate");
 
   return (
     <div
@@ -141,6 +162,13 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
         !canSwitch ? "dc__service__block--disabled" : ""
       }`}
     >
+      {isManagedByOtherOperator && props.managingOperatorSubscription && (
+        <div className="dc__service__block__other-operator-banner">
+          {t("organizations.services.managed_by", {
+            operator: props.managingOperatorSubscription.operator_name,
+          })}
+        </div>
+      )}
       <div className="dc__service__block__header">
         <div className="dc__service__block__header__title">
           {props.service.logo && (
@@ -215,30 +243,12 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
             }}
           />
         ) : (
-          <Tooltip
-            content={t(
-              isExternallyManaged
-                ? "organizations.services.externally_managed"
-                : isPopulationLimitExceeded
-                ? "organizations.services.population_limit_exceeded"
-                : isMissingRequiredServices
-                ? "organizations.services.missing_required_services"
-                : "organizations.services.cannot_activate"
-            )}
-          >
+          <Tooltip content={disabledReason}>
             <div
               className="dc__service__block__switch-wrapper"
               role="button"
               tabIndex={0}
-              aria-label={
-                isExternallyManaged
-                  ? t("organizations.services.externally_managed")
-                  : isPopulationLimitExceeded
-                  ? t("organizations.services.population_limit_exceeded")
-                  : isMissingRequiredServices
-                  ? t("organizations.services.missing_required_services")
-                  : t("organizations.services.cannot_activate")
-              }
+              aria-label={disabledReason}
             >
               <Switch checked={props.checked} disabled={true} />
             </div>

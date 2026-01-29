@@ -24,6 +24,10 @@
         "rpnt": {
           "yes": "Oui"
         },
+        "tabs": {
+          "services": "Services",
+          "accounts": "Comptes"
+        },
         "services": {
           "title": "Services",
           "subtitle": "Liste des services disponibles pour cette collectivité",
@@ -34,6 +38,8 @@
           },
           "goto": "Accéder au service",
           "externally_managed": "Ce service est géré de manière externe et ne peut pas être modifié ici.",
+          "managed_by": "Opéré par {{operator}}",
+          "managed_by_other_operator": "Ce service est géré par un autre opérateur.",
           "cannot_activate": "Ce service ne peut pas être activé pour cette collectivité.",
           "population_limit_exceeded": "Ce service est uniquement disponible pour les communes de moins de 3 500 habitants ou les EPCI de moins de 15 000 habitants.",
           "missing_required_services": "Ce service ne peut pas être activé pour cette collectivité. ProConnect est requis.",
@@ -109,8 +115,66 @@
             "departement": "Département",
             "region": "Région",
             "other": "Autre"
+          },
+          "service": "Filtrer par service",
+          "services": {
+            "all": "Tous les services"
           }
         }
+      },
+      "accounts": {
+        "search": "Rechercher un compte",
+        "empty": "Aucun compte trouvé",
+        "add": "Ajouter",
+        "filter": {
+          "type": "Type",
+          "types": {
+            "all": "Tous",
+            "user": "Utilisateur",
+            "mailbox": "Boîte mail"
+          },
+          "role": "Rôle",
+          "roles": {
+            "all": "Tous"
+          }
+        },
+        "columns": {
+          "email": "Email",
+          "external_id": "ID externe",
+          "type": "Type",
+          "roles": "Rôles"
+        },
+        "fields": {
+          "email": "Email",
+          "external_id": "ID externe",
+          "type": "Type",
+          "roles": "Rôles globaux",
+          "roles_help": "Séparés par des virgules (ex: admin, member)"
+        },
+        "add_modal": {
+          "title": "Ajouter un compte"
+        },
+        "edit_modal": {
+          "title": "Modifier le compte",
+          "service_roles": "Rôles par service"
+        },
+        "roles": {
+          "global_title": "Global",
+          "admin": "Administrateur",
+          "member": "Membre",
+          "service_types": {
+            "rdvsp": "RDV SP"
+          }
+        }
+      },
+      "feedback": {
+        "title": "Vous avez un retour ?",
+        "placeholder": "Partagez votre retour ici...",
+        "email_placeholder": "Votre email...",
+        "submit": "Envoyer",
+        "success": "Merci pour votre retour !",
+        "success2": "En cas de questions, nous reviendrons vers vous rapidement.",
+        "close": "Fermer le formulaire de feedback"
       },
       "api": {
         "error": {

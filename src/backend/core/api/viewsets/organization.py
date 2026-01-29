@@ -51,6 +51,15 @@ class OperatorOrganizationViewSet(viewsets.ReadOnlyModelViewSet):
             type_filter = self.request.query_params.get("type")
             queryset = queryset.filter(type=type_filter)
 
+        # Filter by service if provided (organizations with active subscription to this service)
+        if self.request.query_params.get("service"):
+            service_filter = self.request.query_params.get("service")
+            queryset = queryset.filter(
+                service_subscriptions__service_id=service_filter,
+                service_subscriptions__operator_id=self.kwargs["operator_id"],
+                service_subscriptions__is_active=True,
+            )
+
         if self.request.query_params.get("search"):
             search_query = self.request.query_params.get("search")
 
