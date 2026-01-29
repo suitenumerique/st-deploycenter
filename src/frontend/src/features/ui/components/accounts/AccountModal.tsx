@@ -344,7 +344,7 @@ export const AccountModal = ({
           <div className="dc__accounts__modal__roles">
             <div className="dc__accounts__modal__roles__group">
               <h5 className="dc__accounts__modal__roles__group__title">
-                {t("accounts.roles.global_title")}
+                {t("accounts.roles.global_modal_title")}
               </h5>
               {renderRoleCheckboxes(globalRoles, GLOBAL_ROLES, toggleGlobalRole)}
             </div>

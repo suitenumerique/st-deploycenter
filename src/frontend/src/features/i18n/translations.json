@@ -26,7 +26,7 @@
         },
         "tabs": {
           "services": "Services",
-          "accounts": "Comptes"
+          "accounts": "Rôles"
         },
         "services": {
           "title": "Services",
@@ -152,7 +152,7 @@
           "roles_help": "Séparés par des virgules (ex: admin, member)"
         },
         "add_modal": {
-          "title": "Ajouter un compte"
+          "title": "Ajouter des rôles à un compte"
         },
         "edit_modal": {
           "title": "Modifier le compte",
@@ -160,6 +160,7 @@
         },
         "roles": {
           "global_title": "Global",
+          "global_modal_title": "Rôles globaux",
           "admin": "Administrateur",
           "member": "Membre",
           "service_types": {
