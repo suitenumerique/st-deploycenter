@@ -5,7 +5,7 @@ API endpoints for Account model.
 from django.shortcuts import get_object_or_404
 
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import filters, mixins, viewsets
+from rest_framework import filters, mixins, status, viewsets
 from rest_framework import permissions as drf_permissions
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
@@ -61,14 +61,40 @@ class OrganizationAccountsViewSet(
         context["organization_id"] = self.kwargs["organization_id"]
         return context
 
-    def perform_create(self, serializer):
-        """Set the organization when creating an account."""
+    def create(self, request, *args, **kwargs):
+        """Create or update an account (upsert via find_by_identifiers).
+
+        If an existing account is found by external_id or email fallback,
+        its roles are updated instead of creating a duplicate.
+        Returns 201 on creation, 200 on update.
+        """
         organization_id = self.kwargs["organization_id"]
         try:
             organization = models.Organization.objects.get(id=organization_id)
         except models.Organization.DoesNotExist as err:
             raise NotFound("Organization not found.") from err
+
+        existing = models.Account.find_by_identifiers(
+            organization=organization,
+            account_type=request.data.get("type", "user"),
+            external_id=request.data.get("external_id", ""),
+            email=request.data.get("email", ""),
+            reconcile_external_id=True,
+        )
+
+        if existing:
+            serializer = self.get_serializer(existing, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         serializer.save(organization=organization)
+        headers = self.get_success_headers(serializer.data)
+        return Response(
+            serializer.data, status=status.HTTP_201_CREATED, headers=headers
+        )
 
 
 class AccountViewSet(

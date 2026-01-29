@@ -186,6 +186,132 @@ def test_api_organizations_accounts_create_not_allowed_authent(
 
 
 ##
+## Upsert accounts (POST with existing email+type updates roles)
+##
+
+
+@pytest.mark.parametrize("auth_method", ["user", "external_api_key"])
+def test_api_organizations_accounts_upsert_updates_roles(
+    account_test_setup, auth_method
+):
+    """A second POST with the same email+type should update roles instead of failing."""
+    client = APIClient()
+    if auth_method == "user":
+        client.force_login(account_test_setup["user"])
+    elif auth_method == "external_api_key":
+        client.credentials(HTTP_AUTHORIZATION="Bearer test-external-api-key-12345")
+
+    operator = account_test_setup["operator"]
+    organization = account_test_setup["organization_ok1"]
+    url = f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/accounts/"
+
+    # First POST: create the account
+    response = client.post(
+        url,
+        data={
+            "email": "alice@collectivite.fr",
+            "type": "user",
+            "roles": [],
+        },
+        format="json",
+    )
+    assert response.status_code == 201
+    account_id = response.json()["id"]
+    assert response.json()["roles"] == []
+    assert models.Account.objects.count() == 1
+
+    # Second POST: same email+type, different roles => upsert
+    response = client.post(
+        url,
+        data={
+            "email": "alice@collectivite.fr",
+            "type": "user",
+            "roles": ["admin"],
+        },
+        format="json",
+    )
+    assert response.status_code == 200
+    assert response.json()["id"] == account_id
+    assert response.json()["roles"] == ["admin"]
+    # Still only one account
+    assert models.Account.objects.count() == 1
+
+
+@pytest.mark.parametrize("auth_method", ["user", "external_api_key"])
+def test_api_organizations_accounts_upsert_different_type_creates(
+    account_test_setup, auth_method
+):
+    """POST with the same email but different type should create a new account."""
+    client = APIClient()
+    if auth_method == "user":
+        client.force_login(account_test_setup["user"])
+    elif auth_method == "external_api_key":
+        client.credentials(HTTP_AUTHORIZATION="Bearer test-external-api-key-12345")
+
+    operator = account_test_setup["operator"]
+    organization = account_test_setup["organization_ok1"]
+    url = f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/accounts/"
+
+    # Create a user account
+    response = client.post(
+        url,
+        data={"email": "shared@collectivite.fr", "type": "user"},
+        format="json",
+    )
+    assert response.status_code == 201
+
+    # Create a mailbox account with the same email
+    response = client.post(
+        url,
+        data={"email": "shared@collectivite.fr", "type": "mailbox"},
+        format="json",
+    )
+    assert response.status_code == 201
+    assert models.Account.objects.count() == 2
+
+
+@pytest.mark.parametrize("auth_method", ["user", "external_api_key"])
+def test_api_organizations_accounts_upsert_updates_external_id(
+    account_test_setup, auth_method
+):
+    """Upsert should also update external_id if provided."""
+    client = APIClient()
+    if auth_method == "user":
+        client.force_login(account_test_setup["user"])
+    elif auth_method == "external_api_key":
+        client.credentials(HTTP_AUTHORIZATION="Bearer test-external-api-key-12345")
+
+    operator = account_test_setup["operator"]
+    organization = account_test_setup["organization_ok1"]
+    url = f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/accounts/"
+
+    # Create without external_id
+    response = client.post(
+        url,
+        data={"email": "bob@collectivite.fr", "type": "user"},
+        format="json",
+    )
+    assert response.status_code == 201
+    assert response.json()["external_id"] == ""
+
+    # Upsert with external_id
+    response = client.post(
+        url,
+        data={
+            "email": "bob@collectivite.fr",
+            "type": "user",
+            "external_id": "oidc-sub-456",
+            "roles": ["admin"],
+        },
+        format="json",
+    )
+    assert response.status_code == 200
+    assert response.json()["external_id"] == "oidc-sub-456"
+    assert response.json()["roles"] == ["admin"]
+    assert models.Account.objects.count() == 1
+
+
+##
 ## List accounts
 ##
 
