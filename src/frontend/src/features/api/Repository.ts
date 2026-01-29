@@ -92,7 +92,7 @@ export type Account = {
   external_id: string;
   type: string;
   roles: string[];
-  services: AccountServiceLink[];
+  service_links: AccountServiceLink[];
 };
 
 export type Service = {

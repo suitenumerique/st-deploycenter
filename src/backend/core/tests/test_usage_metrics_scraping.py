@@ -149,6 +149,7 @@ def fixture_test_service():
         config={
             "usage_metrics_endpoint": "http://localhost:8001/metrics/usage",
             "metrics_auth_token": "test_token_valid",
+            "trusted_account_binding": True,
         },
     )
 

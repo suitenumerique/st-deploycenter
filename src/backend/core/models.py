@@ -13,7 +13,7 @@ from django.contrib.auth import models as auth_models
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.core import validators
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import IntegrityError, models
 from django.utils.translation import gettext_lazy as _
 
 from timezone_field import TimeZoneField
@@ -1110,25 +1110,37 @@ class Account(BaseModel):
         """
         account = None
         found_by = None
+        filters = {"type": account_type, "organization": organization}
 
         if external_id:
-            account = cls.objects.filter(
-                external_id=external_id, type=account_type, organization=organization
-            ).first()
+            account = cls.objects.filter(external_id=external_id, **filters).first()
             if account:
                 found_by = "external_id"
 
         if not account and email:
-            account = cls.objects.filter(
-                email=email, type=account_type, organization=organization
-            ).first()
+            account = cls.objects.filter(email=email, **filters).first()
             if account:
                 found_by = "email"
 
         if account and found_by == "email" and reconcile_external_id:
             if external_id and not account.external_id:
-                account.external_id = external_id
-                account.save(update_fields=["external_id", "updated_at"])
+                try:
+                    account.external_id = external_id
+                    account.save(update_fields=["external_id", "updated_at"])
+                    logger.info(
+                        "Reconciled external_id for account %s (org=%s, type=%s)",
+                        account.id,
+                        organization.id,
+                        account_type,
+                    )
+                except IntegrityError:
+                    logger.warning(
+                        "Failed to reconcile external_id %s for account %s"
+                        " - already exists",
+                        external_id,
+                        account.id,
+                    )
+                    account.refresh_from_db()
 
         return account
 

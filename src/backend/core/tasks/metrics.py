@@ -12,6 +12,7 @@ import time
 from typing import Any, Dict, List
 from urllib.parse import urlencode
 
+from django.db import IntegrityError
 from django.utils import timezone
 
 import requests
@@ -417,21 +418,34 @@ def _resolve_account(
         reconcile_external_id=trusted,
     )
     if account:
-        # Update email if found by external_id and email changed
+        # Update email if found by external_id, email changed, and service is trusted
         if (
-            account.external_id == account_id
+            trusted
+            and account.external_id == account_id
             and account_email
             and account.email != account_email
         ):
             account.email = account_email
             account.save(update_fields=["email", "updated_at"])
     else:
-        account = Account.objects.create(
-            external_id=account_id,
-            type=account_type,
-            organization=organization,
-            email=account_email,
-        )
+        try:
+            account = Account.objects.create(
+                external_id=account_id,
+                type=account_type,
+                organization=organization,
+                email=account_email,
+            )
+        except IntegrityError:
+            logger.debug(
+                "Account creation race condition, re-fetching: external_id=%s",
+                account_id,
+            )
+            account = Account.find_by_identifiers(
+                organization=organization,
+                account_type=account_type,
+                external_id=account_id,
+                email=account_email,
+            )
 
     return account
 

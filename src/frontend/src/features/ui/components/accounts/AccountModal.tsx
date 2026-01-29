@@ -62,7 +62,7 @@ export const AccountModal = ({
         setType(account.type);
         setGlobalRoles(account.roles || []);
         const initialServiceRoles: Record<string, string[]> = {};
-        account.services?.forEach((link) => {
+        account.service_links?.forEach((link) => {
           initialServiceRoles[link.service.id] = link.roles || [];
         });
         setServiceLinkRoles(initialServiceRoles);
@@ -86,7 +86,7 @@ export const AccountModal = ({
       return serviceLinkRoles[serviceId];
     }
     if (account) {
-      const link = account.services?.find(
+      const link = account.service_links?.find(
         (l) => l.service.id === serviceId
       );
       return link?.roles || [];

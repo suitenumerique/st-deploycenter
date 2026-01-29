@@ -188,7 +188,7 @@ export const AccountsTab = ({
                 parts.push(`${t("accounts.roles.global_title")} : ${label}`);
               });
 
-              account.services?.forEach((link) => {
+              account.service_links?.forEach((link) => {
                 const serviceDefs = getServiceRoles(link.service.type);
                 link.roles?.forEach((role) => {
                   const def = serviceDefs.find((r) => r.value === role);
