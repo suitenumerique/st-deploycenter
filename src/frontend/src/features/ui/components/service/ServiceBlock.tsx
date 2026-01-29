@@ -146,6 +146,16 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
     !props.disabled &&
     !isManagedByOtherOperator;
 
+  const disabledReason = isExternallyManaged
+    ? t("organizations.services.externally_managed")
+    : isPopulationLimitExceeded
+      ? t("organizations.services.population_limit_exceeded")
+      : isMissingRequiredServices
+        ? t("organizations.services.missing_required_services")
+        : isManagedByOtherOperator
+          ? t("organizations.services.managed_by_other_operator")
+          : t("organizations.services.cannot_activate");
+
   return (
     <div
       className={`dc__service__block ${
@@ -233,34 +243,12 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
             }}
           />
         ) : (
-          <Tooltip
-            content={t(
-              isExternallyManaged
-                ? "organizations.services.externally_managed"
-                : isPopulationLimitExceeded
-                  ? "organizations.services.population_limit_exceeded"
-                  : isMissingRequiredServices
-                    ? "organizations.services.missing_required_services"
-                    : isManagedByOtherOperator
-                      ? "organizations.services.managed_by_other_operator"
-                      : "organizations.services.cannot_activate"
-            )}
-          >
+          <Tooltip content={disabledReason}>
             <div
               className="dc__service__block__switch-wrapper"
               role="button"
               tabIndex={0}
-              aria-label={
-                isExternallyManaged
-                  ? t("organizations.services.externally_managed")
-                  : isPopulationLimitExceeded
-                    ? t("organizations.services.population_limit_exceeded")
-                    : isMissingRequiredServices
-                      ? t("organizations.services.missing_required_services")
-                      : isManagedByOtherOperator
-                        ? t("organizations.services.managed_by_other_operator")
-                        : t("organizations.services.cannot_activate")
-              }
+              aria-label={disabledReason}
             >
               <Switch checked={props.checked} disabled={true} />
             </div>

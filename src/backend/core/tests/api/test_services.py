@@ -900,6 +900,7 @@ def test_api_organizations_services_list_includes_other_operator_subscription():
 
     service = factories.ServiceFactory()
     factories.OperatorServiceConfigFactory(operator=operator1, service=service)
+    factories.OperatorServiceConfigFactory(operator=operator2, service=service)
 
     # Create subscription from operator2 (not current operator)
     factories.ServiceSubscriptionFactory(
@@ -948,8 +949,19 @@ def test_api_organizations_services_shows_service_with_only_other_operator_subsc
         operator=operator2, organization=organization
     )
 
-    # Service with NO config for operator1 but HAS subscription from operator2
+    # Service with NO config for operator1
     service = factories.ServiceFactory()
+    factories.OperatorServiceConfigFactory(operator=operator2, service=service)
+
+    # Before creating the subscription, the service should NOT appear
+    response = client.get(
+        f"/api/v1.0/operators/{operator1.id}/organizations/{organization.id}/services/"
+    )
+    assert response.status_code == 200
+    service_ids_before = [r["id"] for r in response.json()["results"]]
+    assert service.id not in service_ids_before
+
+    # Now create subscription from operator2
     factories.ServiceSubscriptionFactory(
         organization=organization, service=service, operator=operator2
     )
