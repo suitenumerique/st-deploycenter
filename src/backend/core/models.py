@@ -1081,12 +1081,56 @@ class Account(BaseModel):
         constraints = [
             models.UniqueConstraint(
                 fields=["external_id", "type", "organization"],
-                name="unique_account_per_org_type",
+                condition=~models.Q(external_id=""),
+                name="unique_account_external_id_per_org_type",
+            ),
+            models.UniqueConstraint(
+                fields=["email", "type", "organization"],
+                condition=~models.Q(email=""),
+                name="unique_account_email_per_org_type",
             ),
         ]
 
     def __str__(self):
         return f"{self.id} (external_id: {self.external_id}) - {self.type} - {self.email} - {self.organization.name}"
+
+    @classmethod
+    def find_by_identifiers(
+        cls,
+        organization,
+        account_type,
+        external_id="",
+        email="",
+        reconcile_external_id=False,
+    ):
+        """
+        Find an account by external_id and/or email (fallback).
+        If reconcile_external_id=True and found by email, backfills external_id
+        (only for trusted sources).
+        """
+        account = None
+        found_by = None
+
+        if external_id:
+            account = cls.objects.filter(
+                external_id=external_id, type=account_type, organization=organization
+            ).first()
+            if account:
+                found_by = "external_id"
+
+        if not account and email:
+            account = cls.objects.filter(
+                email=email, type=account_type, organization=organization
+            ).first()
+            if account:
+                found_by = "email"
+
+        if account and found_by == "email" and reconcile_external_id:
+            if external_id and not account.external_id:
+                account.external_id = external_id
+                account.save(update_fields=["external_id", "updated_at"])
+
+        return account
 
 
 class Metric(models.Model):

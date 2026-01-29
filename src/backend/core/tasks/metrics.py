@@ -394,6 +394,48 @@ def map_csv_row(row: Dict[str, str], csv_mapping: Dict[str, str]) -> Dict[str, A
     return mapped_row
 
 
+def _resolve_account(
+    service: Service, organization: Organization, account_data: Dict[str, Any]
+):
+    """Resolve or create an Account from incoming metrics account data."""
+    if not account_data:
+        return None
+
+    account_type = account_data.get("type") or ""
+    account_id = account_data.get("id") or ""
+    account_email = account_data.get("email") or ""
+
+    if not account_id:
+        return None
+
+    trusted = bool(service.config and service.config.get("trusted_account_binding"))
+    account = Account.find_by_identifiers(
+        organization=organization,
+        account_type=account_type,
+        external_id=account_id,
+        email=account_email,
+        reconcile_external_id=trusted,
+    )
+    if account:
+        # Update email if found by external_id and email changed
+        if (
+            account.external_id == account_id
+            and account_email
+            and account.email != account_email
+        ):
+            account.email = account_email
+            account.save(update_fields=["email", "updated_at"])
+    else:
+        account = Account.objects.create(
+            external_id=account_id,
+            type=account_type,
+            organization=organization,
+            email=account_email,
+        )
+
+    return account
+
+
 def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) -> int:
     """
     Store metrics data for a service.
@@ -463,20 +505,7 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
             # logger.info("Organization found: %s", organization)
 
             # Get or create Account if account data is provided
-            account = None
-            account_data = item.get("account", {})
-            if account_data:
-                account_type = account_data.get("type") or ""
-                account_id = account_data.get("id") or ""
-                account_email = account_data.get("email") or ""
-
-                if account_id:
-                    account, _ = Account.objects.update_or_create(
-                        external_id=account_id,
-                        type=account_type,
-                        organization=organization,
-                        defaults={"email": account_email},
-                    )
+            account = _resolve_account(service, organization, item.get("account", {}))
 
             # Extract metrics
             metrics = item.get("metrics", {})

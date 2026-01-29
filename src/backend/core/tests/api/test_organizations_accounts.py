@@ -455,9 +455,6 @@ def test_api_organizations_accounts_patch_service_link(account_test_setup, auth_
 
     operator = account_test_setup["operator"]
     organization_ok1 = account_test_setup["organization_ok1"]
-    account = factories.AccountFactory(
-        email="test@example.com", organization=organization_ok1
-    )
     service1 = account_test_setup["service1"]
 
     response = client.post(
