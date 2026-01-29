@@ -2,6 +2,7 @@ import {
   MailDomainStatus,
   OperatorIdp,
   Organization,
+  OtherOperatorSubscription,
   Service,
   ServiceSubscription,
 } from "@/features/api/Repository";
@@ -130,6 +131,8 @@ const getProConnectMessage = (
 export const ProConnectServiceBlock = (props: {
   service: Service;
   organization: Organization;
+  isManagedByOtherOperator?: boolean;
+  managingOperatorSubscription?: OtherOperatorSubscription;
 }) => {
   const { operator } = useOperatorContext();
   const getIdp = (idp_id: string) => {
@@ -191,6 +194,8 @@ export const ProConnectServiceBlock = (props: {
     <ServiceBlock
       {...blockProps}
       showGoto={false}
+      isManagedByOtherOperator={props.isManagedByOtherOperator}
+      managingOperatorSubscription={props.managingOperatorSubscription}
       confirmationText={<>
         <span>En activant ProConnect, vous garantissez que :</span>
         <ul>

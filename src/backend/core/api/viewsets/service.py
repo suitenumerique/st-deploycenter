@@ -74,13 +74,11 @@ class OrganizationServiceViewSet(viewsets.ReadOnlyModelViewSet):
         return (
             models.Service.objects.filter(
                 Q(
-                    subscriptions__organization_id=organization_id,
-                    subscriptions__operator_id=operator_id,
-                )
-                | Q(
                     operatorserviceconfig__operator_id=operator_id,
                     operatorserviceconfig__display_priority__gte=0,
                 )
+                # Also include services that have subscriptions for this org (any operator)
+                | Q(subscriptions__organization_id=organization_id)
             )
             .prefetch_related(
                 Prefetch(
@@ -94,6 +92,16 @@ class OrganizationServiceViewSet(viewsets.ReadOnlyModelViewSet):
                     queryset=models.OperatorServiceConfig.objects.filter(
                         operator_id=operator_id,
                     ),
+                ),
+                # Prefetch other operator subscription for read-only visibility
+                Prefetch(
+                    "subscriptions",
+                    queryset=models.ServiceSubscription.objects.filter(
+                        organization_id=organization_id,
+                    )
+                    .exclude(operator_id=operator_id)
+                    .select_related("operator"),
+                    to_attr="other_operator_subscription_prefetched",
                 ),
             )
             .prefetch_related("subscriptions__entitlements")
@@ -247,7 +255,6 @@ class OrganizationServiceSubscriptionEntitlementViewSet(
     authentication_classes = [
         ExternalManagementApiKeyAuthentication,
     ] + [*api_settings.DEFAULT_AUTHENTICATION_CLASSES]
-    # TODO: Check permission on entitlement id
     permission_classes = [
         permissions.IsAuthenticatedWithAnyMethod,
         permissions.OperatorAndOrganizationAccessPermission,

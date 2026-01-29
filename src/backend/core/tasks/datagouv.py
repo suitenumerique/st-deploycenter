@@ -61,6 +61,7 @@ def upload_deployment_metrics_dataset():
     metrics_qs = (
         Metric.objects.select_related("organization", "service")
         .filter(organization__population__gt=0)
+        .filter(organization__type__in=["commune", "epci", "departement", "region"])
         .exclude(organization__siret__isnull=True)
         .exclude(organization__siret="")
         .filter(service__is_active=True)
@@ -79,6 +80,13 @@ def upload_deployment_metrics_dataset():
     }
 
     logger.info("Produced %s data rows", len(data))
+
+    if not data:
+        logger.info("No metrics to upload after filters; skipping data.gouv upload")
+        return {
+            "status": "success",
+            "message": "No data to upload",
+        }
 
     unique_services = {row["service"] for row in data.values()}
     for service_id in unique_services:
