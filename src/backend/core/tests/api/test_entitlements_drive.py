@@ -56,6 +56,114 @@ def test_subscription_entitlements_default():
     "account_key,account_key_value,account_key_http_alias",
     [["external_id", "xyz", "id"], ["email", "test@example.com", "email"]],
 )
+def test_api_entitlements_can_access_without_subscription(
+    account_key, account_key_value, account_key_http_alias
+):
+    """
+    Test the can_access entitlement for a user entitlement without a subscription.
+    Even without subscription, the user should be able to access the service but without
+    any entitlement. ( Especially can_upload )
+    """
+    metrics_usage_endpoint = "https://fichiers.suite.anct.gouv.fr/metrics/usage"
+    params = {
+        "account_type": "user",
+        f"account_{account_key_http_alias}": account_key_value,
+        "limit": 1000,
+        "offset": 0,
+    }
+    responses.add(
+        responses.GET,
+        metrics_usage_endpoint,
+        match=[matchers.query_param_matcher(params)],
+        json={
+            "count": 1,
+            "results": [
+                {
+                    "siret": "12345678900001",
+                    "account": {
+                        "type": "user",
+                        "id": "xyz",
+                        "email": "test@example.com",
+                    },
+                    "metrics": {"storage_used": 500},
+                }
+            ],
+        },
+        status=200,
+    )
+
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    service = factories.ServiceFactory(
+        type="drive",
+        config={
+            "entitlements_api_key": "test_token",
+            "usage_metrics_endpoint": metrics_usage_endpoint,
+            "metrics_auth_token": "test_token",
+        },
+    )
+
+    # Test that we can access the service without a subscription but without any entitlement.
+    response = client.get(
+        "/api/v1.0/entitlements/",
+        query_params={
+            "service_id": service.id,
+            "account_type": "user",
+            f"account_{account_key_http_alias}": account_key_value,
+            "siret": organization.siret,
+        },
+        headers={"X-Service-Auth": "Bearer test_token"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data == {
+        "operator": None,
+        "entitlements": {
+            "can_access": True,
+        },
+    }
+
+    # Create an inactive subscription to test that the user can still access the service.
+    factories.ServiceSubscriptionFactory(
+        organization=organization,
+        service=service,
+        operator=operator,
+        is_active=False,
+    )
+    response = client.get(
+        "/api/v1.0/entitlements/",
+        query_params={
+            "service_id": service.id,
+            "account_type": "user",
+            f"account_{account_key_http_alias}": account_key_value,
+            "siret": organization.siret,
+        },
+        headers={"X-Service-Auth": "Bearer test_token"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data == {
+        "operator": None,
+        "entitlements": {
+            "can_access": True,
+        },
+    }
+
+
+@pytest.mark.django_db()
+@responses.activate
+@pytest.mark.parametrize(
+    "account_key,account_key_value,account_key_http_alias",
+    [["external_id", "xyz", "id"], ["email", "test@example.com", "email"]],
+)
 def test_api_entitlements_user_can_upload(
     account_key, account_key_value, account_key_http_alias
 ):
