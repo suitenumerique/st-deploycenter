@@ -13,6 +13,7 @@
 @use "./../pages/operators/index.scss" as *;
 @use "./../pages/operators/[operator_id]/index.scss" as *;
 @use "./../pages/operators/[operator_id]/organizations/index.scss" as *;
+@use "./../pages/operators/[operator_id]/metrics/index.scss" as *;
 
 body {
   margin: 0;

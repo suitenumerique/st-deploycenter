@@ -13,6 +13,8 @@ import {
   updateAccountServiceLink,
   Account,
   getOperatorServices,
+  getOperatorMetrics,
+  MetricsParams,
 } from "@/features/api/Repository";
 import { getOrganization } from "@/features/api/Repository";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -265,6 +267,17 @@ export const useMutationUpdateAccountServiceLink = () => {
         ],
       });
     },
+  });
+};
+
+export const useOperatorMetrics = (
+  operatorId: string,
+  params: MetricsParams | null
+) => {
+  return useQuery({
+    queryKey: ["operators", operatorId, "metrics", JSON.stringify(params)],
+    queryFn: () => getOperatorMetrics(operatorId, params!),
+    enabled: !!operatorId && !!params?.key && !!params?.service,
   });
 };
 

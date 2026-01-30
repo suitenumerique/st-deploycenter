@@ -307,3 +307,87 @@ export const updateAccountServiceLink = async (
   );
   return (await response.json()) as AccountServiceLink;
 };
+
+// Metrics types
+export type MetricAccount = {
+  id: string;
+  email: string;
+  external_id: string;
+  type: string;
+};
+
+export type MetricOrganization = {
+  id: string;
+  name: string;
+};
+
+export type Metric = {
+  id: number;
+  key: string;
+  value: string;
+  timestamp: string;
+  account: MetricAccount | null;
+  organization: MetricOrganization;
+};
+
+export type MetricsResponse = {
+  results: Metric[];
+};
+
+export type GroupedMetricItem = {
+  organization: MetricOrganization;
+  value: string;
+};
+
+export type GroupedMetricsResponse = {
+  results: GroupedMetricItem[];
+  grouped_by: "organization";
+};
+
+export type AggregatedMetric = {
+  key: string;
+  service_id: string;
+  aggregation: "sum" | "avg";
+  value: string;
+  count: number;
+};
+
+export type MetricsParams = {
+  key: string;
+  service: string;
+  organizations?: string[];
+  accounts?: string[];
+  account_type?: string;
+  agg?: "sum" | "avg";
+  group_by?: "organization";
+};
+
+export const getOperatorMetrics = async (
+  operatorId: string,
+  params: MetricsParams
+): Promise<MetricsResponse | GroupedMetricsResponse | AggregatedMetric> => {
+  const url = new URL(`/`, window.location.origin);
+  url.searchParams.append("key", params.key);
+  url.searchParams.append("service", params.service);
+
+  if (params.organizations && params.organizations.length > 0) {
+    url.searchParams.append("organizations", params.organizations.join(","));
+  }
+  if (params.accounts && params.accounts.length > 0) {
+    url.searchParams.append("accounts", params.accounts.join(","));
+  }
+  if (params.account_type) {
+    url.searchParams.append("account_type", params.account_type);
+  }
+  if (params.agg) {
+    url.searchParams.append("agg", params.agg);
+  }
+  if (params.group_by) {
+    url.searchParams.append("group_by", params.group_by);
+  }
+
+  const response = await fetchAPI(
+    `operators/${operatorId}/metrics/` + url.search
+  );
+  return (await response.json()) as MetricsResponse | GroupedMetricsResponse | AggregatedMetric;
+};

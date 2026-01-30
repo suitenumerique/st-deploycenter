@@ -1,0 +1,89 @@
+.dc__metrics {
+  &__filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    padding: 1.5rem;
+    background: var(--c--theme--colors--greyscale-100);
+    border-radius: 8px;
+
+    > * {
+      min-width: 200px;
+      flex: 1;
+    }
+  }
+
+  &__results-count {
+    margin-bottom: 1rem;
+    padding: 0.5rem 0;
+    font-size: 0.875rem;
+    color: var(--c--theme--colors--greyscale-600);
+    font-weight: 500;
+  }
+
+  &__chart-container {
+    background: var(--c--theme--colors--greyscale-000);
+    border: 1px solid var(--c--theme--colors--greyscale-200);
+    border-radius: 8px;
+    padding: 1.5rem;
+    min-height: 400px;
+    display: flex;
+    flex-direction: column;
+
+    &__placeholder {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--c--theme--colors--greyscale-500);
+      font-size: 1rem;
+      text-align: center;
+    }
+  }
+
+  &__scrollable-chart {
+    overflow-y: auto;
+    max-height: 600px;
+
+    &::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: var(--c--theme--colors--greyscale-100);
+      border-radius: 4px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: var(--c--theme--colors--greyscale-400);
+      border-radius: 4px;
+    }
+  }
+
+  &__aggregated-chart {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+
+    &__value {
+      font-size: 3rem;
+      font-weight: 700;
+      color: var(--c--theme--colors--primary-600);
+      margin-bottom: 0.5rem;
+    }
+
+    &__label {
+      font-size: 1rem;
+      color: var(--c--theme--colors--greyscale-600);
+    }
+
+    &__bar {
+      width: 100%;
+      max-width: 400px;
+      margin-top: 2rem;
+    }
+  }
+}
