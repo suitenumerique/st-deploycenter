@@ -12,9 +12,9 @@ from rest_framework.views import APIView
 from core import models
 from core.api import permissions
 from core.api.serializers import OperatorSerializer
-from core.entitlements.resolvers import get_entitlement_resolver
-from core.entitlements.resolvers.access_entitlement_resolver import (
-    AccessEntitlementResolver,
+from core.entitlements.resolvers import (
+    get_access_entitlement_resolver,
+    get_entitlement_resolver,
 )
 from core.entitlements.resolvers.admin_entitlement_resolver import (
     AdminEntitlementResolver,
@@ -104,7 +104,9 @@ class EntitlementView(APIView):
         }
 
         # This entitlement should always be resolved.
-        entitlements_data = {**AccessEntitlementResolver().resolve(entitlement_context)}
+        entitlements_data = {
+            **get_access_entitlement_resolver(service).resolve(entitlement_context)
+        }
 
         if service_subscription and service_subscription.is_active:
             operator_data = OperatorSerializer(service_subscription.operator).data
