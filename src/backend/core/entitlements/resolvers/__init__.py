@@ -2,11 +2,17 @@ from core import models
 from core.entitlements.resolvers.access_entitlement_resolver import (
     AccessEntitlementResolver,
 )
+from core.entitlements.resolvers.admin_entitlement_resolver import (
+    AdminEntitlementResolver,
+)
 from core.entitlements.resolvers.drive_access_entitlement_resolver import (
     DriveAccessEntitlementResolver,
 )
 from core.entitlements.resolvers.drive_storage_entitlement_resolver import (
     DriveStorageEntitlementResolver,
+)
+from core.entitlements.resolvers.extended_admin_entitlement_resolver import (
+    ExtendedAdminEntitlementResolver,
 )
 from core.entitlements.resolvers.messages_storage_entitlement_resolver import (
     MessagesStorageEntitlementResolver,
@@ -20,6 +26,12 @@ TYPE_TO_RESOLVER = {
 
 TYPE_TO_ACCESS_RESOLVER = {
     "drive": DriveAccessEntitlementResolver,
+}
+
+
+TYPE_TO_ADMIN_RESOLVER = {
+    "adc": ExtendedAdminEntitlementResolver,
+    "esd": ExtendedAdminEntitlementResolver,
 }
 
 
@@ -41,3 +53,13 @@ def get_access_entitlement_resolver(service: models.Service):
     if resolver_class:
         return resolver_class()
     return AccessEntitlementResolver()
+
+
+def get_admin_entitlement_resolver(service: models.Service):
+    """
+    Get the admin entitlement resolver. If not found, return the default admin entitlement resolver.
+    """
+    resolver_class = TYPE_TO_ADMIN_RESOLVER.get(service.type)
+    if resolver_class:
+        return resolver_class()
+    return AdminEntitlementResolver()

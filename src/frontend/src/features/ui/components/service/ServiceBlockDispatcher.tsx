@@ -2,8 +2,11 @@ import {
   Organization,
   OtherOperatorSubscription,
   Service,
+  SERVICE_TYPE_ADC,
+  SERVICE_TYPE_ESD,
   SERVICE_TYPE_PROCONNECT,
 } from "@/features/api/Repository";
+import { ExtendedAdminServiceBlock } from "@/features/ui/components/service/implementations/ExtendedAdminServiceBlock";
 import { ProConnectServiceBlock } from "@/features/ui/components/service/implementations/ProConnectServiceBlock";
 import { RegularServiceBlock } from "@/features/ui/components/service/implementations/RegularServiceBlock";
 
@@ -32,6 +35,9 @@ export const ServiceBlockDispatcher = (props: {
 
   if (props.service.type === SERVICE_TYPE_PROCONNECT) {
     return <ProConnectServiceBlock {...dispatcherProps} />;
+  }
+  if (props.service.type === SERVICE_TYPE_ADC || props.service.type === SERVICE_TYPE_ESD) {
+    return <ExtendedAdminServiceBlock {...dispatcherProps} />;
   }
   return <RegularServiceBlock {...dispatcherProps} />;
 };

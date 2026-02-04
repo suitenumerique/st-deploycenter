@@ -16,7 +16,14 @@ from django.db import transaction
 import requests
 from celery import shared_task
 
-from ..models import Organization
+from ..models import (
+    Operator,
+    OperatorOrganizationRole,
+    OperatorServiceConfig,
+    Organization,
+    ServiceSubscription,
+)
+from ..services import get_service_handler
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +147,101 @@ def import_dpnt_dataset(self, force_update: bool = True, max_rows: int = None): 
                 stats["errors"] += 1
                 stats["errors_details"].append(error_msg)
 
+        stats["auto_join"] = _process_auto_join()
+
     logger.info("DPNT import completed. Stats: %s", stats)
+    return stats
+
+
+def _process_auto_join() -> Dict[str, Any]:
+    """Process auto_join config for active operators.
+
+    For each active operator with an ``auto_join`` key in its config, this
+    function creates ``OperatorOrganizationRole`` and ``ServiceSubscription``
+    records for every organization whose type matches the config.
+
+    Must be called inside an existing ``transaction.atomic()`` block.
+    """
+    stats: Dict[str, int] = {"roles_created": 0, "subscriptions_created": 0}
+
+    operators = Operator.objects.filter(
+        is_active=True, config__has_key="auto_join"
+    )
+
+    for operator in operators:
+        auto_join = operator.config.get("auto_join", {})
+        types = auto_join.get("types", [])
+        service_ids = auto_join.get("services", [])
+
+        if not types or not service_ids:
+            continue
+
+        # Validate which service IDs have an OperatorServiceConfig
+        valid_service_configs = OperatorServiceConfig.objects.filter(
+            operator=operator, service_id__in=service_ids
+        ).select_related("service")
+        valid_service_ids = set(
+            valid_service_configs.values_list("service_id", flat=True)
+        )
+
+        for sid in service_ids:
+            if sid not in valid_service_ids:
+                logger.warning(
+                    "Operator %s (%s): auto_join references service %d "
+                    "but no OperatorServiceConfig exists — skipping.",
+                    operator.name,
+                    operator.pk,
+                    sid,
+                )
+
+        if not valid_service_ids:
+            continue
+
+        # Get matching organizations
+        org_ids = list(
+            Organization.objects.filter(type__in=types).values_list("id", flat=True)
+        )
+
+        if not org_ids:
+            continue
+
+        # Bulk create OperatorOrganizationRole
+        role_objects = [
+            OperatorOrganizationRole(operator=operator, organization_id=org_id)
+            for org_id in org_ids
+        ]
+        created_roles = OperatorOrganizationRole.objects.bulk_create(
+            role_objects, ignore_conflicts=True
+        )
+        stats["roles_created"] += len(created_roles)
+
+        # Bulk create ServiceSubscription per valid service
+        valid_services = {
+            osc.service_id: osc.service for osc in valid_service_configs
+        }
+        for service_id in valid_service_ids:
+            sub_objects = [
+                ServiceSubscription(
+                    operator=operator,
+                    organization_id=org_id,
+                    service_id=service_id,
+                    is_active=True,
+                )
+                for org_id in org_ids
+            ]
+            created_subs = ServiceSubscription.objects.bulk_create(
+                sub_objects, ignore_conflicts=True
+            )
+            stats["subscriptions_created"] += len(created_subs)
+
+            # Create default entitlements for newly created subscriptions
+            service = valid_services[service_id]
+            handler = get_service_handler(service)
+            if handler:
+                for sub in created_subs:
+                    if sub.pk:  # Only for actually inserted rows
+                        handler.create_default_entitlements(sub)
+
     return stats
 
 

@@ -4,6 +4,10 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from core import models
+from core.entitlements.resolvers import TYPE_TO_ADMIN_RESOLVER
+from core.entitlements.resolvers.extended_admin_entitlement_resolver import (
+    ExtendedAdminEntitlementResolver,
+)
 
 
 class IntegerChoicesField(serializers.ChoiceField):
@@ -334,7 +338,11 @@ class ServiceSerializer(serializers.ModelSerializer):
     def get_config(self, obj):
         """Get the configuration for the service."""
         config = obj.config or {}
-        whitelist_keys = ["help_center_url", "population_limits"]
+        whitelist_keys = [
+            "help_center_url",
+            "population_limits",
+            "auto_admin_population_threshold",
+        ]
         return {key: config[key] for key in whitelist_keys if key in config}
 
 
@@ -365,6 +373,8 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
         model = models.ServiceSubscription
         fields = ["metadata", "created_at", "updated_at", "is_active", "entitlements"]
         read_only_fields = ["created_at", "updated_at"]
+
+    VALID_AUTO_ADMIN_VALUES = ("all", "manual")
 
     def _validate_proconnect_subscription(self, instance, attrs):
         """
@@ -405,11 +415,43 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
             or [instance.organization.mail_domain],
         }
 
+    def _validate_extended_admin_subscription(self, instance, attrs):
+        """
+        Validate extended admin subscription data (ADC/ESD services).
+        Validates auto_admin metadata value and merges it with existing metadata.
+        """
+        resolver_class = TYPE_TO_ADMIN_RESOLVER.get(instance.service.type)
+        if not resolver_class or not issubclass(
+            resolver_class, ExtendedAdminEntitlementResolver
+        ):
+            return
+
+        new_metadata = attrs.get("metadata")
+        if not new_metadata or "auto_admin" not in new_metadata:
+            return
+
+        auto_admin = new_metadata["auto_admin"]
+        if auto_admin not in self.VALID_AUTO_ADMIN_VALUES:
+            raise serializers.ValidationError(
+                {
+                    "metadata": (
+                        f"Invalid auto_admin value: '{auto_admin}'. "
+                        f"Must be one of: {', '.join(self.VALID_AUTO_ADMIN_VALUES)}."
+                    )
+                }
+            )
+
+        # Merge auto_admin into existing metadata, preserving other keys
+        merged_metadata = dict(instance.metadata or {})
+        merged_metadata["auto_admin"] = auto_admin
+        attrs["metadata"] = merged_metadata
+
     def validate(self, attrs):
         """Validate subscription data."""
         instance = self.instance
         if instance:
             self._validate_proconnect_subscription(instance, attrs)
+            self._validate_extended_admin_subscription(instance, attrs)
 
         return attrs
 

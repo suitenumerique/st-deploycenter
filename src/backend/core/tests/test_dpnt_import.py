@@ -5,10 +5,22 @@ This module tests the DPNT dataset download and import tasks with real data from
 """
 
 import logging
+from unittest.mock import patch
 
 import pytest
 
-from core.models import Organization
+from core.factories import (
+    OperatorFactory,
+    OperatorServiceConfigFactory,
+    OrganizationFactory,
+    ServiceFactory,
+    ServiceSubscriptionFactory,
+)
+from core.models import (
+    OperatorOrganizationRole,
+    Organization,
+    ServiceSubscription,
+)
 from core.tasks.dpnt import import_dpnt_dataset
 
 logger = logging.getLogger(__name__)
@@ -102,3 +114,160 @@ def test_import_real_dpnt_data():
 
     # Make sure no new orgs were created in the update
     assert Organization.objects.count() == result["total_processed"]
+
+
+# Fake DPNT dataset for auto_join tests (bypasses the 30000-row minimum check)
+FAKE_DPNT_DATA = [{"type": t, **d} for t, d in [
+    ("commune", {"libelle": "Commune A", "siret": "11111111100001", "siren": "111111111",
+                 "code_insee": "00001", "code_postal": "75001", "population": 5000}),
+    ("commune", {"libelle": "Commune B", "siret": "22222222200002", "siren": "222222222",
+                 "code_insee": "00002", "code_postal": "75002", "population": 3000}),
+    ("epci", {"libelle": "EPCI Alpha", "siret": "33333333300003", "siren": "333333333",
+              "population": 80000}),
+    ("departement", {"libelle": "Dept X", "siret": "44444444400004", "siren": "444444444",
+                     "departement_code_insee": "01", "population": 500000}),
+    ("departement", {"libelle": "Dept Y", "siret": "55555555500005", "siren": "555555555",
+                     "departement_code_insee": "02", "population": 600000}),
+]]
+# Pad to 30001 items so the import doesn't reject it
+FAKE_DPNT_DATA += [
+    {"type": "commune", "libelle": f"Padding {i}", "siret": f"{60000000000000 + i}",
+     "siren": f"{600000000 + i:09d}", "code_insee": f"{10000 + i:05d}",
+     "code_postal": "99999", "population": 100}
+    for i in range(30001 - len(FAKE_DPNT_DATA))
+]
+
+
+def _mock_download():
+    """Return a successful fake download result."""
+    return {
+        "status": "success",
+        "message": f"Downloaded {len(FAKE_DPNT_DATA)} records",
+        "data": FAKE_DPNT_DATA,
+    }
+
+
+@pytest.mark.django_db
+@patch("core.tasks.dpnt.download_dpnt_dataset", side_effect=lambda: _mock_download())
+def test_dpnt_auto_join(mock_download):
+    """Test that auto_join config on Operators creates roles and subscriptions."""
+
+    # -- Setup: operator, services, operator-service configs --
+    operator = OperatorFactory()
+    valid_service = ServiceFactory()
+    unconfigured_service = ServiceFactory()
+
+    # Only valid_service has an OperatorServiceConfig
+    OperatorServiceConfigFactory(operator=operator, service=valid_service)
+    # No OperatorServiceConfig for unconfigured_service
+
+    operator.config = {
+        "auto_join": {
+            "types": ["commune", "epci"],
+            "services": [valid_service.id, unconfigured_service.id],
+        }
+    }
+    operator.save()
+
+    # -- Pre-existing organizations with subscriptions --
+    pre_existing_active_org = OrganizationFactory(
+        type="commune", siret="99999999900001", siren="999999999", code_insee="99001"
+    )
+    pre_existing_inactive_org = OrganizationFactory(
+        type="commune", siret="99999999900002", siren="999999998", code_insee="99002"
+    )
+
+    # Active subscription for pre_existing_active_org
+    ServiceSubscriptionFactory(
+        operator=operator,
+        organization=pre_existing_active_org,
+        service=valid_service,
+    )
+    assert ServiceSubscription.objects.get(
+        organization=pre_existing_active_org, service=valid_service
+    ).is_active is True
+
+    # Inactive subscription for pre_existing_inactive_org
+    inactive_sub = ServiceSubscriptionFactory(
+        operator=operator,
+        organization=pre_existing_inactive_org,
+        service=valid_service,
+    )
+    inactive_sub.is_active = False
+    inactive_sub.save()
+
+    # -- Run import --
+    with patch("core.tasks.dpnt.logger") as mock_logger:
+        result = import_dpnt_dataset.apply(kwargs={"force_update": True, "max_rows": 5}).get()
+
+    # -- Assertions --
+
+    # 1. Stats contain auto_join key
+    assert "auto_join" in result
+    auto_join_stats = result["auto_join"]
+    assert "roles_created" in auto_join_stats
+    assert "subscriptions_created" in auto_join_stats
+
+    # 2. Commune and EPCI orgs from DPNT + pre-existing commune orgs
+    commune_epci_orgs = Organization.objects.filter(type__in=["commune", "epci"])
+    dept_orgs = Organization.objects.filter(type="departement")
+
+    # 3. OperatorOrganizationRole: exists for all commune/epci orgs, not for departement
+    for org in commune_epci_orgs:
+        assert OperatorOrganizationRole.objects.filter(
+            operator=operator, organization=org
+        ).exists(), f"Missing role for {org.name} ({org.type})"
+
+    for org in dept_orgs:
+        assert not OperatorOrganizationRole.objects.filter(
+            operator=operator, organization=org
+        ).exists(), f"Unexpected role for departement org {org.name}"
+
+    # 4. ServiceSubscription: exists for commune/epci + valid_service
+    for org in commune_epci_orgs:
+        assert ServiceSubscription.objects.filter(
+            organization=org, service=valid_service
+        ).exists(), f"Missing subscription for {org.name}"
+
+    # 5. No subscription for the unconfigured service
+    assert not ServiceSubscription.objects.filter(
+        service=unconfigured_service
+    ).exists(), "Should not create subscriptions for unconfigured service"
+
+    # 6. Pre-existing active subscription untouched
+    active_sub = ServiceSubscription.objects.get(
+        organization=pre_existing_active_org, service=valid_service
+    )
+    assert active_sub.is_active is True
+
+    # 7. Pre-existing inactive subscription NOT re-activated
+    inactive_sub.refresh_from_db()
+    assert inactive_sub.is_active is False, "Inactive subscription should not be re-activated"
+
+    # 8. Warning logged for missing OperatorServiceConfig
+    warning_calls = [
+        c for c in mock_logger.warning.call_args_list
+        if "no OperatorServiceConfig exists" in str(c)
+        and str(unconfigured_service.id) in str(c)
+    ]
+    assert warning_calls, "Expected warning about missing OperatorServiceConfig"
+
+    # 9. No subscriptions for departement orgs
+    for org in dept_orgs:
+        assert not ServiceSubscription.objects.filter(
+            organization=org, service=valid_service
+        ).exists(), f"Unexpected subscription for departement org {org.name}"
+
+    # -- Idempotency: re-run and check no duplicates --
+    roles_before = OperatorOrganizationRole.objects.count()
+    subs_before = ServiceSubscription.objects.count()
+
+    result2 = import_dpnt_dataset.apply(kwargs={"force_update": True, "max_rows": 5}).get()
+
+    assert OperatorOrganizationRole.objects.count() == roles_before, (
+        "Re-run should not duplicate roles"
+    )
+    assert ServiceSubscription.objects.count() == subs_before, (
+        "Re-run should not duplicate subscriptions"
+    )
+    assert "auto_join" in result2

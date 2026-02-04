@@ -23,8 +23,10 @@ export const SERVICE_ROLES: Record<string, RoleDefinition[]> = {
   drive: [],
   rdvsp: [
     { value: "admin", labelKey: "accounts.roles.admin" },
-    
+
   ],
+  adc: [{ value: "admin", labelKey: "accounts.roles.admin" }],
+  esd: [{ value: "admin", labelKey: "accounts.roles.admin" }],
   default: [],
 };
 

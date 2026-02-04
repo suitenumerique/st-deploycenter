@@ -68,6 +68,8 @@ export type Entitlement = {
 };
 
 export const SERVICE_TYPE_PROCONNECT = "proconnect";
+export const SERVICE_TYPE_ADC = "adc";
+export const SERVICE_TYPE_ESD = "esd";
 
 export type OtherOperatorSubscription = {
   operator_id: string;
@@ -112,6 +114,7 @@ export type Service = {
   activation_blocked_reason?: string;
   config?: {
     help_center_url?: string;
+    auto_admin_population_threshold?: number;
   };
   other_operator_subscription?: OtherOperatorSubscription | null;
 };
