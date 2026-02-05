@@ -832,3 +832,66 @@ def test_api_subscription_patch_auto_admin_invalid():
         format="json",
     )
     assert response.status_code == 400
+
+
+def test_api_subscription_create_auto_admin_invalid():
+    """Test that creating a subscription with an invalid auto_admin value is rejected."""
+
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    service = factories.ServiceFactory(
+        type="adc",
+        config={"entitlements_api_key": "test_token"},
+    )
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    # No existing subscription — this is a create (upsert)
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/"
+        f"services/{service.id}/subscription/",
+        {"metadata": {"auto_admin": "invalid_value"}},
+        format="json",
+    )
+    assert response.status_code == 400
+
+
+def test_api_subscription_create_auto_admin_valid():
+    """Test that creating a subscription with a valid auto_admin value succeeds."""
+
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    service = factories.ServiceFactory(
+        type="adc",
+        config={"entitlements_api_key": "test_token"},
+    )
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    # No existing subscription — this is a create (upsert)
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/"
+        f"services/{service.id}/subscription/",
+        {"metadata": {"auto_admin": "all"}},
+        format="json",
+    )
+    assert response.status_code == 201
+    assert response.json()["metadata"]["auto_admin"] == "all"

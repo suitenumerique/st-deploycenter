@@ -42,7 +42,7 @@ def test_api_organization_proconnect_service_cannot_activate_if_mail_domain_is_n
     )
     assert response.status_code == 400
     assert response.json() == {
-        "__all__": ["Mail domain is required for ProConnect subscription."]
+        "metadata": ["Mail domain is required for ProConnect subscription."]
     }
 
 
@@ -180,6 +180,65 @@ def test_api_organization_proconnect_subscription_idp_name():
         is_active=False,
     )
     assert subscription.idp_name == "IDP 2"
+
+
+def test_api_organization_proconnect_create_validates_mail_domain():
+    """Test that creating a ProConnect subscription without mail domain fails at serializer level."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    # Organization without mail domain
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    service = factories.ServiceFactory(type="proconnect")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    # Create (no existing subscription) with is_active=True — should fail
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/subscription/",
+        {"metadata": {"idp_id": "1234567890"}, "is_active": True},
+        format="json",
+    )
+    assert response.status_code == 400
+    assert "Mail domain is required" in str(response.json())
+
+
+def test_api_organization_proconnect_create_builds_metadata():
+    """Test that creating a ProConnect subscription correctly builds metadata."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory(
+        rpnt=["1.1", "1.2", "2.1", "2.2", "2.3"],
+        adresse_messagerie="contact@commune.fr",
+        site_internet="https://www.commune.fr",
+    )
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    service = factories.ServiceFactory(type="proconnect")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    # Create (no existing subscription) with IDP and valid domain
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/subscription/",
+        {"metadata": {"idp_id": "abc123"}, "is_active": False},
+        format="json",
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["metadata"]["idp_id"] == "abc123"
+    assert data["metadata"]["domains"] == ["commune.fr"]
 
 
 def test_api_organization_proconnect_subscription_cannot_update_idp_id_when_active():

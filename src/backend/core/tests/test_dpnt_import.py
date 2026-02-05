@@ -117,23 +117,73 @@ def test_import_real_dpnt_data():
 
 
 # Fake DPNT dataset for auto_join tests (bypasses the 30000-row minimum check)
-FAKE_DPNT_DATA = [{"type": t, **d} for t, d in [
-    ("commune", {"libelle": "Commune A", "siret": "11111111100001", "siren": "111111111",
-                 "code_insee": "00001", "code_postal": "75001", "population": 5000}),
-    ("commune", {"libelle": "Commune B", "siret": "22222222200002", "siren": "222222222",
-                 "code_insee": "00002", "code_postal": "75002", "population": 3000}),
-    ("epci", {"libelle": "EPCI Alpha", "siret": "33333333300003", "siren": "333333333",
-              "population": 80000}),
-    ("departement", {"libelle": "Dept X", "siret": "44444444400004", "siren": "444444444",
-                     "departement_code_insee": "01", "population": 500000}),
-    ("departement", {"libelle": "Dept Y", "siret": "55555555500005", "siren": "555555555",
-                     "departement_code_insee": "02", "population": 600000}),
-]]
+FAKE_DPNT_DATA = [
+    {"type": t, **d}
+    for t, d in [
+        (
+            "commune",
+            {
+                "libelle": "Commune A",
+                "siret": "11111111100001",
+                "siren": "111111111",
+                "code_insee": "00001",
+                "code_postal": "75001",
+                "population": 5000,
+            },
+        ),
+        (
+            "commune",
+            {
+                "libelle": "Commune B",
+                "siret": "22222222200002",
+                "siren": "222222222",
+                "code_insee": "00002",
+                "code_postal": "75002",
+                "population": 3000,
+            },
+        ),
+        (
+            "epci",
+            {
+                "libelle": "EPCI Alpha",
+                "siret": "33333333300003",
+                "siren": "333333333",
+                "population": 80000,
+            },
+        ),
+        (
+            "departement",
+            {
+                "libelle": "Dept X",
+                "siret": "44444444400004",
+                "siren": "444444444",
+                "departement_code_insee": "01",
+                "population": 500000,
+            },
+        ),
+        (
+            "departement",
+            {
+                "libelle": "Dept Y",
+                "siret": "55555555500005",
+                "siren": "555555555",
+                "departement_code_insee": "02",
+                "population": 600000,
+            },
+        ),
+    ]
+]
 # Pad to 30001 items so the import doesn't reject it
 FAKE_DPNT_DATA += [
-    {"type": "commune", "libelle": f"Padding {i}", "siret": f"{60000000000000 + i}",
-     "siren": f"{600000000 + i:09d}", "code_insee": f"{10000 + i:05d}",
-     "code_postal": "99999", "population": 100}
+    {
+        "type": "commune",
+        "libelle": f"Padding {i}",
+        "siret": f"{60000000000000 + i}",
+        "siren": f"{600000000 + i:09d}",
+        "code_insee": f"{10000 + i:05d}",
+        "code_postal": "99999",
+        "population": 100,
+    }
     for i in range(30001 - len(FAKE_DPNT_DATA))
 ]
 
@@ -148,8 +198,8 @@ def _mock_download():
 
 
 @pytest.mark.django_db
-@patch("core.tasks.dpnt.download_dpnt_dataset", side_effect=lambda: _mock_download())
-def test_dpnt_auto_join(mock_download):
+@patch("core.tasks.dpnt.download_dpnt_dataset", side_effect=_mock_download)
+def test_dpnt_auto_join(_mock_dl):
     """Test that auto_join config on Operators creates roles and subscriptions."""
 
     # -- Setup: operator, services, operator-service configs --
@@ -183,9 +233,12 @@ def test_dpnt_auto_join(mock_download):
         organization=pre_existing_active_org,
         service=valid_service,
     )
-    assert ServiceSubscription.objects.get(
-        organization=pre_existing_active_org, service=valid_service
-    ).is_active is True
+    assert (
+        ServiceSubscription.objects.get(
+            organization=pre_existing_active_org, service=valid_service
+        ).is_active
+        is True
+    )
 
     # Inactive subscription for pre_existing_inactive_org
     inactive_sub = ServiceSubscriptionFactory(
@@ -198,7 +251,9 @@ def test_dpnt_auto_join(mock_download):
 
     # -- Run import --
     with patch("core.tasks.dpnt.logger") as mock_logger:
-        result = import_dpnt_dataset.apply(kwargs={"force_update": True, "max_rows": 5}).get()
+        result = import_dpnt_dataset.apply(
+            kwargs={"force_update": True, "max_rows": 5}
+        ).get()
 
     # -- Assertions --
 
@@ -242,11 +297,14 @@ def test_dpnt_auto_join(mock_download):
 
     # 7. Pre-existing inactive subscription NOT re-activated
     inactive_sub.refresh_from_db()
-    assert inactive_sub.is_active is False, "Inactive subscription should not be re-activated"
+    assert inactive_sub.is_active is False, (
+        "Inactive subscription should not be re-activated"
+    )
 
     # 8. Warning logged for missing OperatorServiceConfig
     warning_calls = [
-        c for c in mock_logger.warning.call_args_list
+        c
+        for c in mock_logger.warning.call_args_list
         if "no OperatorServiceConfig exists" in str(c)
         and str(unconfigured_service.id) in str(c)
     ]
@@ -262,7 +320,9 @@ def test_dpnt_auto_join(mock_download):
     roles_before = OperatorOrganizationRole.objects.count()
     subs_before = ServiceSubscription.objects.count()
 
-    result2 = import_dpnt_dataset.apply(kwargs={"force_update": True, "max_rows": 5}).get()
+    result2 = import_dpnt_dataset.apply(
+        kwargs={"force_update": True, "max_rows": 5}
+    ).get()
 
     assert OperatorOrganizationRole.objects.count() == roles_before, (
         "Re-run should not duplicate roles"
@@ -270,4 +330,5 @@ def test_dpnt_auto_join(mock_download):
     assert ServiceSubscription.objects.count() == subs_before, (
         "Re-run should not duplicate subscriptions"
     )
-    assert "auto_join" in result2
+    assert result2["auto_join"]["roles_created"] == 0
+    assert result2["auto_join"]["subscriptions_created"] == 0

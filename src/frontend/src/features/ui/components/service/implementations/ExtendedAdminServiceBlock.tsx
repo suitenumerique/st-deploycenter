@@ -18,7 +18,7 @@ import {
   useModal,
 } from "@openfun/cunningham-react";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MutateOptions } from "@tanstack/react-query";
 
 const ADMIN_MODE_ALL = "all";
@@ -123,6 +123,10 @@ const ExtendedAdminModal = (props: {
   const [isPending, setIsPending] = useState(false);
   const [showSpinner, setShowSpinner] = useState(false);
   const spinnerTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => {
+    return () => clearTimeout(spinnerTimeout.current);
+  }, []);
 
   const submit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();

@@ -23,7 +23,6 @@ from ..models import (
     Organization,
     ServiceSubscription,
 )
-from ..services import get_service_handler
 
 logger = logging.getLogger(__name__)
 
@@ -164,9 +163,7 @@ def _process_auto_join() -> Dict[str, Any]:
     """
     stats: Dict[str, int] = {"roles_created": 0, "subscriptions_created": 0}
 
-    operators = Operator.objects.filter(
-        is_active=True, config__has_key="auto_join"
-    )
+    operators = Operator.objects.filter(is_active=True, config__has_key="auto_join")
 
     for operator in operators:
         auto_join = operator.config.get("auto_join", {})
@@ -205,22 +202,31 @@ def _process_auto_join() -> Dict[str, Any]:
         if not org_ids:
             continue
 
-        # Bulk create OperatorOrganizationRole
-        role_objects = [
+        # Bulk create OperatorOrganizationRole — query existing first for stats
+        existing_role_org_ids = set(
+            OperatorOrganizationRole.objects.filter(
+                operator=operator, organization_id__in=org_ids
+            ).values_list("organization_id", flat=True)
+        )
+        new_role_objects = [
             OperatorOrganizationRole(operator=operator, organization_id=org_id)
             for org_id in org_ids
+            if org_id not in existing_role_org_ids
         ]
-        created_roles = OperatorOrganizationRole.objects.bulk_create(
-            role_objects, ignore_conflicts=True
-        )
-        stats["roles_created"] += len(created_roles)
+        if new_role_objects:
+            OperatorOrganizationRole.objects.bulk_create(
+                new_role_objects, ignore_conflicts=True
+            )
+        stats["roles_created"] += len(new_role_objects)
 
         # Bulk create ServiceSubscription per valid service
-        valid_services = {
-            osc.service_id: osc.service for osc in valid_service_configs
-        }
         for service_id in valid_service_ids:
-            sub_objects = [
+            existing_sub_org_ids = set(
+                ServiceSubscription.objects.filter(
+                    service_id=service_id, organization_id__in=org_ids
+                ).values_list("organization_id", flat=True)
+            )
+            new_sub_objects = [
                 ServiceSubscription(
                     operator=operator,
                     organization_id=org_id,
@@ -228,19 +234,13 @@ def _process_auto_join() -> Dict[str, Any]:
                     is_active=True,
                 )
                 for org_id in org_ids
+                if org_id not in existing_sub_org_ids
             ]
-            created_subs = ServiceSubscription.objects.bulk_create(
-                sub_objects, ignore_conflicts=True
-            )
-            stats["subscriptions_created"] += len(created_subs)
-
-            # Create default entitlements for newly created subscriptions
-            service = valid_services[service_id]
-            handler = get_service_handler(service)
-            if handler:
-                for sub in created_subs:
-                    if sub.pk:  # Only for actually inserted rows
-                        handler.create_default_entitlements(sub)
+            if new_sub_objects:
+                ServiceSubscription.objects.bulk_create(
+                    new_sub_objects, ignore_conflicts=True
+                )
+            stats["subscriptions_created"] += len(new_sub_objects)
 
     return stats
 
