@@ -161,7 +161,10 @@ def _process_auto_join() -> Dict[str, Any]:
 
     Must be called inside an existing ``transaction.atomic()`` block.
     """
-    stats: Dict[str, int] = {"roles_created": 0, "subscriptions_created": 0}
+    stats: Dict[str, int] = {
+        "operator_organization_roles_created": 0,
+        "service_subscriptions_created": 0,
+    }
 
     operators = Operator.objects.filter(is_active=True, config__has_key="auto_join")
 
@@ -217,7 +220,7 @@ def _process_auto_join() -> Dict[str, Any]:
             OperatorOrganizationRole.objects.bulk_create(
                 new_role_objects, ignore_conflicts=True
             )
-        stats["roles_created"] += len(new_role_objects)
+        stats["operator_organization_roles_created"] += len(new_role_objects)
 
         # Bulk create ServiceSubscription per valid service
         for service_id in valid_service_ids:
@@ -240,7 +243,7 @@ def _process_auto_join() -> Dict[str, Any]:
                 ServiceSubscription.objects.bulk_create(
                     new_sub_objects, ignore_conflicts=True
                 )
-            stats["subscriptions_created"] += len(new_sub_objects)
+            stats["service_subscriptions_created"] += len(new_sub_objects)
 
     return stats
 

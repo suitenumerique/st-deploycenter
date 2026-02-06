@@ -260,8 +260,8 @@ def test_dpnt_auto_join(_mock_dl):
     # 1. Stats contain auto_join key
     assert "auto_join" in result
     auto_join_stats = result["auto_join"]
-    assert "roles_created" in auto_join_stats
-    assert "subscriptions_created" in auto_join_stats
+    assert "operator_organization_roles_created" in auto_join_stats
+    assert "service_subscriptions_created" in auto_join_stats
 
     # 2. Commune and EPCI orgs from DPNT + pre-existing commune orgs
     commune_epci_orgs = Organization.objects.filter(type__in=["commune", "epci"])
@@ -330,5 +330,5 @@ def test_dpnt_auto_join(_mock_dl):
     assert ServiceSubscription.objects.count() == subs_before, (
         "Re-run should not duplicate subscriptions"
     )
-    assert result2["auto_join"]["roles_created"] == 0
-    assert result2["auto_join"]["subscriptions_created"] == 0
+    assert result2["auto_join"]["operator_organization_roles_created"] == 0
+    assert result2["auto_join"]["service_subscriptions_created"] == 0

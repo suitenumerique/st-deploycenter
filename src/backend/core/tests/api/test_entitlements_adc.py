@@ -138,7 +138,13 @@ def test_api_entitlements_is_admin_false_no_match(
     assert data["entitlements"]["is_admin"] is False
 
 
-def test_api_entitlements_is_admin_population_under_threshold():
+@pytest.mark.parametrize(
+    "account_key,account_key_value,account_key_http_alias",
+    [["external_id", "xyz", "id"], ["email", "other@example.com", "email"]],
+)
+def test_api_entitlements_is_admin_population_under_threshold(
+    account_key, account_key_value, account_key_http_alias
+):
     """Test is_admin is True when population < threshold, even without email match."""
 
     user = factories.UserFactory()
@@ -163,19 +169,21 @@ def test_api_entitlements_is_admin_population_under_threshold():
         organization=organization, service=service, operator=operator
     )
 
-    factories.AccountFactory(
-        organization=organization,
-        type="user",
-        email="someone.else@example.com",
-        external_id="xyz",
-    )
+    account_kwargs = {
+        "organization": organization,
+        "type": "user",
+        account_key: account_key_value,
+    }
+    if account_key != "email":
+        account_kwargs["email"] = "someone.else@example.com"
+    factories.AccountFactory(**account_kwargs)
 
     response = client.get(
         "/api/v1.0/entitlements/",
         query_params={
             "service_id": service.id,
             "account_type": "user",
-            "account_id": "xyz",
+            f"account_{account_key_http_alias}": account_key_value,
             "siret": organization.siret,
         },
         headers={"X-Service-Auth": "Bearer test_token"},
@@ -187,6 +195,10 @@ def test_api_entitlements_is_admin_population_under_threshold():
 
 
 @pytest.mark.parametrize(
+    "account_key,account_key_value,account_key_http_alias",
+    [["external_id", "xyz", "id"], ["email", "other@example.com", "email"]],
+)
+@pytest.mark.parametrize(
     "population,expected_admin",
     [
         (3499, True),  # Under threshold -> admin
@@ -197,7 +209,9 @@ def test_api_entitlements_is_admin_population_under_threshold():
         (None, False),  # Unknown population -> not admin
     ],
 )
-def test_api_entitlements_is_admin_population_boundary(population, expected_admin):
+def test_api_entitlements_is_admin_population_boundary(
+    account_key, account_key_value, account_key_http_alias, population, expected_admin
+):
     """Test population threshold boundary values for is_admin (no email match)."""
 
     user = factories.UserFactory()
@@ -223,19 +237,21 @@ def test_api_entitlements_is_admin_population_boundary(population, expected_admi
     )
 
     # Email does NOT match adresse_messagerie, so only population check applies
-    factories.AccountFactory(
-        organization=organization,
-        type="user",
-        email="someone@example.com",
-        external_id="xyz",
-    )
+    account_kwargs = {
+        "organization": organization,
+        "type": "user",
+        account_key: account_key_value,
+    }
+    if account_key != "email":
+        account_kwargs["email"] = "someone@example.com"
+    factories.AccountFactory(**account_kwargs)
 
     response = client.get(
         "/api/v1.0/entitlements/",
         query_params={
             "service_id": service.id,
             "account_type": "user",
-            "account_id": "xyz",
+            f"account_{account_key_http_alias}": account_key_value,
             "siret": organization.siret,
         },
         headers={"X-Service-Auth": "Bearer test_token"},
@@ -385,6 +401,10 @@ def test_api_entitlements_is_admin_no_email():
 
 
 @pytest.mark.parametrize(
+    "account_key,account_key_value,account_key_http_alias",
+    [["external_id", "xyz", "id"], ["email", "other@example.com", "email"]],
+)
+@pytest.mark.parametrize(
     "population,threshold,expected_admin",
     [
         (4000, 5000, True),  # Under custom threshold -> admin
@@ -393,7 +413,12 @@ def test_api_entitlements_is_admin_no_email():
     ],
 )
 def test_api_entitlements_is_admin_custom_auto_admin_population_threshold(
-    population, threshold, expected_admin
+    account_key,
+    account_key_value,
+    account_key_http_alias,
+    population,
+    threshold,
+    expected_admin,
 ):
     """Test that auto_admin_population_threshold can be configured per service."""
 
@@ -421,19 +446,21 @@ def test_api_entitlements_is_admin_custom_auto_admin_population_threshold(
         organization=organization, service=service, operator=operator
     )
 
-    factories.AccountFactory(
-        organization=organization,
-        type="user",
-        email="someone@example.com",
-        external_id="xyz",
-    )
+    account_kwargs = {
+        "organization": organization,
+        "type": "user",
+        account_key: account_key_value,
+    }
+    if account_key != "email":
+        account_kwargs["email"] = "someone@example.com"
+    factories.AccountFactory(**account_kwargs)
 
     response = client.get(
         "/api/v1.0/entitlements/",
         query_params={
             "service_id": service.id,
             "account_type": "user",
-            "account_id": "xyz",
+            f"account_{account_key_http_alias}": account_key_value,
             "siret": organization.siret,
         },
         headers={"X-Service-Auth": "Bearer test_token"},
@@ -895,3 +922,29 @@ def test_api_subscription_create_auto_admin_valid():
     )
     assert response.status_code == 201
     assert response.json()["metadata"]["auto_admin"] == "all"
+
+
+def test_api_adc_entitlements_unknown_siret():
+    """Test ADC entitlements endpoint with a SIRET that matches no organization."""
+
+    service = factories.ServiceFactory(
+        type="adc",
+        config={"entitlements_api_key": "test_token"},
+    )
+
+    client = APIClient()
+    response = client.get(
+        "/api/v1.0/entitlements/",
+        query_params={
+            "service_id": service.id,
+            "account_type": "user",
+            "account_id": "xyz",
+            "siret": "00000000000000",
+        },
+        headers={"X-Service-Auth": "Bearer test_token"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["operator"] is None
+    assert data["entitlements"]["can_access"] is False
+    assert data["entitlements"]["can_access_reason"] == "no_organization"
