@@ -14,10 +14,8 @@ from core.api import permissions
 from core.api.serializers import OperatorSerializer
 from core.entitlements.resolvers import (
     get_access_entitlement_resolver,
+    get_admin_entitlement_resolver,
     get_entitlement_resolver,
-)
-from core.entitlements.resolvers.admin_entitlement_resolver import (
-    AdminEntitlementResolver,
 )
 from core.entitlements.resolvers.entitlement_resolver import (
     get_context_account_unique_identifier,
@@ -174,7 +172,7 @@ class EntitlementView(APIView):
             # Resolve admin entitlement.
             entitlements_data = {
                 **entitlements_data,
-                **AdminEntitlementResolver().resolve(entitlement_context),
+                **get_admin_entitlement_resolver(service).resolve(entitlement_context),
             }
 
         return Response({"operator": operator_data, "entitlements": entitlements_data})

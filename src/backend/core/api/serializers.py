@@ -4,6 +4,10 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from core import models
+from core.entitlements.resolvers import TYPE_TO_ADMIN_RESOLVER
+from core.entitlements.resolvers.extended_admin_entitlement_resolver import (
+    ExtendedAdminEntitlementResolver,
+)
 
 
 class IntegerChoicesField(serializers.ChoiceField):
@@ -334,7 +338,11 @@ class ServiceSerializer(serializers.ModelSerializer):
     def get_config(self, obj):
         """Get the configuration for the service."""
         config = obj.config or {}
-        whitelist_keys = ["help_center_url", "population_limits"]
+        whitelist_keys = [
+            "help_center_url",
+            "population_limits",
+            "auto_admin_population_threshold",
+        ]
         return {key: config[key] for key in whitelist_keys if key in config}
 
 
@@ -366,21 +374,29 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
         fields = ["metadata", "created_at", "updated_at", "is_active", "entitlements"]
         read_only_fields = ["created_at", "updated_at"]
 
-    def _validate_proconnect_subscription(self, instance, attrs):
+    VALID_AUTO_ADMIN_VALUES = ("all", "manual")
+
+    def _validate_proconnect_subscription(self, attrs):
         """
         Validate ProConnect subscription data.
+        Handles both update (instance exists) and create (no instance) cases.
         It is not possible to update the IDP for an active ProConnect subscription.
         Deactivate the subscription first to change the IDP.
         """
-        if instance.service.type != "proconnect":
+        service_type = self._get_service_type()
+        if service_type != "proconnect":
             return
 
-        is_active = attrs.get("is_active", instance.is_active)
-        current_idp_id = instance.metadata.get("idp_id")
+        instance = self.instance
+        organization = self._get_organization()
+
+        current_metadata = instance.metadata if instance else {}
+        is_active = attrs.get("is_active", instance.is_active if instance else True)
+        current_idp_id = current_metadata.get("idp_id")
         new_idp_id = attrs.get("metadata", {}).get("idp_id")
 
         # Are we changing an IDP while a subscription is active?
-        if is_active and new_idp_id and current_idp_id != new_idp_id:
+        if instance and is_active and new_idp_id and current_idp_id != new_idp_id:
             raise serializers.ValidationError(
                 {
                     "metadata": (
@@ -390,10 +406,11 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
                 }
             )
 
+        mail_domain = organization.mail_domain if organization else None
+        existing_domains = current_metadata.get("domains")
+
         # When activating a subscription, we must have a valid domain.
-        if is_active and not (
-            instance.organization.mail_domain or instance.metadata.get("domains")
-        ):
+        if is_active and not (mail_domain or existing_domains):
             raise serializers.ValidationError(
                 {"metadata": "Mail domain is required for ProConnect subscription."}
             )
@@ -401,15 +418,80 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
         # Build the metadata dict explicitly. Domains cannot be overridden from the REST API for now.
         attrs["metadata"] = {
             "idp_id": new_idp_id or current_idp_id,
-            "domains": instance.metadata.get("domains", False)
-            or [instance.organization.mail_domain],
+            "domains": existing_domains or ([mail_domain] if mail_domain else []),
         }
+
+    def _get_organization(self):
+        """Resolve the organization from instance or view kwargs."""
+        if self.instance:
+            return self.instance.organization
+
+        view = self.context.get("view")
+        if view and "organization_id" in getattr(view, "kwargs", {}):
+            return models.Organization.objects.filter(
+                id=view.kwargs["organization_id"]
+            ).first()
+        return None
+
+    def _validate_extended_admin_subscription(
+        self, attrs, service_type, existing_metadata
+    ):
+        """
+        Validate extended admin subscription data (ADC/ESD services).
+        Validates auto_admin metadata value and merges it with existing metadata.
+        """
+        resolver_class = TYPE_TO_ADMIN_RESOLVER.get(service_type)
+        if not resolver_class or not issubclass(
+            resolver_class, ExtendedAdminEntitlementResolver
+        ):
+            return
+
+        new_metadata = attrs.get("metadata")
+        if not new_metadata or "auto_admin" not in new_metadata:
+            return
+
+        auto_admin = new_metadata["auto_admin"]
+        if auto_admin not in self.VALID_AUTO_ADMIN_VALUES:
+            raise serializers.ValidationError(
+                {
+                    "metadata": (
+                        f"Invalid auto_admin value: '{auto_admin}'. "
+                        f"Must be one of: {', '.join(self.VALID_AUTO_ADMIN_VALUES)}."
+                    )
+                }
+            )
+
+        # Merge auto_admin into existing metadata, preserving other keys
+        merged_metadata = dict(existing_metadata or {})
+        merged_metadata["auto_admin"] = auto_admin
+        attrs["metadata"] = merged_metadata
+
+    def _get_service_type(self):
+        """Resolve the service type from instance or view kwargs."""
+        if self.instance:
+            return self.instance.service.type
+
+        view = self.context.get("view")
+        if view and "service_id" in getattr(view, "kwargs", {}):
+            try:
+                service = models.Service.objects.get(id=view.kwargs["service_id"])
+                return service.type
+            except models.Service.DoesNotExist:
+                return None
+        return None
 
     def validate(self, attrs):
         """Validate subscription data."""
         instance = self.instance
-        if instance:
-            self._validate_proconnect_subscription(instance, attrs)
+
+        self._validate_proconnect_subscription(attrs)
+
+        service_type = self._get_service_type()
+        if service_type:
+            existing_metadata = instance.metadata if instance else {}
+            self._validate_extended_admin_subscription(
+                attrs, service_type, existing_metadata
+            )
 
         return attrs
 

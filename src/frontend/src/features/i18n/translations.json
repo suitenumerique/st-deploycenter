@@ -88,6 +88,26 @@
               }
             }
           },
+          "extended_admin": {
+            "label": "Rôles d'administration",
+            "default_short": "Défaut: {{value}}",
+            "modal": {
+              "title": "Rôles d'administration",
+              "description": "Choisissez comment les administrateurs sont désignés pour <bold>{{service_name}}</bold>."
+            },
+            "choices": {
+              "all": {
+                "short": "Tous",
+                "label": "Tous les comptes sont administrateurs",
+                "description": "Tous les comptes de la collectivité disposent des droits d'administration sur ce service. C'est le réglage par défaut pour les collectivités de moins de {{population}} habitants."
+              },
+              "manual": {
+                "short": "Manuels",
+                "label": "Désigner des administrateurs manuellement",
+                "description": "Seuls les comptes désignés explicitement comme administrateurs dans l'onglet \"Rôles\" disposent des droits d'administration."
+              }
+            }
+          },
           "entitlements": {
             "fields": {
               "storage_picker": {
@@ -161,7 +181,7 @@
         "roles": {
           "global_title": "Global",
           "global_modal_title": "Rôles globaux",
-          "admin": "Administrateur",
+          "admin": "Admin",
           "member": "Membre",
           "service_types": {
             "rdvsp": "RDV SP"
