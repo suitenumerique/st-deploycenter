@@ -23,6 +23,7 @@ from ..models import (
     Organization,
     ServiceSubscription,
 )
+from ..services import get_service_handler
 
 logger = logging.getLogger(__name__)
 
@@ -223,6 +224,9 @@ def _process_auto_join() -> Dict[str, Any]:
         stats["operator_organization_roles_created"] += len(new_role_objects)
 
         # Bulk create ServiceSubscription per valid service
+        valid_services = {
+            osc.service_id: osc.service for osc in valid_service_configs
+        }
         for service_id in valid_service_ids:
             existing_sub_org_ids = set(
                 ServiceSubscription.objects.filter(
@@ -240,10 +244,18 @@ def _process_auto_join() -> Dict[str, Any]:
                 if org_id not in existing_sub_org_ids
             ]
             if new_sub_objects:
-                ServiceSubscription.objects.bulk_create(
+                created_subs = ServiceSubscription.objects.bulk_create(
                     new_sub_objects, ignore_conflicts=True
                 )
-            stats["service_subscriptions_created"] += len(new_sub_objects)
+                stats["service_subscriptions_created"] += len(created_subs)
+
+                # Create default entitlements for newly created subscriptions
+                service = valid_services[service_id]
+                handler = get_service_handler(service)
+                if handler:
+                    for sub in created_subs:
+                        if sub.pk:  # Only for actually inserted rows
+                            handler.create_default_entitlements(sub)
 
     return stats
 
