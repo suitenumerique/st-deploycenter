@@ -201,6 +201,40 @@
         "error": {
           "unexpected": "Une erreur inattendue est survenue"
         }
+      },
+      "metrics": {
+        "title": "Métriques",
+        "subtitle": "Visualisez les métriques de vos services",
+        "filters": {
+          "service": "Service",
+          "service_placeholder": "Sélectionner un service",
+          "key": "Métrique",
+          "key_placeholder": "Sélectionner une métrique",
+          "organizations": "Organisations",
+          "organizations_placeholder": "Toutes les organisations",
+          "account_type": "Type de compte",
+          "account_type_placeholder": "Tous les types",
+          "accounts": "Comptes",
+          "accounts_placeholder": "Tous les comptes",
+          "aggregation": "Agrégation",
+          "aggregation_options": {
+            "none": "Aucune",
+            "sum": "Somme",
+            "avg": "Moyenne"
+          }
+        },
+        "chart": {
+          "no_data": "Aucune donnée à afficher",
+          "select_filters": "Sélectionnez un service et une métrique pour afficher les données",
+          "aggregated_value": "Valeur agrégée",
+          "value_axis": "Valeur",
+          "account_axis": "Compte",
+          "results_count": "{{count}} résultat(s)"
+        },
+        "account_types": {
+          "user": "Utilisateur",
+          "mailbox": "Boîte mail"
+        }
       }
     }
   }
