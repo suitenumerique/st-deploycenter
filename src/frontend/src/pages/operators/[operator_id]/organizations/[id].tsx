@@ -8,7 +8,7 @@ import { useOrganization, useOrganizationServices } from "@/hooks/useQueries";
 import { useTranslation } from "react-i18next";
 import { SERVICE_TYPE_PROCONNECT } from "@/features/api/Repository";
 import { Breadcrumbs } from "@/features/ui/components/breadcrumbs/Breadcrumbs";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useBreadcrumbOperator } from "@/features/ui/components/breadcrumbs/Parts";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { RpntBadge } from "@/features/ui/components/organization/RpntBadge";
@@ -21,8 +21,24 @@ export default function Organization() {
   const router = useRouter();
   const operatorId = router.query.operator_id as string;
   const organizationId = router.query.id as string;
+  const tabParam = router.query.tab as string | undefined;
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<Tab>("services");
+
+  const activeTab: Tab = tabParam === "accounts" ? "accounts" : "services";
+
+  const handleTabChange = (tab: Tab) => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { tab: _t, role: _r, ...restQuery } = router.query;
+    const query: Record<string, string | string[] | undefined> = { ...restQuery };
+    if (tab === "accounts") {
+      query.tab = "accounts";
+    }
+    router.push({
+      pathname: router.pathname,
+      query,
+    }, undefined, { shallow: true });
+  };
+
   const {
     operator,
     operatorQuery: { isLoading: isOperatorLoading },
@@ -178,13 +194,13 @@ export default function Organization() {
       <div className="dc__organization__tabs">
         <button
           className={`dc__organization__tabs__tab ${activeTab === "services" ? "dc__organization__tabs__tab--active" : ""}`}
-          onClick={() => setActiveTab("services")}
+          onClick={() => handleTabChange("services")}
         >
           {t("organizations.tabs.services")}
         </button>
         <button
           className={`dc__organization__tabs__tab ${activeTab === "accounts" ? "dc__organization__tabs__tab--active" : ""}`}
-          onClick={() => setActiveTab("accounts")}
+          onClick={() => handleTabChange("accounts")}
         >
           {t("organizations.tabs.accounts")}
         </button>

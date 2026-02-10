@@ -224,6 +224,11 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
             is_active=is_active,
             metadata=metadata,
         )
+
+        # Apply entitlement configs if provided
+        serializer.instance = subscription
+        serializer.apply_entitlement_configs(subscription)
+
         return Response(
             self.get_serializer(subscription).data, status=status.HTTP_201_CREATED
         )

@@ -1,29 +1,77 @@
-import { Entitlement } from "@/features/api/Repository";
+import { Entitlement, EntitlementDefault } from "@/features/api/Repository";
 import {
   EntitlementFields,
   ServiceBlockProps,
 } from "@/features/ui/components/service/ServiceBlock";
 import { StoragePickerEntitlementField } from "@/features/ui/components/service/entitlements/fields/StoragePickerEntitlementField";
 
-const getEntitlementsByPriority = (entitlements: Entitlement[]) => {
-  const accountOverride = entitlements?.find(
-    (e) => e.account_type !== "organization" && !!e.account_type && e.account_id
-  );
-  const account = entitlements?.find(
-    (e) =>
-      e.account_type !== "organization" && !!e.account_type && !e.account_id
-  );
-  const organization = entitlements?.find(
-    (e) => e.account_type === "organization" && !e.account_id
-  );
-  return {
-    accountOverride,
-    account,
-    organization,
+/**
+ * Get entitlements to display, using defaults if no subscription exists yet.
+ * Returns entitlements grouped by priority (organization, account, accountOverride).
+ */
+const getEntitlementsByPriority = (
+  entitlements: Entitlement[] | undefined,
+  entitlementType: string,
+  entitlementDefaults: EntitlementDefault[] | undefined
+): Record<string, Entitlement | null> => {
+  // If we have real entitlements, use them
+  if (entitlements && entitlements.length > 0) {
+    const accountOverride = entitlements.find(
+      (e) => e.account_type !== "organization" && !!e.account_type && e.account_id
+    );
+    const account = entitlements.find(
+      (e) =>
+        e.account_type !== "organization" && !!e.account_type && !e.account_id
+    );
+    const organization = entitlements.find(
+      (e) => e.account_type === "organization" && !e.account_id
+    );
+
+    return {
+      accountOverride: accountOverride || null,
+      account: account || null,
+      organization: organization || null,
+    };
+  }
+
+  // No subscription yet - show defaults from service config
+  const result: Record<string, Entitlement | null> = {
+    accountOverride: null,
+    account: null,
+    organization: null,
   };
+
+  if (entitlementDefaults) {
+    for (const defaultEnt of entitlementDefaults) {
+      if (defaultEnt.type !== entitlementType) continue;
+
+      const isOrg = defaultEnt.account_type === "organization";
+      const key = isOrg ? "organization" : "account";
+
+      result[key] = {
+        id: "",
+        type: defaultEnt.type,
+        account_type: defaultEnt.account_type,
+        account_id: "",
+        config: { ...defaultEnt.config },
+      };
+    }
+  }
+
+  return result;
 };
 
 export const ServiceBlockEntitlements = (props: ServiceBlockProps) => {
+  // Only show entitlements if showEntitlementsBeforeSubscription is enabled
+  // or if we have a subscription
+  const hasSubscription = !!props.service.subscription;
+  const showEntitlements =
+    hasSubscription || props.showEntitlementsBeforeSubscription;
+
+  if (!showEntitlements) {
+    return null;
+  }
+
   return (
     <div className="dc__service__block__entitlements">
       {Object.entries(props.entitlementsFields).map(
@@ -31,8 +79,11 @@ export const ServiceBlockEntitlements = (props: ServiceBlockProps) => {
           const entitlements = props.service.subscription?.entitlements?.filter(
             (e) => e.type === entitlementType
           );
-          const entitlementsByPriority =
-            getEntitlementsByPriority(entitlements);
+          const entitlementsByPriority = getEntitlementsByPriority(
+            entitlements,
+            entitlementType,
+            props.service.entitlement_defaults
+          );
           return Object.entries(entitlementsByPriority).map(
             ([priority, entitlement]) => {
               if (!entitlement) {
@@ -40,7 +91,7 @@ export const ServiceBlockEntitlements = (props: ServiceBlockProps) => {
               }
               return (
                 <ServiceBlockEntitlement
-                  key={entitlement.id}
+                  key={entitlement.id || `${entitlementType}-${priority}`}
                   priority={priority}
                   entitlement={entitlement}
                   entitlementFields={entitlementFields}

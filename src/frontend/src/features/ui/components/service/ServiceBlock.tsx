@@ -1,7 +1,7 @@
 import {
   Organization,
-  OtherOperatorSubscription,
   ServiceSubscription,
+  ServiceSubscriptionInput,
 } from "@/features/api/Repository";
 import { useTranslation } from "react-i18next";
 import { Service } from "@/features/api/Repository";
@@ -10,7 +10,20 @@ import { Icon, IconSize } from "@gouvfr-lasuite/ui-kit";
 import { useEffect, useState } from "react";
 import { useMutationUpdateOrganizationServiceSubscription } from "@/hooks/useQueries";
 import { useOperatorContext } from "@/features/layouts/components/GlobalLayout";
-import { MutateOptions } from "@tanstack/react-query";
+import { UseMutateFunction } from "@tanstack/react-query";
+
+type SubscriptionMutationOptions = Parameters<
+  UseMutateFunction<
+    ServiceSubscription,
+    Error,
+    {
+      operatorId: string;
+      organizationId: string;
+      serviceId: string;
+      data: ServiceSubscriptionInput;
+    }
+  >
+>[1];
 import { ServiceBlockEntitlements } from "@/features/ui/components/service/entitlements/ServiceBlockEntitlements";
 
 export type EntitlementFields = {
@@ -81,13 +94,18 @@ export const useServiceBlock = (
     useMutationUpdateOrganizationServiceSubscription();
   const { operatorId } = useOperatorContext();
 
+  // Check if subscription is managed by another operator
+  const isManagedByOtherOperator =
+    !!service.subscription?.operator_id &&
+    service.subscription.operator_id !== operatorId;
+
   useEffect(() => {
     setChecked(service.subscription ? service.subscription.is_active : false);
   }, [service.subscription]);
 
   const onChangeSubscription = (
-    data: Partial<ServiceSubscription>,
-    options?: MutateOptions
+    data: ServiceSubscriptionInput,
+    options?: SubscriptionMutationOptions
   ) => {
     updateOrganizationServiceSubscription(
       {
@@ -96,7 +114,7 @@ export const useServiceBlock = (
         serviceId: service.id,
         data,
       },
-      options as Parameters<typeof updateOrganizationServiceSubscription>[1]
+      options
     );
   };
 
@@ -115,6 +133,7 @@ export const useServiceBlock = (
     onChangeSubscription,
     canActivateSubscription,
     entitlementsFields,
+    isManagedByOtherOperator,
   };
 };
 
@@ -122,12 +141,13 @@ export type ServiceBlockProps = {
   service: Service;
   organization: Organization;
   content?: React.ReactNode;
+  footer?: React.ReactNode;
   disabled?: boolean;
   showGoto?: boolean;
   entitlementsFields?: EntitlementsFields;
   confirmationText?: React.ReactNode;
-  isManagedByOtherOperator?: boolean;
-  managingOperatorSubscription?: OtherOperatorSubscription;
+  getActivationData?: () => ServiceSubscriptionInput;
+  showEntitlementsBeforeSubscription?: boolean;
 } & ReturnType<typeof useServiceBlock>;
 
 export const ServiceBlock = (props: ServiceBlockProps) => {
@@ -139,12 +159,11 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
     props.service.activation_blocked_reason === "population_limit_exceeded";
   const isMissingRequiredServices =
     props.service.activation_blocked_reason === "missing_required_services";
-  const isManagedByOtherOperator = props.isManagedByOtherOperator ?? false;
   const canSwitch =
     !isExternallyManaged &&
     props.service.can_activate &&
     !props.disabled &&
-    !isManagedByOtherOperator;
+    !props.isManagedByOtherOperator;
 
   const disabledReason = isExternallyManaged
     ? t("organizations.services.externally_managed")
@@ -152,7 +171,7 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
       ? t("organizations.services.population_limit_exceeded")
       : isMissingRequiredServices
         ? t("organizations.services.missing_required_services")
-        : isManagedByOtherOperator
+        : props.isManagedByOtherOperator
           ? t("organizations.services.managed_by_other_operator")
           : t("organizations.services.cannot_activate");
 
@@ -162,10 +181,10 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
         !canSwitch ? "dc__service__block--disabled" : ""
       }`}
     >
-      {isManagedByOtherOperator && props.managingOperatorSubscription && (
+      {props.isManagedByOtherOperator && props.service.subscription && (
         <div className="dc__service__block__other-operator-banner">
           {t("organizations.services.managed_by", {
-            operator: props.managingOperatorSubscription.operator_name,
+            operator: props.service.subscription.operator_name,
           })}
         </div>
       )}
@@ -211,8 +230,9 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
                   children: props.confirmationText,
                 });
                 if (decision === "yes") {
+                  const activationData = props.getActivationData?.() ?? {};
                   props.onChangeSubscription(
-                    { is_active: true },
+                    { ...activationData, is_active: true },
                     {
                       onError: () => {
                         props.setChecked(false);
@@ -281,6 +301,9 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
             </div>
           )}
         </div>
+        {props.footer && (
+          <div className="dc__service__block__footer">{props.footer}</div>
+        )}
       </div>
     </div>
   );

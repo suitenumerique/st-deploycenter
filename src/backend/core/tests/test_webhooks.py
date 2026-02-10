@@ -11,7 +11,13 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 
 from core.factories import OperatorFactory
-from core.models import Organization, Service, ServiceSubscription
+from core.models import (
+    Account,
+    AccountServiceLink,
+    Organization,
+    Service,
+    ServiceSubscription,
+)
 from core.webhooks import WebhookClient, WebhookConfig, WebhookError
 
 
@@ -998,3 +1004,344 @@ class TestWebhookErrorHandling:
 
         expected = {"message": None, "data": None}
         assert rendered == expected
+
+
+@pytest.mark.django_db
+class TestWebhookRoles:
+    """Test webhook roles functionality."""
+
+    def test_webhook_includes_organization_roles(
+        self, webhook_server, sample_organization, sample_operator
+    ):
+        """Test that webhooks include organization-level roles."""
+        port = webhook_server.server_address[1]
+
+        # Create accounts with organization-level roles
+        admin_account = Account.objects.create(
+            email="admin@test.org",
+            organization=sample_organization,
+            roles=["admin"],
+        )
+        manager_account = Account.objects.create(
+            email="manager@test.org",
+            organization=sample_organization,
+            roles=["manager", "viewer"],
+        )
+        # Account without roles (should not be included)
+        Account.objects.create(
+            email="user@test.org",
+            organization=sample_organization,
+            roles=[],
+        )
+
+        # Create service with webhook configured
+        service = Service.objects.create(
+            name="Test Service",
+            instance_name="test-instance",
+            type="test_service",
+            url="https://example.com",
+            config={
+                "webhooks": [
+                    {
+                        "url": f"http://localhost:{port}/webhook",
+                        "method": "POST",
+                        "body": {
+                            "event_type": {"$val": "event_type"},
+                            "organization_roles": {"$val": "organization_roles"},
+                        },
+                    }
+                ]
+            },
+        )
+
+        # Create subscription - this triggers the signal
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service,
+            operator=sample_operator,
+        )
+
+        # Give the signal handler time to execute
+        time.sleep(0.1)
+
+        requests = webhook_server.RequestHandlerClass.requests_received
+        assert len(requests) == 1
+
+        body = requests[0]["body"]
+        org_roles = body["organization_roles"]
+
+        # Should include only accounts with roles
+        assert len(org_roles) == 2
+
+        # Check admin account
+        admin_role = next(
+            (r for r in org_roles if r["email"] == admin_account.email), None
+        )
+        assert admin_role is not None
+        assert admin_role["roles"] == ["admin"]
+
+        # Check manager account
+        manager_role = next(
+            (r for r in org_roles if r["email"] == manager_account.email), None
+        )
+        assert manager_role is not None
+        assert manager_role["roles"] == ["manager", "viewer"]
+
+    def test_webhook_includes_service_roles(
+        self, webhook_server, sample_organization, sample_operator
+    ):
+        """Test that webhooks include service-specific roles."""
+        port = webhook_server.server_address[1]
+
+        # Create service with webhook configured
+        service = Service.objects.create(
+            name="Test Service",
+            instance_name="test-instance",
+            type="test_service",
+            url="https://example.com",
+            config={
+                "webhooks": [
+                    {
+                        "url": f"http://localhost:{port}/webhook",
+                        "method": "POST",
+                        "body": {
+                            "event_type": {"$val": "event_type"},
+                            "service_roles": {"$val": "service_roles"},
+                        },
+                    }
+                ]
+            },
+        )
+
+        # Create accounts
+        account1 = Account.objects.create(
+            email="service-admin@test.org",
+            organization=sample_organization,
+        )
+        account2 = Account.objects.create(
+            email="service-user@test.org",
+            organization=sample_organization,
+        )
+        account3 = Account.objects.create(
+            email="no-service-role@test.org",
+            organization=sample_organization,
+        )
+
+        # Create service links with roles
+        AccountServiceLink.objects.create(
+            account=account1,
+            service=service,
+            roles=["admin"],
+        )
+        AccountServiceLink.objects.create(
+            account=account2,
+            service=service,
+            roles=["editor", "viewer"],
+        )
+        # Link without roles (should not be included)
+        AccountServiceLink.objects.create(
+            account=account3,
+            service=service,
+            roles=[],
+        )
+
+        # Create subscription - this triggers the signal
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service,
+            operator=sample_operator,
+        )
+
+        # Give the signal handler time to execute
+        time.sleep(0.1)
+
+        requests = webhook_server.RequestHandlerClass.requests_received
+        assert len(requests) == 1
+
+        body = requests[0]["body"]
+        service_roles = body["service_roles"]
+
+        # Should include only accounts with roles
+        assert len(service_roles) == 2
+
+        # Check service admin
+        admin_role = next(
+            (r for r in service_roles if r["email"] == account1.email), None
+        )
+        assert admin_role is not None
+        assert admin_role["roles"] == ["admin"]
+
+        # Check service user
+        user_role = next(
+            (r for r in service_roles if r["email"] == account2.email), None
+        )
+        assert user_role is not None
+        assert user_role["roles"] == ["editor", "viewer"]
+
+    def test_webhook_roles_empty_when_no_roles(
+        self, webhook_server, sample_organization, sample_operator
+    ):
+        """Test that roles are empty lists when no accounts have roles."""
+        port = webhook_server.server_address[1]
+
+        # Create service with webhook configured
+        service = Service.objects.create(
+            name="Test Service",
+            instance_name="test-instance",
+            type="test_service",
+            url="https://example.com",
+            config={
+                "webhooks": [
+                    {
+                        "url": f"http://localhost:{port}/webhook",
+                        "method": "POST",
+                        "body": {
+                            "organization_roles": {"$val": "organization_roles"},
+                            "service_roles": {"$val": "service_roles"},
+                        },
+                    }
+                ]
+            },
+        )
+
+        # Create account without roles
+        Account.objects.create(
+            email="user@test.org",
+            organization=sample_organization,
+            roles=[],
+        )
+
+        # Create subscription - this triggers the signal
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service,
+            operator=sample_operator,
+        )
+
+        # Give the signal handler time to execute
+        time.sleep(0.1)
+
+        requests = webhook_server.RequestHandlerClass.requests_received
+        assert len(requests) == 1
+
+        body = requests[0]["body"]
+        assert body["organization_roles"] == []
+        assert body["service_roles"] == []
+
+    def test_webhook_includes_subscription_metadata(
+        self, webhook_server, sample_organization, sample_operator
+    ):
+        """Test that webhooks include subscription metadata."""
+        port = webhook_server.server_address[1]
+
+        # Create service with webhook configured
+        service = Service.objects.create(
+            name="Test Service",
+            instance_name="test-instance",
+            type="test_service",
+            url="https://example.com",
+            config={
+                "webhooks": [
+                    {
+                        "url": f"http://localhost:{port}/webhook",
+                        "method": "POST",
+                        "body": {
+                            "subscription_metadata": {"$val": "subscription_metadata"},
+                        },
+                    }
+                ]
+            },
+        )
+
+        # Create subscription with metadata - this triggers the signal
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service,
+            operator=sample_operator,
+            metadata={
+                "domains": ["example.com", "test.org"],
+                "custom_field": "custom_value",
+            },
+        )
+
+        # Give the signal handler time to execute
+        time.sleep(0.1)
+
+        requests = webhook_server.RequestHandlerClass.requests_received
+        assert len(requests) == 1
+
+        body = requests[0]["body"]
+        assert body["subscription_metadata"] == {
+            "domains": ["example.com", "test.org"],
+            "custom_field": "custom_value",
+        }
+
+    def test_webhook_service_roles_only_for_target_service(
+        self, webhook_server, sample_organization, sample_operator
+    ):
+        """Test that service roles only include roles for the target service."""
+        port = webhook_server.server_address[1]
+
+        # Create two services - only service1 has webhooks
+        service1 = Service.objects.create(
+            name="Service 1",
+            instance_name="service-1",
+            type="test_service",
+            url="https://service1.example.com",
+            config={
+                "webhooks": [
+                    {
+                        "url": f"http://localhost:{port}/webhook",
+                        "method": "POST",
+                        "body": {
+                            "service_roles": {"$val": "service_roles"},
+                        },
+                    }
+                ]
+            },
+        )
+        service2 = Service.objects.create(
+            name="Service 2",
+            instance_name="service-2",
+            type="test_service",
+            url="https://service2.example.com",
+        )
+
+        # Create account
+        account = Account.objects.create(
+            email="user@test.org",
+            organization=sample_organization,
+        )
+
+        # Create service links for both services
+        AccountServiceLink.objects.create(
+            account=account,
+            service=service1,
+            roles=["admin"],
+        )
+        AccountServiceLink.objects.create(
+            account=account,
+            service=service2,
+            roles=["viewer"],
+        )
+
+        # Create subscription for service1 - this triggers the signal
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service1,
+            operator=sample_operator,
+        )
+
+        # Give the signal handler time to execute
+        time.sleep(0.1)
+
+        requests = webhook_server.RequestHandlerClass.requests_received
+        assert len(requests) == 1
+
+        body = requests[0]["body"]
+        service_roles = body["service_roles"]
+
+        # Should only include roles for service1
+        assert len(service_roles) == 1
+        assert service_roles[0]["email"] == account.email
+        assert service_roles[0]["roles"] == ["admin"]

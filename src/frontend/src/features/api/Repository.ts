@@ -57,6 +57,16 @@ export type ServiceSubscription = {
   service?: Service;
   is_active: boolean;
   entitlements: Entitlement[];
+  operator_id?: string;
+  operator_name?: string;
+  operator_idps?: OperatorIdp[];
+};
+
+// Input type for creating/updating subscriptions
+export type ServiceSubscriptionInput = Partial<
+  Omit<ServiceSubscription, "entitlements" | "created_at" | "updated_at">
+> & {
+  entitlements?: EntitlementInput[];
 };
 
 export type Entitlement = {
@@ -67,16 +77,18 @@ export type Entitlement = {
   id: string;
 };
 
+// Input type for creating/updating entitlements via subscription API
+export type EntitlementInput = {
+  type: string;
+  account_type: string;
+  config: Record<string, unknown>;
+};
+
 export const SERVICE_TYPE_PROCONNECT = "proconnect";
 export const SERVICE_TYPE_ADC = "adc";
 export const SERVICE_TYPE_ESD = "esd";
-
-export type OtherOperatorSubscription = {
-  operator_id: string;
-  operator_name: string;
-  is_active: boolean;
-  created_at: string;
-};
+export const SERVICE_TYPE_MESSAGES = "messages";
+export const SERVICE_TYPE_DRIVE = "drive";
 
 export type AccountServiceLink = {
   roles: string[];
@@ -95,6 +107,12 @@ export type Account = {
   type: string;
   roles: string[];
   service_links: AccountServiceLink[];
+};
+
+export type EntitlementDefault = {
+  type: string;
+  account_type: string;
+  config: Record<string, unknown>;
 };
 
 export type Service = {
@@ -116,7 +134,7 @@ export type Service = {
     help_center_url?: string;
     auto_admin_population_threshold?: number;
   };
-  other_operator_subscription?: OtherOperatorSubscription | null;
+  entitlement_defaults?: EntitlementDefault[];
 };
 
 export const sortModelToOrdering = (sortModel: SortModel): string => {
@@ -223,7 +241,7 @@ export const updateOrganizationServiceSubscription = async (
   operatorId: string,
   organizationId: string,
   serviceId: string,
-  data: Partial<ServiceSubscription>
+  data: ServiceSubscriptionInput
 ): Promise<ServiceSubscription> => {
   const response = await fetchAPI(
     `operators/${operatorId}/organizations/${organizationId}/services/${serviceId}/subscription/`,

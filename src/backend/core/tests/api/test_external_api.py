@@ -5,7 +5,7 @@ Test external API endpoints for organization and subscription management.
 import pytest
 from rest_framework.test import APIClient
 
-from core import factories
+from core import factories, models
 
 pytestmark = pytest.mark.django_db
 
@@ -329,3 +329,144 @@ def test_external_api_subscription_put_not_allowed():
         format="json",
     )
     assert response.status_code == 405
+
+
+def test_external_api_create_messages_subscription_with_domains_and_quotas():
+    """
+    Test creating a messages subscription with domains and quotas via external API.
+    This is the typical use case for partners activating messages for an organization.
+    """
+
+    operator = factories.OperatorFactory()
+    api_key = "test-external-api-key-12345"
+    operator.config = {"external_management_api_key": api_key}
+    operator.save()
+
+    organization = factories.OrganizationFactory(
+        siret="12345678901234", name="Test Mairie"
+    )
+    service = factories.ServiceFactory(type="messages", name="Messages")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {api_key}")
+
+    # Create subscription with domains, quotas, and activate it
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/"
+        f"services/{service.id}/subscription/",
+        {
+            "is_active": True,
+            "metadata": {
+                "domains": ["mairie-test.fr", "test-mairie.gouv.fr"],
+            },
+            "entitlements": [
+                {
+                    "type": models.Entitlement.EntitlementType.MESSAGES_STORAGE,
+                    "account_type": "organization",
+                    "config": {"max_storage": 100_000_000_000},  # 100 GB org quota
+                },
+                {
+                    "type": models.Entitlement.EntitlementType.MESSAGES_STORAGE,
+                    "account_type": "mailbox",
+                    "config": {"max_storage": 10_000_000_000},  # 10 GB per mailbox
+                },
+            ],
+        },
+        format="json",
+    )
+    assert response.status_code == 201, f"Response: {response.json()}"
+    content = response.json()
+
+    # Verify subscription is active
+    assert content["is_active"] is True
+
+    # Verify domains are set
+    assert content["metadata"]["domains"] == ["mairie-test.fr", "test-mairie.gouv.fr"]
+
+    # Verify entitlements were created with correct values
+    assert len(content["entitlements"]) == 2
+
+    org_entitlement = next(
+        e for e in content["entitlements"] if e["account_type"] == "organization"
+    )
+    mailbox_entitlement = next(
+        e for e in content["entitlements"] if e["account_type"] == "mailbox"
+    )
+
+    assert org_entitlement["config"]["max_storage"] == 100_000_000_000
+    assert mailbox_entitlement["config"]["max_storage"] == 10_000_000_000
+
+    # Verify subscription can be retrieved
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/"
+        f"services/{service.id}/subscription/"
+    )
+    assert response.status_code == 200
+    retrieved = response.json()
+    assert retrieved["metadata"]["domains"] == ["mairie-test.fr", "test-mairie.gouv.fr"]
+    assert len(retrieved["entitlements"]) == 2
+
+
+def test_external_api_update_subscription_quotas():
+    """Test updating subscription quotas via external API."""
+
+    operator = factories.OperatorFactory()
+    api_key = "test-external-api-key-12345"
+    operator.config = {"external_management_api_key": api_key}
+    operator.save()
+
+    organization = factories.OrganizationFactory()
+    # Use a service type that doesn't auto-create entitlements
+    service = factories.ServiceFactory(type="test_service", name="Test Service")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    # Create initial subscription with a single entitlement
+    subscription = factories.ServiceSubscriptionFactory(
+        organization=organization,
+        service=service,
+        operator=operator,
+        is_active=True,
+        metadata={"domains": ["example.com"]},
+    )
+    factories.EntitlementFactory(
+        service_subscription=subscription,
+        type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
+        account_type="organization",
+        account=None,
+        config={"max_storage": 50_000_000_000},
+    )
+
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {api_key}")
+
+    # Update quota
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/"
+        f"services/{service.id}/subscription/",
+        {
+            "entitlements": [
+                {
+                    "type": models.Entitlement.EntitlementType.MESSAGES_STORAGE,
+                    "account_type": "organization",
+                    "config": {"max_storage": 200_000_000_000},  # Increase to 200 GB
+                },
+            ],
+        },
+        format="json",
+    )
+    assert response.status_code == 200, f"Response: {response.json()}"
+    content = response.json()
+
+    # Verify quota was updated
+    org_entitlement = next(
+        e for e in content["entitlements"] if e["account_type"] == "organization"
+    )
+    assert org_entitlement["config"]["max_storage"] == 200_000_000_000
+
+    # Verify domains were not affected
+    assert content["metadata"]["domains"] == ["example.com"]

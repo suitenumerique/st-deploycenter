@@ -879,15 +879,16 @@ def test_api_organization_service_subscription_validation_population_limits():
 
 def test_api_organizations_services_list_includes_other_operator_subscription():
     """
-    Services list should include other_operator_subscription field showing
-    the subscription from another operator for the same organization.
+    Services list should return the effective subscription (from any operator)
+    in the subscription field, with operator_id and operator_name identifying
+    who manages it.
     """
     user = factories.UserFactory()
     client = APIClient()
     client.force_login(user)
 
     operator1 = factories.OperatorFactory(name="Operator 1")
-    operator2 = factories.OperatorFactory(name="Operator 2")
+    operator2 = factories.OperatorFactory(name="Operator 2", config={"idps": []})
     factories.UserOperatorRoleFactory(user=user, operator=operator1)
 
     organization = factories.OrganizationFactory()
@@ -915,30 +916,30 @@ def test_api_organizations_services_list_includes_other_operator_subscription():
     results = content["results"]
 
     service_result = next(r for r in results if r["id"] == service.id)
-    assert "other_operator_subscription" in service_result
 
-    other_sub = service_result["other_operator_subscription"]
-    assert other_sub is not None
-    assert other_sub["operator_id"] == str(operator2.id)
-    assert other_sub["operator_name"] == "Operator 2"
-    assert other_sub["is_active"] is True
-    assert "created_at" in other_sub
-
-    # The current operator has no subscription
-    assert service_result["subscription"] is None
+    # Subscription should now contain the effective subscription (from operator2)
+    # with operator info to identify who manages it
+    subscription = service_result["subscription"]
+    assert subscription is not None
+    assert subscription["operator_id"] == str(operator2.id)
+    assert subscription["operator_name"] == "Operator 2"
+    assert subscription["is_active"] is True
+    assert "created_at" in subscription
+    assert "operator_idps" in subscription
 
 
 def test_api_organizations_services_shows_service_with_only_other_operator_subscription():
     """
     Services that only have a subscription from another operator (not current)
-    should still appear in the list for visibility.
+    should still appear in the list for visibility. The subscription field
+    returns the effective subscription with operator info.
     """
     user = factories.UserFactory()
     client = APIClient()
     client.force_login(user)
 
     operator1 = factories.OperatorFactory(name="Operator 1")
-    operator2 = factories.OperatorFactory(name="Operator 2")
+    operator2 = factories.OperatorFactory(name="Operator 2", config={"idps": []})
     factories.UserOperatorRoleFactory(user=user, operator=operator1)
 
     organization = factories.OrganizationFactory()
@@ -977,20 +978,19 @@ def test_api_organizations_services_shows_service_with_only_other_operator_subsc
     assert service.id in service_ids
 
     service_result = next(r for r in content["results"] if r["id"] == service.id)
-    assert (
-        service_result["subscription"] is None
-    )  # No subscription for current operator
+
+    # Subscription shows the effective subscription (from operator2) with operator info
+    subscription = service_result["subscription"]
+    assert subscription is not None
+    assert subscription["operator_id"] == str(operator2.id)
+    assert subscription["operator_name"] == "Operator 2"
+
     assert service_result["operator_config"] is None  # No config for current operator
-    assert service_result["other_operator_subscription"] is not None
-    assert (
-        service_result["other_operator_subscription"]["operator_name"] == "Operator 2"
-    )
 
 
-def test_api_organizations_services_other_operator_subscription_permission():
+def test_api_organizations_services_permission():
     """
-    Verify that other_operator_subscription is only visible when current
-    operator manages the organization.
+    Verify that services are only visible when current operator manages the organization.
     """
     user = factories.UserFactory()
     client = APIClient()
@@ -1018,16 +1018,15 @@ def test_api_organizations_services_other_operator_subscription_permission():
     assert response.status_code == 403
 
 
-def test_api_organizations_services_excludes_own_subscription_from_other_operator_subscription():
+def test_api_organizations_services_subscription_includes_operator_info():
     """
-    Verify that when the current operator has a subscription, it doesn't appear
-    in other_operator_subscription.
+    Verify that when the current operator has a subscription, it includes operator info.
     """
     user = factories.UserFactory()
     client = APIClient()
     client.force_login(user)
 
-    operator1 = factories.OperatorFactory(name="Operator 1")
+    operator1 = factories.OperatorFactory(name="Operator 1", config={"idps": []})
     factories.UserOperatorRoleFactory(user=user, operator=operator1)
 
     organization = factories.OrganizationFactory()
@@ -1052,9 +1051,10 @@ def test_api_organizations_services_excludes_own_subscription_from_other_operato
 
     service_result = next(r for r in results if r["id"] == service.id)
 
-    # Current operator's subscription should be in "subscription" field
-    assert service_result["subscription"] is not None
-    assert service_result["subscription"]["is_active"] is True
-
-    # other_operator_subscription should be null
-    assert service_result["other_operator_subscription"] is None
+    # Current operator's subscription should be in "subscription" field with operator info
+    subscription = service_result["subscription"]
+    assert subscription is not None
+    assert subscription["is_active"] is True
+    assert subscription["operator_id"] == str(operator1.id)
+    assert subscription["operator_name"] == "Operator 1"
+    assert "operator_idps" in subscription

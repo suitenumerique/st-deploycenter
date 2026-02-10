@@ -10,8 +10,6 @@ import {
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ServiceAttribute } from "@/features/ui/components/service/ServiceAttribute";
-import { useMutationUpdateEntitlement } from "@/hooks/useQueries";
-import { useOperatorContext } from "@/features/layouts/components/GlobalLayout";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
 import { Entitlement } from "@/features/api/Repository";
 import { ServiceBlockEntitlementFieldProps } from "@/features/ui/components/service/entitlements/ServiceBlockEntitlements";
@@ -64,8 +62,7 @@ const toBytes = (value: number, unit: string) => {
 const getTranslationPrefix = (
   serviceType: string,
   entitlement: Entitlement,
-  fieldName: string,
-  priority: string
+  fieldName: string
 ) => {
   return `organizations.services.types.${serviceType}.entitlements.${entitlement.type}.${fieldName}.${entitlement.account_type}`;
 };
@@ -86,8 +83,7 @@ export const StoragePickerEntitlementField = (
   const translationPrefix = getTranslationPrefix(
     props.service.type,
     props.entitlement,
-    props.fieldName,
-    props.priority
+    props.fieldName
   );
   return (
     <>
@@ -114,17 +110,13 @@ const StoragePickerEntitlementFieldModal = (
   const translationPrefix = getTranslationPrefix(
     props.service.type,
     props.entitlement,
-    props.fieldName,
-    props.priority
+    props.fieldName
   );
   const { t } = useTranslation();
 
   const [initialValue, initialUnit] = fromBytes(
     parseInt(props.entitlement?.config.max_storage as string) || 0
   );
-
-  const { operatorId } = useOperatorContext();
-  const { mutate: updateEntitlement } = useMutationUpdateEntitlement();
 
   const [value, setValue] = useState(initialValue);
   const [unit, setUnit] = useState(initialUnit);
@@ -134,15 +126,19 @@ const StoragePickerEntitlementFieldModal = (
     e.preventDefault();
     setIsLoading(true);
 
-    updateEntitlement(
+    const newStorageValue = toBytes(value, unit);
+
+    // Use the subscription API with entitlements - works for both new and existing subscriptions
+    props.onChangeSubscription(
       {
-        operatorId,
-        organizationId: props.organization.id,
-        serviceId: props.service.id,
-        entitlementId: props.entitlement.id,
-        data: {
-          config: { max_storage: toBytes(value, unit) },
-        },
+        is_active: props.service.subscription?.is_active ?? false,
+        entitlements: [
+          {
+            type: props.entitlement.type,
+            account_type: props.entitlement.account_type,
+            config: { max_storage: newStorageValue },
+          },
+        ],
       },
       {
         onSuccess: () => {

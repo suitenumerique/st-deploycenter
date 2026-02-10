@@ -9,6 +9,7 @@ import {
 import { Icon } from "@gouvfr-lasuite/ui-kit";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useRouter } from "next/router";
 import {
   useOrganizationAccounts,
   useOrganizationServices,
@@ -27,11 +28,30 @@ export const AccountsTab = ({
   organizationId,
 }: AccountsTabProps) => {
   const { t } = useTranslation();
+  const router = useRouter();
+
+  const roleFilter = (router.query.role as string) || "";
+  const typeFilter = (router.query.type as string) || "";
+
+  const setUrlFilter = (key: string, value: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { [key]: _, ...restQuery } = router.query;
+    const query: Record<string, string | string[] | undefined> = { ...restQuery };
+    if (value) {
+      query[key] = value;
+    }
+    router.push(
+      { pathname: router.pathname, query },
+      undefined,
+      { shallow: true }
+    );
+  };
+
+  const setRoleFilter = (role: string) => setUrlFilter("role", role);
+  const setTypeFilter = (type: string) => setUrlFilter("type", type);
 
   const [sortModel, setSortModel] = useState<SortModel>([]);
   const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState("");
-  const [roleFilter, setRoleFilter] = useState("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
 

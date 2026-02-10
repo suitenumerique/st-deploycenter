@@ -4,11 +4,10 @@ import {
   useServiceBlock,
 } from "@/features/ui/components/service/ServiceBlock";
 
-export const RegularServiceBlock = (props: {
+export const DriveServiceBlock = (props: {
   service: Service;
   organization: Organization;
 }) => {
   const blockProps = useServiceBlock(props.service, props.organization);
-  return <ServiceBlock {...blockProps} />;
+  return <ServiceBlock {...blockProps} showEntitlementsBeforeSubscription={true} />;
 };
-  
