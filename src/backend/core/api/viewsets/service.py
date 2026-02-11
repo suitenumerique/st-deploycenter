@@ -75,7 +75,6 @@ class OrganizationServiceViewSet(viewsets.ReadOnlyModelViewSet):
             models.Service.objects.filter(
                 Q(
                     operatorserviceconfig__operator_id=operator_id,
-                    operatorserviceconfig__display_priority__gte=0,
                 )
                 # Also include services that have subscriptions for this org (any operator)
                 | Q(subscriptions__organization_id=organization_id)
