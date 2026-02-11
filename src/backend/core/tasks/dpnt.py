@@ -173,19 +173,35 @@ def _create_service_subscriptions(operator, service_id, org_ids, valid_services)
     if not new_sub_objects:
         return 0
 
-    created_subs = ServiceSubscription.objects.bulk_create(
-        new_sub_objects, ignore_conflicts=True
-    )
+    # bulk_create with ignore_conflicts returns all objects but only inserts non-conflicting ones.
+    # We need to count actual insertions by querying after the fact.
+    count_before = ServiceSubscription.objects.filter(
+        service_id=service_id, organization_id__in=org_ids
+    ).count()
+
+    ServiceSubscription.objects.bulk_create(new_sub_objects, ignore_conflicts=True)
+
+    count_after = ServiceSubscription.objects.filter(
+        service_id=service_id, organization_id__in=org_ids
+    ).count()
+    actual_created_count = count_after - count_before
 
     # Create default entitlements for newly created subscriptions
-    service = valid_services[service_id]
-    handler = get_service_handler(service)
-    if handler:
-        for sub in created_subs:
-            if sub.pk:  # Only for actually inserted rows
+    # Re-fetch the newly created ones to get their PKs
+    if actual_created_count > 0:
+        service = valid_services[service_id]
+        handler = get_service_handler(service)
+        if handler:
+            new_org_ids = [obj.organization_id for obj in new_sub_objects]
+            created_subs = ServiceSubscription.objects.filter(
+                service_id=service_id,
+                organization_id__in=new_org_ids,
+                operator=operator,
+            )
+            for sub in created_subs:
                 handler.create_default_entitlements(sub)
 
-    return len(created_subs)
+    return actual_created_count
 
 
 def _process_auto_join() -> Dict[str, Any]:

@@ -141,7 +141,7 @@ export const ProConnectServiceBlock = (props: {
   // so the user can select an IDP before creating the subscription.
   const availableIdps = subscription?.operator_idps ?? operator?.config.idps ?? [];
   const getIdp = (idp_id: string) => {
-    return availableIdps.find((idp) => idp.id == idp_id);
+    return availableIdps.find((idp) => idp.id === idp_id);
   };
 
   // Get domains from subscription metadata if available

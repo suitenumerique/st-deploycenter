@@ -414,8 +414,10 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["created_at", "updated_at"]
 
-    # Store entitlement configs to apply after save
-    _pending_entitlement_configs = None
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Store entitlement configs to apply after save (instance-level, not class-level)
+        self._pending_entitlement_configs = None
 
     def to_internal_value(self, data):
         """Extract entitlements input before validation."""
@@ -444,26 +446,51 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
 
         Only updates default entitlements (where account=None).
         Account-specific entitlements are never modified by this method.
+        Validates that entitlement types are appropriate for the service.
         """
         if not self._pending_entitlement_configs:
             return
+
+        # Get valid entitlement types for this service
+        handler = get_service_handler(subscription.service)
+        valid_types = set()
+        if handler:
+            valid_types = {d["type"] for d in handler.get_default_entitlements()}
 
         for config_data in self._pending_entitlement_configs:
             entitlement_type = config_data["type"]
             account_type = config_data["account_type"]
             config = config_data["config"]
 
+            # Validate entitlement type is appropriate for this service
+            # Only validate if the service has defined valid types (via handler)
+            if valid_types and entitlement_type not in valid_types:
+                raise serializers.ValidationError(
+                    {
+                        "entitlements": f"Entitlement type '{entitlement_type}' is not valid "
+                        f"for service type '{subscription.service.type}'. "
+                        f"Valid types: {', '.join(str(t) for t in valid_types)}"
+                    }
+                )
+
+            # Also validate the type is a valid EntitlementType enum value
+            valid_enum_types = [t.value for t in models.Entitlement.EntitlementType]
+            if entitlement_type not in valid_enum_types:
+                raise serializers.ValidationError(
+                    {
+                        "entitlements": f"Unknown entitlement type '{entitlement_type}'. "
+                        f"Valid types: {', '.join(valid_enum_types)}"
+                    }
+                )
+
             # Only update default entitlements (account=None), never account-specific ones
-            entitlement, _ = subscription.entitlements.get_or_create(
+            # Use update_or_create for atomic operation
+            subscription.entitlements.update_or_create(
                 type=entitlement_type,
                 account_type=account_type,
                 account=None,
                 defaults={"config": config},
             )
-            # Update config if entitlement already existed
-            if entitlement.config != config:
-                entitlement.config = config
-                entitlement.save()
 
     VALID_AUTO_ADMIN_VALUES = ("all", "manual")
 

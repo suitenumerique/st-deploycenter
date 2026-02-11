@@ -786,7 +786,43 @@ def test_api_subscription_with_unknown_entitlement_type():
         },
         format="json",
     )
-    # Unknown entitlement types are rejected at the model level
+    # Unknown entitlement types are rejected at the serializer level
     assert response.status_code == 400
     data = response.json()
     assert "type" in str(data).lower() or "entitlement" in str(data).lower()
+
+
+def test_api_subscription_with_wrong_service_entitlement_type():
+    """Sending an entitlement type that doesn't match the service should be rejected."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    # Create a messages service
+    service = factories.ServiceFactory(type="messages")
+
+    # Try to create subscription with drive_storage entitlement (wrong for messages)
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/"
+        f"services/{service.id}/subscription/",
+        {
+            "is_active": False,
+            "entitlements": [
+                {
+                    "type": models.Entitlement.EntitlementType.DRIVE_STORAGE,
+                    "account_type": "organization",
+                    "config": {"max_storage": 1000000},
+                },
+            ],
+        },
+        format="json",
+    )
+    # Should be rejected because drive_storage is not valid for messages service
+    assert response.status_code == 400
+    data = response.json()
+    assert "not valid" in str(data).lower() or "entitlement" in str(data).lower()

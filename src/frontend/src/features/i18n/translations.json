@@ -79,8 +79,7 @@
               },
               "admins": {
                 "label": "Administrateurs",
-                "service_count_one": "{{count}} pour ce service",
-                "service_count_other": "{{count}} pour ce service",
+                "service_count": "{{count}} pour ce service",
                 "global_count_one": "{{count}} global",
                 "global_count_other": "{{count}} globaux",
                 "and": "et"

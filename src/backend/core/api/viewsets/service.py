@@ -85,7 +85,7 @@ class OrganizationServiceViewSet(viewsets.ReadOnlyModelViewSet):
                     "subscriptions",
                     queryset=models.ServiceSubscription.objects.filter(
                         organization_id=organization_id, operator_id=operator_id
-                    ),
+                    ).select_related("operator"),
                 ),
                 Prefetch(
                     "operatorserviceconfig_set",

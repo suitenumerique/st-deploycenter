@@ -11,4 +11,3 @@ export const RegularServiceBlock = (props: {
   const blockProps = useServiceBlock(props.service, props.organization);
   return <ServiceBlock {...blockProps} />;
 };
-  

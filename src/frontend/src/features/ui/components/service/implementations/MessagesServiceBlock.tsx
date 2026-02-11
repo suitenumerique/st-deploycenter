@@ -20,7 +20,7 @@ import {
   ModalSize,
   useModal,
 } from "@openfun/cunningham-react";
-import { useRouter } from "next/router";
+import Link from "next/link";
 import { MutateOptions } from "@tanstack/react-query";
 
 const PREFIX = "organizations.services.types.messages";
@@ -30,7 +30,6 @@ export const MessagesServiceBlock = (props: {
   organization: Organization;
 }) => {
   const { t } = useTranslation();
-  const router = useRouter();
   const { operatorId } = useOperatorContext();
   const blockProps = useServiceBlock(props.service, props.organization);
   const domainModal = useModal();
@@ -40,7 +39,7 @@ export const MessagesServiceBlock = (props: {
   // Returns undefined if not set, or the array (possibly empty) if explicitly configured
   const savedDomains = useMemo(() => {
     const domainsData = props.service.subscription?.metadata?.domains;
-    if (domainsData && Array.isArray(domainsData)) {
+    if (Array.isArray(domainsData)) {
       return domainsData as string[];
     }
     return undefined;
@@ -65,7 +64,7 @@ export const MessagesServiceBlock = (props: {
       (s) => s.type === SERVICE_TYPE_PROCONNECT
     );
     const pcDomains = proConnectService?.subscription?.metadata?.domains;
-    if (pcDomains && Array.isArray(pcDomains)) {
+    if (Array.isArray(pcDomains)) {
       return pcDomains as string[];
     }
     return [];
@@ -75,11 +74,8 @@ export const MessagesServiceBlock = (props: {
   const domains = savedDomains !== undefined ? savedDomains : proConnectDomains;
   const hasDomains = domains.length > 0;
 
-  const navigateToAccounts = (role: string) => {
-    router.push({
-      pathname: router.pathname,
-      query: { ...router.query, tab: "accounts", role },
-    });
+  const getAccountsUrl = (role: string) => {
+    return `/operators/${operatorId}/organizations/${props.organization.id}?tab=accounts&role=${encodeURIComponent(role)}`;
   };
 
   // Block activation if no domains are configured
@@ -161,27 +157,19 @@ export const MessagesServiceBlock = (props: {
       footer={
         <div className="dc__service__admins-summary">
           {t(`${PREFIX}.admins.label`)} :{" "}
-          <a
-            href="#"
+          <Link
+            href={getAccountsUrl(`service.${props.service.id}.admin`)}
             className="dc__service__admins-summary__link"
-            onClick={(e) => {
-              e.preventDefault();
-              navigateToAccounts(`service.${props.service.id}.admin`);
-            }}
           >
             {t(`${PREFIX}.admins.service_count`, { count: serviceAdminCount })}
-          </a>
+          </Link>
           {" "}{t(`${PREFIX}.admins.and`)}{" "}
-          <a
-            href="#"
+          <Link
+            href={getAccountsUrl("org.admin")}
             className="dc__service__admins-summary__link"
-            onClick={(e) => {
-              e.preventDefault();
-              navigateToAccounts("org.admin");
-            }}
           >
             {t(`${PREFIX}.admins.global_count`, { count: globalAdminCount })}
-          </a>
+          </Link>
         </div>
       }
     />
@@ -205,7 +193,13 @@ const DomainSelectorModal = (props: {
   const [selectedDomains, setSelectedDomains] = useState<string[]>(props.domains);
   const [isPending, setIsPending] = useState(false);
   const [showSpinner, setShowSpinner] = useState(false);
+  const [saveError, setSaveError] = useState(false);
   const spinnerTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // Sync selectedDomains when props.domains changes (e.g., after external update)
+  useEffect(() => {
+    setSelectedDomains(props.domains);
+  }, [props.domains]);
 
   // Combine existing domains and ProConnect domains for the list
   const allDomains = useMemo(() => {
@@ -237,6 +231,7 @@ const DomainSelectorModal = (props: {
 
     if (hasChanged) {
       setIsPending(true);
+      setSaveError(false);
       spinnerTimeout.current = setTimeout(() => setShowSpinner(true), 600);
 
       props.onSave(selectedDomains, {
@@ -250,6 +245,7 @@ const DomainSelectorModal = (props: {
           clearTimeout(spinnerTimeout.current);
           setIsPending(false);
           setShowSpinner(false);
+          setSaveError(true);
         },
       });
     } else {
@@ -264,7 +260,7 @@ const DomainSelectorModal = (props: {
       closeOnEsc={!isPending}
       closeOnClickOutside={!isPending}
       isOpen={props.isOpen}
-      onClose={props.onClose}
+      onClose={isPending ? () => {} : props.onClose}
       rightActions={
         <>
           <Button
@@ -308,7 +304,12 @@ const DomainSelectorModal = (props: {
                 </p>
               )}
             </div>
-                      </div>
+            {saveError && (
+              <p className="dc__domain-selector__error">
+                {t("api.error.unexpected")}
+              </p>
+            )}
+          </div>
         </form>
       </div>
     </Modal>
