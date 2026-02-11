@@ -27,14 +27,9 @@ class ServiceHandler:
         Uses DEFAULT_ENTITLEMENTS as the source of truth.
         """
         for default in self.DEFAULT_ENTITLEMENTS:
-            if not service_subscription.entitlements.filter(
+            service_subscription.entitlements.get_or_create(
                 type=default["type"],
                 account_type=default["account_type"],
                 account=None,
-            ).exists():
-                service_subscription.entitlements.create(
-                    type=default["type"],
-                    config=default["config"].copy(),
-                    account_type=default["account_type"],
-                    account=None,
-                )
+                defaults={"config": default["config"].copy()},
+            )

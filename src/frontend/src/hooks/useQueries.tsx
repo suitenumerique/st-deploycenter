@@ -283,25 +283,20 @@ export const useMessagesAdminCount = (
       serviceId,
     ],
     queryFn: async () => {
-      // Fetch accounts with global admin role
-      const globalAdmins = await getOrganizationAccounts(
-        operatorId,
-        organizationId,
-        { role: "org.admin" }
-      );
+      // Fetch both admin counts in parallel
+      const [globalAdmins, serviceAdmins] = await Promise.all([
+        getOrganizationAccounts(operatorId, organizationId, {
+          role: "org.admin",
+        }),
+        getOrganizationAccounts(operatorId, organizationId, {
+          role: `service.${serviceId}.admin`,
+        }),
+      ]);
 
-      // Fetch accounts with messages service admin role
-      const serviceAdmins = await getOrganizationAccounts(
-        operatorId,
-        organizationId,
-        { role: `service.${serviceId}.admin` }
-      );
-
-      // Use results.length for accurate count of matching accounts
-      // The count field may include unfiltered totals depending on backend behavior
+      // Use count field for total count (handles pagination)
       return {
-        globalCount: globalAdmins.results.length,
-        serviceCount: serviceAdmins.results.length,
+        globalCount: globalAdmins.count,
+        serviceCount: serviceAdmins.count,
       };
     },
     enabled: !!operatorId && !!organizationId && !!serviceId,

@@ -419,6 +419,8 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
 
     def to_internal_value(self, data):
         """Extract entitlements input before validation."""
+        # Work on a shallow copy to avoid mutating the original input
+        data = {**data}
         # Pop the entitlements from input data to handle separately
         entitlements_data = data.pop("entitlements", None)
         result = super().to_internal_value(data)

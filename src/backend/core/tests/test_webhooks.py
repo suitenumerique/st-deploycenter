@@ -1,4 +1,4 @@
-# pylint: disable=invalid-name
+# pylint: disable=invalid-name,too-many-lines
 """
 Tests for webhook functionality in ServiceSubscription lifecycle events.
 """

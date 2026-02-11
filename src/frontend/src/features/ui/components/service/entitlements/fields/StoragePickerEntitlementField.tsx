@@ -199,7 +199,7 @@ const StoragePickerEntitlementFieldModal = (
             min="0"
             step="0.01"
             value={value}
-            onChange={(e) => setValue(parseFloat(e.target.value))}
+            onChange={(e) => setValue(parseFloat(e.target.value) || 0)}
           />
           <Select
             label={t(

@@ -21,6 +21,7 @@ import {
   useModal,
 } from "@openfun/cunningham-react";
 import { useRouter } from "next/router";
+import { MutateOptions } from "@tanstack/react-query";
 
 const PREFIX = "organizations.services.types.messages";
 
@@ -93,16 +94,22 @@ export const MessagesServiceBlock = (props: {
   const serviceAdminCount = adminCount?.serviceCount ?? 0;
   const globalAdminCount = adminCount?.globalCount ?? 0;
 
-  const handleDomainsChange = (newDomains: string[]) => {
+  const handleDomainsChange = (
+    newDomains: string[],
+    options?: MutateOptions<unknown, unknown, unknown, unknown>
+  ) => {
     if (newDomains.length > 0) {
       setShowDomainError(false);
     }
-    blockProps.onChangeSubscription({
-      metadata: {
-        ...props.service.subscription?.metadata,
-        domains: newDomains,
+    blockProps.onChangeSubscription(
+      {
+        metadata: {
+          ...props.service.subscription?.metadata,
+          domains: newDomains,
+        },
       },
-    });
+      options
+    );
   };
 
   // Provide domains when activating (uses current domains which may be ProConnect defaults)
@@ -189,7 +196,10 @@ const DomainSelectorModal = (props: {
   onClose: () => void;
   domains: string[];
   proConnectDomains: string[];
-  onSave: (domains: string[]) => void;
+  onSave: (
+    domains: string[],
+    options?: MutateOptions<unknown, unknown, unknown, unknown>
+  ) => void;
 }) => {
   const { t } = useTranslation();
   const [selectedDomains, setSelectedDomains] = useState<string[]>(props.domains);
@@ -229,14 +239,19 @@ const DomainSelectorModal = (props: {
       setIsPending(true);
       spinnerTimeout.current = setTimeout(() => setShowSpinner(true), 600);
 
-      props.onSave(selectedDomains);
-
-      setTimeout(() => {
-        clearTimeout(spinnerTimeout.current);
-        setIsPending(false);
-        setShowSpinner(false);
-        props.onClose();
-      }, 300);
+      props.onSave(selectedDomains, {
+        onSuccess: () => {
+          clearTimeout(spinnerTimeout.current);
+          setIsPending(false);
+          setShowSpinner(false);
+          props.onClose();
+        },
+        onError: () => {
+          clearTimeout(spinnerTimeout.current);
+          setIsPending(false);
+          setShowSpinner(false);
+        },
+      });
     } else {
       props.onClose();
     }
