@@ -26,7 +26,7 @@
 
 # ST Deploy Center : App management for operators of La Suite territoriale
 
-Deploy Center helps operators of instances of [La Suite territoriale](https://suiteterritoriale.anct.gouv.fr/) to configure apps for each of the organizations they manage.
+Deploy Center helps operators of instances of [La Suite territoriale](https://suiteterritoriale.anct.gouv.fr/) to configure services and roles for each of the organizations they manage.
 
 ![Overall data flow](docs/assets/data-flow.svg)
 
