@@ -8,6 +8,7 @@ from core.entitlements.resolvers import TYPE_TO_ADMIN_RESOLVER
 from core.entitlements.resolvers.extended_admin_entitlement_resolver import (
     ExtendedAdminEntitlementResolver,
 )
+from core.services import get_service_handler
 
 
 class IntegerChoicesField(serializers.ChoiceField):
@@ -316,6 +317,7 @@ class ServiceSerializer(serializers.ModelSerializer):
 
     logo = serializers.CharField(source="get_logo_url", read_only=True)
     config = serializers.SerializerMethodField(read_only=True)
+    entitlement_defaults = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = models.Service
@@ -332,6 +334,7 @@ class ServiceSerializer(serializers.ModelSerializer):
             "created_at",
             "logo",
             "config",
+            "entitlement_defaults",
         ]
         read_only_fields = fields
 
@@ -344,6 +347,13 @@ class ServiceSerializer(serializers.ModelSerializer):
             "auto_admin_population_threshold",
         ]
         return {key: config[key] for key in whitelist_keys if key in config}
+
+    def get_entitlement_defaults(self, obj):
+        """Get the default entitlement configurations for this service type."""
+        handler = get_service_handler(obj)
+        if handler:
+            return handler.get_default_entitlements()
+        return []
 
 
 class ServiceLightSerializer(serializers.ModelSerializer):
@@ -364,15 +374,123 @@ class EntitlementSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "type"]
 
 
+class EntitlementConfigInputSerializer(serializers.Serializer):
+    """Serializer for entitlement config input when creating/updating subscriptions.
+
+    This is a read-only serializer used only for validation of entitlement config input.
+    """
+
+    type = serializers.CharField()
+    account_type = serializers.CharField()
+    config = serializers.DictField()
+
+    def create(self, validated_data):
+        """Not used - this serializer is only for validation."""
+        raise NotImplementedError("This serializer is read-only")
+
+    def update(self, instance, validated_data):
+        """Not used - this serializer is only for validation."""
+        raise NotImplementedError("This serializer is read-only")
+
+
 class ServiceSubscriptionSerializer(serializers.ModelSerializer):
     """Serialize service subscriptions."""
 
     entitlements = EntitlementSerializer(many=True, read_only=True)
+    # Write-only field for setting entitlement configs during create/update
+    entitlements_input = EntitlementConfigInputSerializer(
+        many=True, write_only=True, required=False, source="entitlements"
+    )
 
     class Meta:
         model = models.ServiceSubscription
-        fields = ["metadata", "created_at", "updated_at", "is_active", "entitlements"]
+        fields = [
+            "metadata",
+            "created_at",
+            "updated_at",
+            "is_active",
+            "entitlements",
+            "entitlements_input",
+        ]
         read_only_fields = ["created_at", "updated_at"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Store entitlement configs to apply after save (instance-level, not class-level)
+        self._pending_entitlement_configs = None
+
+    def to_internal_value(self, data):
+        """Extract entitlements input before validation."""
+        # Work on a shallow copy to avoid mutating the original input
+        data = {**data}
+        # Pop the entitlements from input data to handle separately
+        entitlements_data = data.pop("entitlements", None)
+        result = super().to_internal_value(data)
+        if entitlements_data is not None:
+            # Validate entitlements input
+            entitlements_serializer = EntitlementConfigInputSerializer(
+                data=entitlements_data, many=True
+            )
+            entitlements_serializer.is_valid(raise_exception=True)
+            self._pending_entitlement_configs = entitlements_serializer.validated_data
+        return result
+
+    def update(self, instance, validated_data):
+        """Update subscription and apply entitlement configs."""
+        instance = super().update(instance, validated_data)
+        self.apply_entitlement_configs(instance)
+        return instance
+
+    def apply_entitlement_configs(self, subscription):
+        """Apply pending entitlement configs to the subscription.
+
+        Only updates default entitlements (where account=None).
+        Account-specific entitlements are never modified by this method.
+        Validates that entitlement types are appropriate for the service.
+        """
+        if not self._pending_entitlement_configs:
+            return
+
+        # Get valid entitlement types for this service
+        handler = get_service_handler(subscription.service)
+        valid_types = set()
+        if handler:
+            valid_types = {d["type"] for d in handler.get_default_entitlements()}
+
+        for config_data in self._pending_entitlement_configs:
+            entitlement_type = config_data["type"]
+            account_type = config_data["account_type"]
+            config = config_data["config"]
+
+            # Validate entitlement type is appropriate for this service
+            # Only validate if the service has defined valid types (via handler)
+            if valid_types and entitlement_type not in valid_types:
+                raise serializers.ValidationError(
+                    {
+                        "entitlements": f"Entitlement type '{entitlement_type}' is not valid "
+                        f"for service type '{subscription.service.type}'. "
+                        f"Valid types: {', '.join(str(t) for t in valid_types)}"
+                    }
+                )
+
+            # Also validate the type is a valid EntitlementType enum value
+            valid_enum_types = [t.value for t in models.Entitlement.EntitlementType]
+            if entitlement_type not in valid_enum_types:
+                raise serializers.ValidationError(
+                    {
+                        "entitlements": f"Unknown entitlement type '{entitlement_type}'. "
+                        f"Valid types: {', '.join(valid_enum_types)}"
+                    }
+                )
+
+            # Only update default entitlements (account=None), never account-specific ones
+            # Use update_or_create for atomic operation
+            subscription.entitlements.update_or_create(
+                type=entitlement_type,
+                account_type=account_type,
+                account=None,
+                defaults={"config": config},
+            )
 
     VALID_AUTO_ADMIN_VALUES = ("all", "manual")
 
@@ -496,21 +614,34 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class OtherOperatorSubscriptionSerializer(serializers.Serializer):
-    """Serialize subscription info from other operators (read-only)."""
+class SubscriptionWithOperatorSerializer(ServiceSubscriptionSerializer):
+    """
+    Serialize service subscriptions with operator info.
+    Used when returning subscription data that may be from another operator.
+    """
 
-    operator_id = serializers.UUIDField(source="operator.id")
-    operator_name = serializers.CharField(source="operator.name")
-    is_active = serializers.BooleanField()
-    created_at = serializers.DateTimeField()
+    operator_id = serializers.UUIDField(source="operator.id", read_only=True)
+    operator_name = serializers.CharField(source="operator.name", read_only=True)
+    operator_idps = serializers.SerializerMethodField()
 
-    def create(self, validated_data):
-        """Not implemented - this serializer is read-only."""
-        raise NotImplementedError("This serializer is read-only")
+    class Meta:
+        model = models.ServiceSubscription
+        fields = ServiceSubscriptionSerializer.Meta.fields + [
+            "operator_id",
+            "operator_name",
+            "operator_idps",
+        ]
+        read_only_fields = ServiceSubscriptionSerializer.Meta.read_only_fields + [
+            "operator_id",
+            "operator_name",
+            "operator_idps",
+        ]
 
-    def update(self, instance, validated_data):
-        """Not implemented - this serializer is read-only."""
-        raise NotImplementedError("This serializer is read-only")
+    def get_operator_idps(self, obj):
+        """Return the operator's IDP list from their config."""
+        if obj.operator and obj.operator.config:
+            return obj.operator.config.get("idps", [])
+        return []
 
 
 class ServiceSubscriptionWithServiceSerializer(ServiceSubscriptionSerializer):
@@ -572,24 +703,35 @@ class OrganizationServiceSerializer(ServiceSerializer):
 
     subscription = serializers.SerializerMethodField(read_only=True)
     operator_config = serializers.SerializerMethodField(read_only=True)
-    other_operator_subscription = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = models.Service
         fields = ServiceSerializer.Meta.fields + [
             "subscription",
             "operator_config",
-            "other_operator_subscription",
         ]
         read_only_fields = fields
 
     def get_subscription(self, obj):
         """
-        Return only the first subscription if multiple exist.
+        Return the effective subscription for this service.
+        Priority:
+        1. Current operator's subscription (if exists)
+        2. Another operator's subscription (if exists, read-only)
+
+        Always includes operator_id and operator_name to identify who owns the subscription.
         """
+        # First try current operator's subscription (from prefetch)
         first_subscription = obj.subscriptions.first()
         if first_subscription:
-            return ServiceSubscriptionSerializer(first_subscription).data
+            return SubscriptionWithOperatorSerializer(first_subscription).data
+
+        # Fall back to other operator's subscription
+        if hasattr(obj, "other_operator_subscription_prefetched"):
+            other_subs = obj.other_operator_subscription_prefetched
+            if other_subs:
+                return SubscriptionWithOperatorSerializer(other_subs[0]).data
+
         return None
 
     def get_operator_config(self, obj):
@@ -601,34 +743,6 @@ class OrganizationServiceSerializer(ServiceSerializer):
                 "display_priority": configs[0].display_priority,
                 "externally_managed": configs[0].externally_managed,
             }
-        return None
-
-    def get_other_operator_subscription(self, obj):
-        """
-        Return the subscription from another operator for this service and organization,
-        or None. There can be at most one per (organization, service) due to unique_together.
-        Uses prefetched data when available.
-        """
-        if "organization" not in self.context or "operator_id" not in self.context:
-            return None
-
-        # Use prefetched data if available (Prefetch to_attr returns a list)
-        if hasattr(obj, "other_operator_subscription_prefetched"):
-            other_subs = obj.other_operator_subscription_prefetched
-        else:
-            organization = self.context["organization"]
-            current_operator_id = self.context["operator_id"]
-            other_subs = list(
-                models.ServiceSubscription.objects.filter(
-                    organization=organization,
-                    service=obj,
-                )
-                .exclude(operator_id=current_operator_id)
-                .select_related("operator")
-            )
-
-        if other_subs:
-            return OtherOperatorSubscriptionSerializer(other_subs[0]).data
         return None
 
     def to_representation(self, instance):

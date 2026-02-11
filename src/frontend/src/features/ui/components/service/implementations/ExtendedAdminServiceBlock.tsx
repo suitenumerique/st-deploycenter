@@ -1,6 +1,5 @@
 import {
   Organization,
-  OtherOperatorSubscription,
   Service,
 } from "@/features/api/Repository";
 import {
@@ -46,15 +45,14 @@ const computeDefaultMode = (
 export const ExtendedAdminServiceBlock = (props: {
   service: Service;
   organization: Organization;
-  isManagedByOtherOperator?: boolean;
-  managingOperatorSubscription?: OtherOperatorSubscription;
 }) => {
   const { t } = useTranslation();
   const blockProps = useServiceBlock(props.service, props.organization);
   const modal = useModal();
+  const subscription = props.service.subscription;
 
   const persistedMode =
-    props.service.subscription?.metadata?.auto_admin as
+    subscription?.metadata?.auto_admin as
       | string
       | undefined;
   const isDefault = !persistedMode;
@@ -66,7 +64,7 @@ export const ExtendedAdminServiceBlock = (props: {
     ? t(`${PREFIX}.default_short`, { value: shortLabel })
     : shortLabel;
 
-  const isActive = props.service.subscription?.is_active ?? false;
+  const isActive = subscription?.is_active ?? false;
 
   const handleSave = (
     newMode: string,
@@ -84,8 +82,6 @@ export const ExtendedAdminServiceBlock = (props: {
   return (
     <ServiceBlock
       {...blockProps}
-      isManagedByOtherOperator={props.isManagedByOtherOperator}
-      managingOperatorSubscription={props.managingOperatorSubscription}
       content={
         <div className="dc__service__attribute__container">
           {modal.isOpen && (
@@ -100,7 +96,7 @@ export const ExtendedAdminServiceBlock = (props: {
             name={t(`${PREFIX}.label`)}
             value={displayValue}
             onClick={() => modal.open()}
-            interactive={true}
+            interactive={!blockProps.isManagedByOtherOperator}
           />
         </div>
       }

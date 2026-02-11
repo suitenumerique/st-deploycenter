@@ -12,6 +12,8 @@ from django.utils import timezone
 
 import requests
 
+from core.models import Account, AccountServiceLink
+
 logger = logging.getLogger(__name__)
 
 
@@ -217,6 +219,25 @@ class WebhookClient:
             List of results from each webhook attempt
         """
         results = []
+        # Fetch organization-level roles (accounts with global roles)
+        organization_roles = [
+            {"email": account.email, "roles": account.roles}
+            for account in Account.objects.filter(organization=organization).exclude(
+                roles=[]
+            )
+        ]
+
+        # Fetch service-specific roles (accounts linked to this service with roles)
+        service_roles = [
+            {"email": link.account.email, "roles": link.roles}
+            for link in AccountServiceLink.objects.filter(
+                service=service,
+                account__organization=organization,
+            )
+            .exclude(roles=[])
+            .select_related("account")
+        ]
+
         context_data = {
             "event_type": event_type,
             "timestamp": timezone.now().isoformat(),
@@ -254,6 +275,9 @@ class WebhookClient:
             "user_id": str(user.id) if user else "",
             "user_email": user.email if user else "",
             "user_name": user.full_name if user else "",
+            # Roles (non-customizable JSON objects)
+            "organization_roles": organization_roles,
+            "service_roles": service_roles,
         }
 
         for webhook_config in self.webhook_configs:

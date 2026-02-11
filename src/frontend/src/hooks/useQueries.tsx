@@ -4,7 +4,7 @@ import {
   deleteOrganizationServiceSubscription,
   getOperatorOrganizations,
   updateOrganizationServiceSubscription,
-  ServiceSubscription,
+  ServiceSubscriptionInput,
   updateEntitlement,
   Entitlement,
   getOrganizationAccounts,
@@ -112,7 +112,7 @@ export const useMutationUpdateOrganizationServiceSubscription = () => {
       operatorId: string;
       organizationId: string;
       serviceId: string;
-      data: Partial<ServiceSubscription>;
+      data: ServiceSubscriptionInput;
     }) => {
       return updateOrganizationServiceSubscription(
         operatorId,
@@ -265,6 +265,41 @@ export const useMutationUpdateAccountServiceLink = () => {
         ],
       });
     },
+  });
+};
+
+export const useMessagesAdminCount = (
+  operatorId: string,
+  organizationId: string,
+  serviceId: string
+) => {
+  return useQuery({
+    queryKey: [
+      "operators",
+      operatorId,
+      "organizations",
+      organizationId,
+      "messagesAdminCount",
+      serviceId,
+    ],
+    queryFn: async () => {
+      // Fetch both admin counts in parallel
+      const [globalAdmins, serviceAdmins] = await Promise.all([
+        getOrganizationAccounts(operatorId, organizationId, {
+          role: "org.admin",
+        }),
+        getOrganizationAccounts(operatorId, organizationId, {
+          role: `service.${serviceId}.admin`,
+        }),
+      ]);
+
+      // Use count field for total count (handles pagination)
+      return {
+        globalCount: globalAdmins.count,
+        serviceCount: serviceAdmins.count,
+      };
+    },
+    enabled: !!operatorId && !!organizationId && !!serviceId,
   });
 };
 

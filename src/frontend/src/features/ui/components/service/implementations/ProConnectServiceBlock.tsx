@@ -2,7 +2,6 @@ import {
   MailDomainStatus,
   OperatorIdp,
   Organization,
-  OtherOperatorSubscription,
   Service,
   ServiceSubscription,
 } from "@/features/api/Repository";
@@ -131,24 +130,28 @@ const getProConnectMessage = (
 export const ProConnectServiceBlock = (props: {
   service: Service;
   organization: Organization;
-  isManagedByOtherOperator?: boolean;
-  managingOperatorSubscription?: OtherOperatorSubscription;
 }) => {
   const { operator } = useOperatorContext();
-  const getIdp = (idp_id: string) => {
-    return operator?.config.idps?.find((idp) => idp.id == idp_id);
-  };
-
   const blockProps = useServiceBlock(props.service, props.organization);
+  const subscription = props.service.subscription;
+
+  // Use the subscription's operator IDPs to display the correct IDP name,
+  // even when viewing a subscription managed by another operator.
+  // Fallback to current operator's IDPs when no subscription exists yet,
+  // so the user can select an IDP before creating the subscription.
+  const availableIdps = subscription?.operator_idps ?? operator?.config.idps ?? [];
+  const getIdp = (idp_id: string) => {
+    return availableIdps.find((idp) => idp.id === idp_id);
+  };
 
   // Get domains from subscription metadata if available
   const subscriptionDomains = useMemo(() => {
-    const domains = props.service.subscription?.metadata?.domains;
+    const domains = subscription?.metadata?.domains;
     if (domains && Array.isArray(domains) && domains.length > 0) {
       return domains;
     }
     return null;
-  }, [props.service.subscription?.metadata?.domains]);
+  }, [subscription?.metadata?.domains]);
 
   const {
     handleSubmit,
@@ -157,7 +160,7 @@ export const ProConnectServiceBlock = (props: {
   } = useForm({
     defaultValues: {
       mail_domain: props.organization.mail_domain,
-      idp_id: props.service.subscription?.metadata?.idp_id,
+      idp_id: subscription?.metadata?.idp_id,
     },
   });
 
@@ -165,7 +168,7 @@ export const ProConnectServiceBlock = (props: {
     const data: Partial<ServiceSubscription> = {
       metadata: {idp_id: idp?.id},
     };
-    if (!props.service.subscription) {
+    if (!subscription || blockProps.isManagedByOtherOperator) {
       data.is_active = false;
     }
     blockProps.onChangeSubscription(data);
@@ -175,27 +178,25 @@ export const ProConnectServiceBlock = (props: {
 
   // Check if subscription is less than 48 hours old
   const isSubscriptionLessThan48Hours = useMemo(() => {
-    if (!props.service.subscription?.created_at) {
+    if (!subscription?.created_at) {
       return false;
     }
-    const createdAt = new Date(props.service.subscription.created_at);
+    const createdAt = new Date(subscription.created_at);
     const now = new Date();
     const diffInHours = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
     return diffInHours < 48;
-  }, [props.service.subscription?.created_at]);
+  }, [subscription?.created_at]);
 
   const message = getProConnectMessage(
     props.organization,
     subscriptionDomains,
-    props.service.subscription?.is_active || false
+    subscription?.is_active || false
   );
 
   return (
     <ServiceBlock
       {...blockProps}
       showGoto={false}
-      isManagedByOtherOperator={props.isManagedByOtherOperator}
-      managingOperatorSubscription={props.managingOperatorSubscription}
       confirmationText={<>
         <span>En activant ProConnect, vous garantissez que :</span>
         <ul>
@@ -253,17 +254,17 @@ export const ProConnectServiceBlock = (props: {
                             saveIdpChange(idp);
                           }}
                           options={
-                            operator?.config.idps?.map((idp) => ({
+                            availableIdps.map((idp) => ({
                               label: idp.name,
                               value: idp.id,
-                            })) ?? []
+                            }))
                           }
                         />
                       </div>
                     </Modal>
                     <ServiceAttribute
                       name="Fournisseur d'Identité"
-                      interactive={!props.service.subscription?.is_active}
+                      interactive={!subscription?.is_active && !blockProps.isManagedByOtherOperator}
                       onClick={() => idpModal.open()}
                       value={
                         getIdp(value)?.name ??
@@ -293,7 +294,7 @@ export const ProConnectServiceBlock = (props: {
                   {message.alert}
               </div>}
 
-              {isSubscriptionLessThan48Hours && props.service.subscription?.is_active && (
+              {isSubscriptionLessThan48Hours && subscription?.is_active && (
                 <div className="dc__service__info">
                   <Icon name="info" size={IconSize.SMALL} />
                   L&apos;activation de ProConnect peut prendre jusqu&apos;à 48 heures

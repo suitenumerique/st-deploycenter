@@ -7,7 +7,7 @@
       },
       "app_title": "Espace Opérateur",
       "home": {
-        "title": "La centrale d'administration",
+        "title": "Espace Opérateur",
         "subtitle": "Activez et gérez simplement les services de tous vos adhérents."
       },
       "login": "Connexion",
@@ -64,22 +64,42 @@
               }
             },
             "messages": {
+              "domains": {
+                "label": "Domaines email",
+                "empty": "Aucun configuré",
+                "warning": "Vous devez configurer au moins un domaine email avant de pouvoir activer ce service.",
+                "modal": {
+                  "title": "Domaines email",
+                  "description": "Sélectionnez les domaines email pour ce service.",
+                  "suggested": "(suggéré)",
+                  "no_domains": "Aucun domaine disponible. Ajoutez un domaine ci-dessous.",
+                  "add_placeholder": "exemple.fr",
+                  "add_button": "Ajouter"
+                }
+              },
+              "admins": {
+                "label": "Administrateurs",
+                "service_count": "{{count}} pour ce service",
+                "global_count_one": "{{count}} global",
+                "global_count_other": "{{count}} globaux",
+                "and": "et"
+              },
               "entitlements": {
                 "messages_storage": {
                   "max_storage": {
                     "mailbox": {
-                      "label": "Quota par mailbox",
+                      "label": "Quota par boîte",
                       "modal": {
-                        "title": "Quota par mailbox",
-                        "description": "Modifier le quota de stockage par mailbox."
+                        "title": "Quota par boîte",
+                        "description": "Modifier le quota de stockage par boîte."
                       },
                       "zero_value": "Illimité"
                     },
                     "organization": {
-                      "label": "Quota d'organisation",
+                      "label": "Quota global",
                       "modal": {
-                        "title": "Quota d'organisation",
-                        "description": "Modifier le quota de stockage de l'organisation."
+                        "title": "Quota global",
+                        "description": "Modifier le quota de stockage pour toutes les boîtes de l'organisation."
                       },
                       "zero_value": "Illimité"
                     }

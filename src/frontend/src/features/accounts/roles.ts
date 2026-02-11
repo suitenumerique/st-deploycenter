@@ -27,6 +27,7 @@ export const SERVICE_ROLES: Record<string, RoleDefinition[]> = {
   ],
   adc: [{ value: "admin", labelKey: "accounts.roles.admin" }],
   esd: [{ value: "admin", labelKey: "accounts.roles.admin" }],
+  messages: [{ value: "admin", labelKey: "accounts.roles.admin" }],
   default: [],
 };
 

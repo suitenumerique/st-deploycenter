@@ -472,3 +472,357 @@ def test_api_subscription_entitlements_cannot_patch_role():
         format="json",
     )
     assert response.status_code == 403
+
+
+def test_api_subscription_create_with_entitlements():
+    """Users should be able to create a subscription with entitlement configs."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    service = factories.ServiceFactory()
+
+    # Create subscription with entitlements
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/"
+        f"services/{service.id}/subscription/",
+        {
+            "is_active": False,
+            "entitlements": [
+                {
+                    "type": models.Entitlement.EntitlementType.DRIVE_STORAGE,
+                    "account_type": "organization",
+                    "config": {"max_storage": 5000000000},
+                },
+                {
+                    "type": models.Entitlement.EntitlementType.DRIVE_STORAGE,
+                    "account_type": "user",
+                    "config": {"max_storage": 1000000000},
+                },
+            ],
+        },
+        format="json",
+    )
+    assert response.status_code == 201
+    data = response.json()
+
+    # Check entitlements were created
+    assert len(data["entitlements"]) == 2
+    org_entitlement = next(
+        e for e in data["entitlements"] if e["account_type"] == "organization"
+    )
+    user_entitlement = next(
+        e for e in data["entitlements"] if e["account_type"] == "user"
+    )
+    assert org_entitlement["config"]["max_storage"] == 5000000000
+    assert user_entitlement["config"]["max_storage"] == 1000000000
+
+
+def test_api_subscription_update_with_entitlements():
+    """Users should be able to update a subscription with entitlement configs."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    service = factories.ServiceFactory()
+
+    # Create subscription first
+    subscription = factories.ServiceSubscriptionFactory(
+        organization=organization, service=service, operator=operator
+    )
+    # Create an initial entitlement
+    factories.EntitlementFactory(
+        service_subscription=subscription,
+        type=models.Entitlement.EntitlementType.DRIVE_STORAGE,
+        account_type="organization",
+        config={"max_storage": 1000},
+    )
+
+    # Update subscription with new entitlement config
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/"
+        f"services/{service.id}/subscription/",
+        {
+            "entitlements": [
+                {
+                    "type": models.Entitlement.EntitlementType.DRIVE_STORAGE,
+                    "account_type": "organization",
+                    "config": {"max_storage": 9999},
+                },
+            ],
+        },
+        format="json",
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    # Check entitlement was updated
+    assert len(data["entitlements"]) == 1
+    assert data["entitlements"][0]["config"]["max_storage"] == 9999
+
+
+def test_api_subscription_entitlements_does_not_override_account_specific():
+    """Entitlements input should not override account-specific entitlements."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    service = factories.ServiceFactory()
+
+    # Create subscription with account-specific entitlement
+    subscription = factories.ServiceSubscriptionFactory(
+        organization=organization, service=service, operator=operator
+    )
+    account = factories.AccountFactory(organization=organization, type="user")
+    account_entitlement = factories.EntitlementFactory(
+        service_subscription=subscription,
+        type=models.Entitlement.EntitlementType.DRIVE_STORAGE,
+        account_type="user",
+        account=account,
+        config={"max_storage": 999},
+    )
+
+    # Update subscription with default entitlement config
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/"
+        f"services/{service.id}/subscription/",
+        {
+            "entitlements": [
+                {
+                    "type": models.Entitlement.EntitlementType.DRIVE_STORAGE,
+                    "account_type": "user",
+                    "config": {"max_storage": 5000},
+                },
+            ],
+        },
+        format="json",
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    # Should have 2 entitlements now: the account-specific one and the new default one
+    assert len(data["entitlements"]) == 2
+
+    # Account-specific entitlement should be unchanged
+    account_ent = next(
+        e for e in data["entitlements"] if e["account"] == str(account.id)
+    )
+    assert account_ent["config"]["max_storage"] == 999
+
+    # Default entitlement should have been created
+    default_ent = next(e for e in data["entitlements"] if e["account"] is None)
+    assert default_ent["config"]["max_storage"] == 5000
+
+    # Verify in DB
+    account_entitlement.refresh_from_db()
+    assert account_entitlement.config["max_storage"] == 999
+
+
+def test_api_subscription_with_empty_entitlements_array():
+    """Sending an empty entitlements array should not change existing entitlements."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    service = factories.ServiceFactory()
+
+    # Create subscription with an entitlement
+    subscription = factories.ServiceSubscriptionFactory(
+        organization=organization, service=service, operator=operator
+    )
+    factories.EntitlementFactory(
+        service_subscription=subscription,
+        type=models.Entitlement.EntitlementType.DRIVE_STORAGE,
+        account_type="organization",
+        config={"max_storage": 1000},
+    )
+
+    # Update subscription with empty entitlements array
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/"
+        f"services/{service.id}/subscription/",
+        {
+            "entitlements": [],
+        },
+        format="json",
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    # Existing entitlement should be unchanged
+    assert len(data["entitlements"]) == 1
+    assert data["entitlements"][0]["config"]["max_storage"] == 1000
+
+
+def test_api_subscription_without_entitlements_key():
+    """Sending a request without the entitlements key should not change existing entitlements."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    service = factories.ServiceFactory()
+
+    # Create subscription with an entitlement
+    subscription = factories.ServiceSubscriptionFactory(
+        organization=organization, service=service, operator=operator
+    )
+    factories.EntitlementFactory(
+        service_subscription=subscription,
+        type=models.Entitlement.EntitlementType.DRIVE_STORAGE,
+        account_type="organization",
+        config={"max_storage": 1000},
+    )
+
+    # Update subscription without entitlements key
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/"
+        f"services/{service.id}/subscription/",
+        {
+            "is_active": True,
+        },
+        format="json",
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    # Existing entitlement should be unchanged
+    assert len(data["entitlements"]) == 1
+    assert data["entitlements"][0]["config"]["max_storage"] == 1000
+
+
+def test_api_subscription_with_duplicate_entitlements():
+    """Sending duplicate entitlements (same type+account_type) should use the last value."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    service = factories.ServiceFactory()
+
+    # Create subscription with duplicate entitlements in request
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/"
+        f"services/{service.id}/subscription/",
+        {
+            "is_active": False,
+            "entitlements": [
+                {
+                    "type": models.Entitlement.EntitlementType.DRIVE_STORAGE,
+                    "account_type": "organization",
+                    "config": {"max_storage": 1000},
+                },
+                {
+                    "type": models.Entitlement.EntitlementType.DRIVE_STORAGE,
+                    "account_type": "organization",
+                    "config": {"max_storage": 9999},  # Last one should win
+                },
+            ],
+        },
+        format="json",
+    )
+    assert response.status_code == 201
+    data = response.json()
+
+    # Should only have one entitlement with the last value
+    assert len(data["entitlements"]) == 1
+    assert data["entitlements"][0]["config"]["max_storage"] == 9999
+
+
+def test_api_subscription_with_unknown_entitlement_type():
+    """Sending an unknown entitlement type should be rejected."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    service = factories.ServiceFactory()
+
+    # Create subscription with unknown entitlement type
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/"
+        f"services/{service.id}/subscription/",
+        {
+            "is_active": False,
+            "entitlements": [
+                {
+                    "type": "totally_made_up_type",
+                    "account_type": "organization",
+                    "config": {"some_key": "some_value"},
+                },
+            ],
+        },
+        format="json",
+    )
+    # Unknown entitlement types are rejected at the serializer level
+    assert response.status_code == 400
+    data = response.json()
+    assert "type" in str(data).lower() or "entitlement" in str(data).lower()
+
+
+def test_api_subscription_with_wrong_service_entitlement_type():
+    """Sending an entitlement type that doesn't match the service should be rejected."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    # Create a messages service
+    service = factories.ServiceFactory(type="messages")
+
+    # Try to create subscription with drive_storage entitlement (wrong for messages)
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/"
+        f"services/{service.id}/subscription/",
+        {
+            "is_active": False,
+            "entitlements": [
+                {
+                    "type": models.Entitlement.EntitlementType.DRIVE_STORAGE,
+                    "account_type": "organization",
+                    "config": {"max_storage": 1000000},
+                },
+            ],
+        },
+        format="json",
+    )
+    # Should be rejected because drive_storage is not valid for messages service
+    assert response.status_code == 400
+    data = response.json()
+    assert "not valid" in str(data).lower() or "entitlement" in str(data).lower()
