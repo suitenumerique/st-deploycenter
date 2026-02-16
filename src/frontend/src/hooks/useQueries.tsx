@@ -10,6 +10,7 @@ import {
   getOrganizationAccounts,
   createOrganizationAccount,
   updateAccount,
+  deleteAccount,
   updateAccountServiceLink,
   Account,
   getOperatorServices,
@@ -223,6 +224,32 @@ export const useMutationUpdateAccount = () => {
       data: Partial<Pick<Account, "roles">>;
     }) => {
       return updateAccount(accountId, data);
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: [
+          "operators",
+          variables.operatorId,
+          "organizations",
+          variables.organizationId,
+          "accounts",
+        ],
+      });
+    },
+  });
+};
+
+export const useMutationDeleteAccount = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      accountId,
+    }: {
+      operatorId: string;
+      organizationId: string;
+      accountId: string;
+    }) => {
+      return deleteAccount(accountId);
     },
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({

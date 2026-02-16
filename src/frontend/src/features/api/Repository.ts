@@ -314,6 +314,12 @@ export const updateAccount = async (
   return (await response.json()) as Account;
 };
 
+export const deleteAccount = async (accountId: string): Promise<void> => {
+  await fetchAPI(`accounts/${accountId}/`, {
+    method: "DELETE",
+  });
+};
+
 export const updateAccountServiceLink = async (
   accountId: string,
   serviceId: string,

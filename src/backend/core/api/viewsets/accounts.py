@@ -98,7 +98,10 @@ class OrganizationAccountsViewSet(
 
 
 class AccountViewSet(
-    viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.UpdateModelMixin
+    viewsets.GenericViewSet,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
 ):
     """ViewSet for Account model.
 

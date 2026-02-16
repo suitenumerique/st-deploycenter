@@ -10,7 +10,8 @@ import { SERVICE_TYPE_PROCONNECT } from "@/features/api/Repository";
 import { Breadcrumbs } from "@/features/ui/components/breadcrumbs/Breadcrumbs";
 import { useMemo } from "react";
 import { useBreadcrumbOperator } from "@/features/ui/components/breadcrumbs/Parts";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Tooltip } from "@openfun/cunningham-react";
 import { RpntBadge } from "@/features/ui/components/organization/RpntBadge";
 import { ServiceBlockDispatcher } from "@/features/ui/components/service/ServiceBlockDispatcher";
 import { AccountsTab } from "@/features/ui/components/accounts/AccountsTab";
@@ -154,6 +155,9 @@ export default function Organization() {
               <div className="dc__organization__header__details__item">
                 <span className="dc__organization__header__details__item__label">
                   {t("organizations.details.rpnt")}
+                  <Tooltip content={t("organizations.details.rpnt_tooltip")}>
+                    <Icon name="info" size={IconSize.SMALL} style={{ cursor: "help", marginLeft: "4px", verticalAlign: "middle" }} />
+                  </Tooltip>
                 </span>
                 <span className="dc__organization__header__details__item__value">
                   <RpntBadge rpnt={organization.rpnt} siret={organization.siret} />
