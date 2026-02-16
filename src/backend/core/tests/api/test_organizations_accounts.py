@@ -670,3 +670,69 @@ def test_api_organizations_accounts_patch_service_link_operator_not_allowed(
     assert response.json() == {
         "detail": "Vous n'avez pas la permission d'effectuer cette action."
     }
+
+
+##
+## Delete account
+##
+
+
+@pytest.mark.parametrize("auth_method", ["user", "external_api_key"])
+def test_api_organizations_accounts_delete(account_test_setup, auth_method):
+    """Authenticated auth method (user or operator) should be able to delete an account."""
+    client = APIClient()
+    if auth_method == "user":
+        client.force_login(account_test_setup["user"])
+    elif auth_method == "external_api_key":
+        client.credentials(HTTP_AUTHORIZATION="Bearer test-external-api-key-12345")
+
+    organization = account_test_setup["organization_ok1"]
+    account = factories.AccountFactory(
+        email="test@example.com",
+        organization=organization,
+        external_id="1234567890",
+        type="user",
+        roles=["admin"],
+    )
+
+    assert models.Account.objects.filter(id=account.id).exists()
+
+    response = client.delete(f"/api/v1.0/accounts/{account.id}/")
+    assert response.status_code == 204
+
+    assert not models.Account.objects.filter(id=account.id).exists()
+
+
+@pytest.mark.parametrize("auth_method", ["user", "external_api_key"])
+def test_api_organizations_accounts_delete_operator_not_allowed(
+    account_test_setup, auth_method
+):
+    """Authenticated auth method (user or operator) should not be able to delete accounts of other operators."""
+    client = APIClient()
+    if auth_method == "user":
+        client.force_login(account_test_setup["user2"])
+    elif auth_method == "external_api_key":
+        client.credentials(HTTP_AUTHORIZATION="Bearer test-external-api-key-abcd")
+
+    organization = account_test_setup["organization_ok1"]
+    account = factories.AccountFactory(organization=organization)
+
+    response = client.delete(f"/api/v1.0/accounts/{account.id}/")
+    assert response.status_code == 403
+    assert response.json() == {
+        "detail": "Vous n'avez pas la permission d'effectuer cette action."
+    }
+
+
+def test_api_organizations_accounts_delete_anonymous(account_test_setup):
+    """Anonymous users should not be able to delete accounts."""
+    client = APIClient()
+
+    organization = account_test_setup["organization_ok1"]
+    account = factories.AccountFactory(organization=organization)
+
+    response = client.delete(f"/api/v1.0/accounts/{account.id}/")
+    assert response.status_code == 401
+    assert response.json() == {
+        "detail": "Informations d'authentification non fournies."
+    }

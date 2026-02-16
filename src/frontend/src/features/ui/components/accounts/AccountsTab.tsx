@@ -5,6 +5,7 @@ import {
   SortModel,
   Button,
   usePagination,
+  useModals,
 } from "@openfun/cunningham-react";
 import { Icon } from "@gouvfr-lasuite/ui-kit";
 import { useEffect, useRef, useState } from "react";
@@ -13,6 +14,7 @@ import { useRouter } from "next/router";
 import {
   useOrganizationAccounts,
   useOrganizationServices,
+  useMutationDeleteAccount,
 } from "@/hooks/useQueries";
 import { sortModelToOrdering, Account } from "@/features/api/Repository";
 import { GLOBAL_ROLES, getServiceRoles } from "@/features/accounts/roles";
@@ -29,6 +31,8 @@ export const AccountsTab = ({
 }: AccountsTabProps) => {
   const { t } = useTranslation();
   const router = useRouter();
+  const modals = useModals();
+  const deleteAccount = useMutationDeleteAccount();
 
   const roleFilter = (router.query.role as string) || "";
   const typeFilter = (router.query.type as string) || "";
@@ -230,15 +234,34 @@ export const AccountsTab = ({
           {
             field: "actions",
             headerName: "",
-            size: 80,
+            size: 120,
             enableSorting: false,
             renderCell: (params) => (
-              <Button
-                size="small"
-                color="secondary"
-                icon={<Icon name="edit" />}
-                onClick={() => setEditingAccount(params.row as Account)}
-              />
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <Button
+                  size="small"
+                  color="secondary"
+                  icon={<Icon name="edit" />}
+                  onClick={() => setEditingAccount(params.row as Account)}
+                />
+                <Button
+                  size="small"
+                  color="secondary"
+                  icon={<Icon name="delete" />}
+                  onClick={async () => {
+                    const decision = await modals.confirmationModal({
+                      children: t("accounts.delete_confirmation"),
+                    });
+                    if (decision === "yes") {
+                      deleteAccount.mutate({
+                        operatorId,
+                        organizationId,
+                        accountId: (params.row as Account).id,
+                      });
+                    }
+                  }}
+                />
+              </div>
             ),
           },
         ]}

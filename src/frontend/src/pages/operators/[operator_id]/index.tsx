@@ -217,6 +217,7 @@ export default function Operator() {
                         href={`/operators/${operatorId}/organizations/${params.row.id}`}
                       >
                         {params.row.service_subscriptions
+                          .filter((s) => s.is_active)
                           .map(
                             (serviceSubscription) =>
                               serviceSubscription.service!.name
@@ -230,12 +231,12 @@ export default function Operator() {
                     >
                       <Badge
                         type={
-                          params.row.service_subscriptions.length > 0
+                          params.row.service_subscriptions.filter((s) => s.is_active).length > 0
                             ? "info"
                             : "neutral"
                         }
                       >
-                        {params.row.service_subscriptions.length}
+                        {params.row.service_subscriptions.filter((s) => s.is_active).length}
                       </Badge>
                     </Link>
                   </Tooltip>

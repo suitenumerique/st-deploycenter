@@ -140,6 +140,7 @@
         "details": {
           "population": "Population",
           "rpnt": "RPNT",
+          "rpnt_tooltip": "Référentiel de Présence Numérique des Territoires, qui garantit la conformité du site internet et de la messagerie de la commune",
           "contact": "Informations déclarées",
           "email_missing": "Email non déclaré",
           "website_missing": "Site internet non déclaré"
@@ -194,6 +195,7 @@
         "add_modal": {
           "title": "Ajouter des rôles à un compte"
         },
+        "delete_confirmation": "Êtes-vous sûr de vouloir supprimer ce compte ?",
         "edit_modal": {
           "title": "Modifier le compte",
           "service_roles": "Rôles par service"
