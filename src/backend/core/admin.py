@@ -1,6 +1,7 @@
 # pylint: disable=line-too-long,too-many-lines
 """Admin classes and registrations for core app."""
 
+import json
 import secrets
 
 from django import forms
@@ -14,6 +15,122 @@ from django.urls import path, reverse
 from django.utils.translation import gettext_lazy as _
 
 from . import models
+
+
+def clean_siret_list(raw_text):
+    """Validate and return a list of clean SIRET/SIREN/INSEE codes from raw text.
+
+    Args:
+        raw_text: Raw text containing one code per line.
+
+    Returns:
+        list: List of validated code strings.
+
+    Raises:
+        forms.ValidationError: If no valid codes or invalid format found.
+    """
+    if not raw_text.strip():
+        raise forms.ValidationError(
+            _("Please enter at least one SIRET, SIREN, or INSEE code.")
+        )
+
+    siret_lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
+
+    if not siret_lines:
+        raise forms.ValidationError(
+            _("Please enter at least one valid SIRET, SIREN, or INSEE code.")
+        )
+
+    valid_codes = []
+    invalid_codes = []
+
+    for code in siret_lines:
+        clean_code = code.replace(" ", "").replace("-", "")
+        if clean_code.isdigit() and len(clean_code) in (5, 9, 14):
+            valid_codes.append(clean_code)
+        else:
+            invalid_codes.append(code)
+
+    if invalid_codes:
+        raise forms.ValidationError(
+            _(
+                "Invalid format: {}. SIRETs must be exactly 14 digits, "
+                "SIRENs must be exactly 9 digits, "
+                "INSEE codes must be exactly 5 digits."
+            ).format(
+                ", ".join(invalid_codes[:5]) + ("..." if len(invalid_codes) > 5 else "")
+            )
+        )
+
+    return valid_codes
+
+
+def _get_epci_communes(epci):
+    """Return the list of communes belonging to an EPCI, or empty list."""
+    if not epci.siren:
+        return []
+    return list(
+        models.Organization.objects.filter(epci_siren=epci.siren, type="commune")
+    )
+
+
+def resolve_organizations_from_codes(codes, expand_epci=False):
+    """Resolve a list of SIRET/SIREN/INSEE codes to Organization objects.
+
+    Args:
+        codes: List of validated code strings (5, 9, or 14 digits).
+        expand_epci: If True, EPCI organizations are expanded to their commune members.
+
+    Returns:
+        tuple: (organizations_list, not_found_codes) where organizations_list is a list
+               of Organization querysets/lists (one per code) and not_found_codes is a
+               list of codes that didn't match any organization.
+    """
+    all_organizations = []
+    not_found_codes = []
+
+    for code in codes:
+        code_length = len(code)
+        orgs = []
+
+        if code_length == 5:
+            # INSEE code - lookup communes
+            orgs = list(
+                models.Organization.objects.filter(code_insee=code, type="commune")
+            )
+
+        elif code_length == 9:
+            # SIREN code
+            organizations = list(models.Organization.objects.filter(siren=code))
+            if organizations:
+                epci_orgs = [o for o in organizations if o.type == "epci"]
+                other_orgs = [o for o in organizations if o.type != "epci"]
+
+                if expand_epci and epci_orgs:
+                    for epci in epci_orgs:
+                        orgs.extend(_get_epci_communes(epci))
+                else:
+                    orgs.extend(epci_orgs)
+
+                orgs.extend(other_orgs)
+
+        elif code_length == 14:
+            # SIRET code
+            try:
+                organization = models.Organization.objects.get(siret=code)
+                if expand_epci and organization.type == "epci":
+                    orgs.extend(_get_epci_communes(organization))
+                else:
+                    orgs.append(organization)
+            except models.Organization.DoesNotExist:
+                pass
+
+        if orgs:
+            all_organizations.append(orgs)
+        else:
+            not_found_codes.append(code)
+
+    return all_organizations, not_found_codes
 
 
 class ServiceForm(forms.ModelForm):
@@ -148,45 +265,79 @@ class BulkSiretImportForm(forms.ModelForm):
 
     def clean_siret_list(self):
         """Clean and validate the SIRET/SIREN/INSEE list."""
-        siret_list = self.cleaned_data.get("siret_list", "")
-        if not siret_list.strip():
-            raise forms.ValidationError(
-                _("Please enter at least one SIRET, SIREN, or INSEE code.")
-            )
+        return clean_siret_list(self.cleaned_data.get("siret_list", ""))
 
-        # Split by lines and clean
-        siret_lines = [line.strip() for line in siret_list.split("\n") if line.strip()]
 
-        if not siret_lines:
-            raise forms.ValidationError(
-                _("Please enter at least one valid SIRET, SIREN, or INSEE code.")
-            )
+class BulkSubscriptionImportForm(forms.Form):
+    """Form for bulk creating ServiceSubscription entries from SIRET/SIREN/INSEE codes."""
 
-        # Validate SIRET (14 digits), SIREN (9 digits), or INSEE code (5 digits) format
-        valid_codes = []
-        invalid_codes = []
+    operator = forms.ModelChoiceField(
+        queryset=models.Operator.objects.all(),
+        label=_("Operator"),
+    )
 
-        for code in siret_lines:
-            # Remove any spaces or dashes
-            clean_code = code.replace(" ", "").replace("-", "")
-            if clean_code.isdigit() and len(clean_code) in (5, 9, 14):
-                valid_codes.append(clean_code)
-            else:
-                invalid_codes.append(code)
+    service = forms.ModelChoiceField(
+        queryset=models.Service.objects.all(),
+        label=_("Service"),
+    )
 
-        if invalid_codes:
-            raise forms.ValidationError(
-                _(
-                    "Invalid format: {}. SIRETs must be exactly 14 digits, "
-                    "SIRENs must be exactly 9 digits, "
-                    "INSEE codes must be exactly 5 digits."
-                ).format(
-                    ", ".join(invalid_codes[:5])
-                    + ("..." if len(invalid_codes) > 5 else "")
-                )
-            )
+    siret_list = forms.CharField(
+        widget=forms.Textarea(
+            attrs={
+                "rows": 15,
+                "cols": 50,
+                "placeholder": _(
+                    "Enter one SIRET (14 digits), SIREN (9 digits), or INSEE code (5 digits) per line:\n12345678901234\n987654321\n12345\n..."
+                ),
+            }
+        ),
+        label=_("SIRET/SIREN/INSEE List"),
+        help_text=_(
+            "Enter one SIRET (14 digits), SIREN (9 digits), or INSEE code (5 digits for communes) per line. All formats are accepted."
+        ),
+    )
 
-        return valid_codes
+    expand_epci_to_communes = forms.BooleanField(
+        required=False,
+        initial=False,
+        label=_("Expand EPCIs to commune members"),
+        help_text=_(
+            "When checked, EPCI SIRETs/SIRENs will be expanded to create subscriptions "
+            "for all commune members of the EPCI instead of the EPCI itself."
+        ),
+    )
+
+    metadata = forms.CharField(
+        widget=forms.Textarea(attrs={"rows": 4, "cols": 50}),
+        label=_("Metadata (JSON)"),
+        help_text=_("Optional JSON metadata for all created subscriptions."),
+        required=False,
+        initial="{}",
+    )
+
+    is_active = forms.BooleanField(
+        required=False,
+        initial=True,
+        label=_("Active"),
+        help_text=_("Whether the created subscriptions should be active."),
+    )
+
+    def clean_siret_list(self):
+        """Clean and validate the SIRET/SIREN/INSEE list."""
+        return clean_siret_list(self.cleaned_data.get("siret_list", ""))
+
+    def clean_metadata(self):
+        """Validate and parse the JSON metadata."""
+        raw = self.cleaned_data.get("metadata", "").strip()
+        if not raw:
+            return {}
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise forms.ValidationError(_("Invalid JSON: {}").format(str(e))) from e
+        if not isinstance(parsed, dict):
+            raise forms.ValidationError(_("Metadata must be a JSON object."))
+        return parsed
 
 
 class OperatorUsersInline(admin.TabularInline):
@@ -394,7 +545,7 @@ class UserOperatorRoleAdmin(admin.ModelAdmin):
     """Admin class for the UserOperatorRole model"""
 
     list_display = ("user", "operator", "role", "created_at")
-    list_filter = ("role", "created_at")
+    list_filter = ("operator", "role", "created_at")
     search_fields = ("user__full_name", "user__email", "operator__name")
     ordering = ("user__full_name", "operator__name")
     readonly_fields = ("id", "created_at", "updated_at")
@@ -667,185 +818,33 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
         ]
         return custom_urls + urls
 
-    def _create_relationship(self, operator, organization, role):
-        """Create an OperatorOrganizationRole relationship if it doesn't already exist.
-
-        Returns:
-            tuple: (created: bool, already_exists: bool)
-        """
-        if models.OperatorOrganizationRole.objects.filter(
-            operator=operator, organization=organization
-        ).exists():
-            return False, True
-
-        models.OperatorOrganizationRole.objects.create(
-            operator=operator, organization=organization, role=role
-        )
-        return True, False
-
-    def _expand_epci_to_communes(self, epci):
-        """Expand an EPCI to its commune members.
-
-        Args:
-            epci: The EPCI organization
-            operator: Operator (unused, kept for consistency)
-            role: Role (unused, kept for consistency)
-
-        Returns:
-            QuerySet: QuerySet of communes belonging to the EPCI
-        """
-        if not epci.siren:
-            return models.Organization.objects.none()
-
-        return models.Organization.objects.filter(epci_siren=epci.siren, type="commune")
-
-    def _process_insee_code(self, code, operator, role):
-        """Process a 5-digit INSEE code.
-
-        Returns:
-            tuple: (created_count: int, already_exists_count: int, not_found: bool)
-        """
-        organizations = models.Organization.objects.filter(
-            code_insee=code, type="commune"
-        )
-        if not organizations.exists():
-            return 0, 0, True
-
-        created = 0
-        already_exists = 0
-        for organization in organizations:
-            was_created, was_existing = self._create_relationship(
-                operator, organization, role
-            )
-            if was_created:
-                created += 1
-            elif was_existing:
-                already_exists += 1
-
-        return created, already_exists, False
-
-    def _process_siren_code(self, code, operator, role, expand_epci):
-        """Process a 9-digit SIREN code.
-
-        Returns:
-            tuple: (created_count: int, already_exists_count: int, not_found: bool)
-        """
-        organizations = models.Organization.objects.filter(siren=code)
-        if not organizations.exists():
-            return 0, 0, True
-
-        created = 0
-        already_exists = 0
-
-        # Separate EPCIs from other organizations
-        epci_organizations = [org for org in organizations if org.type == "epci"]
-        other_organizations = [org for org in organizations if org.type != "epci"]
-
-        # Expand EPCIs to communes if expansion is enabled
-        if expand_epci and epci_organizations:
-            for epci in epci_organizations:
-                communes = self._expand_epci_to_communes(epci)
-                for commune in communes:
-                    was_created, was_existing = self._create_relationship(
-                        operator, commune, role
-                    )
-                    if was_created:
-                        created += 1
-                    elif was_existing:
-                        already_exists += 1
-        elif not expand_epci and epci_organizations:
-            # If expansion is disabled, create relationships for EPCIs themselves
-            for epci in epci_organizations:
-                was_created, was_existing = self._create_relationship(
-                    operator, epci, role
-                )
-                if was_created:
-                    created += 1
-                elif was_existing:
-                    already_exists += 1
-
-        # Process non-EPCI organizations
-        for organization in other_organizations:
-            was_created, was_existing = self._create_relationship(
-                operator, organization, role
-            )
-            if was_created:
-                created += 1
-            elif was_existing:
-                already_exists += 1
-
-        return created, already_exists, False
-
-    def _process_siret_code(self, code, operator, role, expand_epci):
-        """Process a 14-digit SIRET code.
-
-        Returns:
-            tuple: (created_count: int, already_exists_count: int, not_found: bool)
-        """
-        try:
-            organization = models.Organization.objects.get(siret=code)
-        except models.Organization.DoesNotExist:
-            return 0, 0, True
-
-        # Check if it's an EPCI and expansion is enabled
-        if expand_epci and organization.type == "epci":
-            communes = self._expand_epci_to_communes(organization)
-            if not communes.exists():
-                return 0, 0, True
-
-            created = 0
-            already_exists = 0
-            for commune in communes:
-                was_created, was_existing = self._create_relationship(
-                    operator, commune, role
-                )
-                if was_created:
-                    created += 1
-                elif was_existing:
-                    already_exists += 1
-            return created, already_exists, False
-
-        # Not an EPCI or expansion disabled - create relationship for the organization
-        was_created, was_existing = self._create_relationship(
-            operator, organization, role
-        )
-        if was_created:
-            return 1, 0, False
-        if was_existing:
-            return 0, 1, False
-        return 0, 0, False
-
     def _process_bulk_import(self, siret_list, operator, role, expand_epci):
-        """Process the bulk import of codes.
+        """Process the bulk import of codes using shared resolution logic.
 
         Returns:
             dict: Results with created_count, already_exists_count, not_found_codes
         """
+        org_groups, not_found_codes = resolve_organizations_from_codes(
+            siret_list, expand_epci
+        )
+
         created_count = 0
-        not_found_codes = []
         already_exists_count = 0
 
         with transaction.atomic():
-            for code in siret_list:
-                code_length = len(code)
-
-                if code_length == 5:
-                    created, already_exists, not_found = self._process_insee_code(
-                        code, operator, role
-                    )
-                elif code_length == 9:
-                    created, already_exists, not_found = self._process_siren_code(
-                        code, operator, role, expand_epci
-                    )
-                else:  # code_length == 14
-                    created, already_exists, not_found = self._process_siret_code(
-                        code, operator, role, expand_epci
-                    )
-
-                created_count += created
-                already_exists_count += already_exists
-                if not_found:
-                    not_found_codes.append(code)
+            for orgs in org_groups:
+                for organization in orgs:
+                    if models.OperatorOrganizationRole.objects.filter(
+                        operator=operator, organization=organization
+                    ).exists():
+                        already_exists_count += 1
+                    else:
+                        models.OperatorOrganizationRole.objects.create(
+                            operator=operator,
+                            organization=organization,
+                            role=role,
+                        )
+                        created_count += 1
 
         return {
             "created_count": created_count,
@@ -949,7 +948,13 @@ class OperatorServiceConfigAdmin(admin.ModelAdmin):
         "externally_managed",
         "created_at",
     )
-    list_filter = ("operator", "service__is_active", "externally_managed", "created_at")
+    list_filter = (
+        "operator",
+        "service",
+        "service__is_active",
+        "externally_managed",
+        "created_at",
+    )
     search_fields = ("operator__name", "service__name", "service__type")
     ordering = ("operator__name", "display_priority", "service__name")
     readonly_fields = ("id", "created_at", "updated_at")
@@ -977,7 +982,7 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
     """Admin class for the ServiceSubscription model"""
 
     list_display = ("organization", "operator", "service", "created_at")
-    list_filter = ("organization__operator_roles__operator", "created_at")
+    list_filter = ("operator", "service", "created_at")
     search_fields = (
         "organization__name",
         "service__name",
@@ -994,6 +999,159 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
         (_("Subscription Data"), {"fields": ("metadata",)}),
         (_("Metadata"), {"fields": ("created_at", "updated_at")}),
     )
+
+    def get_urls(self):
+        """Add custom URLs for bulk subscribe functionality."""
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "bulk-subscribe/",
+                self.admin_site.admin_view(self.bulk_subscribe_view),
+                name="core_servicesubscription_bulk_subscribe",
+            ),
+            path(
+                "bulk-subscribe-results/",
+                self.admin_site.admin_view(self.bulk_subscribe_results_view),
+                name="core_servicesubscription_bulk_subscribe_results",
+            ),
+        ]
+        return custom_urls + urls
+
+    def _process_bulk_subscribe(
+        self, siret_list, operator, service, metadata, is_active, expand_epci
+    ):
+        """Process the bulk subscribe operation.
+
+        Returns:
+            dict: Results with created_count, already_exists_count,
+                  not_found_codes, no_role_orgs
+        """
+        org_groups, not_found_codes = resolve_organizations_from_codes(
+            siret_list, expand_epci
+        )
+
+        created_count = 0
+        already_exists_count = 0
+        no_role_orgs = []
+
+        with transaction.atomic():
+            for orgs in org_groups:
+                for organization in orgs:
+                    # Check that the operator has a role with this organization
+                    if not models.OperatorOrganizationRole.objects.filter(
+                        operator=operator, organization=organization
+                    ).exists():
+                        no_role_orgs.append(organization.name)
+                        continue
+
+                    if models.ServiceSubscription.objects.filter(
+                        organization=organization, service=service
+                    ).exists():
+                        already_exists_count += 1
+                    else:
+                        models.ServiceSubscription.objects.create(
+                            organization=organization,
+                            operator=operator,
+                            service=service,
+                            metadata=metadata,
+                            is_active=is_active,
+                        )
+                        created_count += 1
+
+        return {
+            "created_count": created_count,
+            "already_exists_count": already_exists_count,
+            "not_found_codes": not_found_codes,
+            "no_role_orgs": no_role_orgs,
+        }
+
+    def bulk_subscribe_view(self, request):
+        """View for bulk creating subscriptions."""
+        if request.method == "POST":
+            form = BulkSubscriptionImportForm(request.POST)
+            if form.is_valid():
+                operator = form.cleaned_data["operator"]
+                service = form.cleaned_data["service"]
+                siret_list = form.cleaned_data["siret_list"]
+                metadata = form.cleaned_data["metadata"]
+                is_active = form.cleaned_data["is_active"]
+                expand_epci = form.cleaned_data.get("expand_epci_to_communes", False)
+
+                results = self._process_bulk_subscribe(
+                    siret_list, operator, service, metadata, is_active, expand_epci
+                )
+
+                request.session["bulk_subscribe_results"] = {
+                    **results,
+                    "operator_name": operator.name,
+                    "service_name": service.name,
+                    "total_processed": len(siret_list),
+                }
+
+                messages.success(
+                    request,
+                    _(
+                        "Bulk subscribe completed: {created} created, "
+                        + "{already_exists} already existed, {not_found} not found, "
+                        + "{no_role} without operator role."
+                    ).format(
+                        created=results["created_count"],
+                        already_exists=results["already_exists_count"],
+                        not_found=len(results["not_found_codes"]),
+                        no_role=len(results["no_role_orgs"]),
+                    ),
+                )
+
+                return HttpResponseRedirect(
+                    reverse("admin:core_servicesubscription_bulk_subscribe_results")
+                )
+        else:
+            form = BulkSubscriptionImportForm()
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": _("Bulk Subscribe"),
+            "form": form,
+            "opts": self.model._meta,  # pylint: disable=protected-access # noqa: SLF001
+            "has_view_permission": self.has_view_permission(request),
+        }
+        return render(
+            request,
+            "admin/core/servicesubscription/bulk_subscribe.html",
+            context,
+        )
+
+    def bulk_subscribe_results_view(self, request):
+        """View for displaying bulk subscribe results."""
+        results = request.session.get("bulk_subscribe_results")
+        if not results:
+            messages.error(request, _("No bulk subscribe results found."))
+            return HttpResponseRedirect(
+                reverse("admin:core_servicesubscription_changelist")
+            )
+
+        del request.session["bulk_subscribe_results"]
+
+        context = {
+            "results": results,
+            "title": _("Bulk Subscribe Results"),
+            "opts": self.model._meta,  # pylint: disable=protected-access # noqa: SLF001
+            "has_view_permission": self.has_view_permission(request),
+        }
+
+        return render(
+            request,
+            "admin/core/servicesubscription/bulk_subscribe_results.html",
+            context,
+        )
+
+    def changelist_view(self, request, extra_context=None):
+        """Add bulk subscribe link to changelist view."""
+        extra_context = extra_context or {}
+        extra_context["bulk_subscribe_url"] = reverse(
+            "admin:core_servicesubscription_bulk_subscribe"
+        )
+        return super().changelist_view(request, extra_context)
 
 
 @admin.register(models.Metric)
