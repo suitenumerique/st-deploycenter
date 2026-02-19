@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Run network setup
         run: make create-docker-network
       - name: Create env files
@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Run network setup
         run: make create-docker-network
       - name: Create env files
@@ -46,7 +46,7 @@ jobs:
   #   runs-on: ubuntu-latest
   #   steps:
   #     - name: Checkout repository
-  #       uses: actions/checkout@v4
+  #       uses: actions/checkout@v6
   #     - name: Create env files
   #       run: make create-env-files
   #     - name: Install frontend dependencies
@@ -58,7 +58,7 @@ jobs:
   #   runs-on: ubuntu-latest
   #   steps:
   #     - name: Checkout repository
-  #       uses: actions/checkout@v4
+  #       uses: actions/checkout@v6
   #     - name: Create env files
   #       run: make create-env-files
   #     - name: Install frontend dependencies
@@ -72,7 +72,7 @@ jobs:
   #   runs-on: ubuntu-latest
   #   steps:
   #     - name: Checkout repository
-  #       uses: actions/checkout@v4
+  #       uses: actions/checkout@v6
   #     - name: Create env files
   #       run: make create-env-files
   #     - name: Install frontend dependencies
