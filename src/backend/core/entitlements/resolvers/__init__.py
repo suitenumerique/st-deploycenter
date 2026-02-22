@@ -14,6 +14,9 @@ from core.entitlements.resolvers.drive_storage_entitlement_resolver import (
 from core.entitlements.resolvers.extended_admin_entitlement_resolver import (
     ExtendedAdminEntitlementResolver,
 )
+from core.entitlements.resolvers.messages_admin_entitlement_resolver import (
+    MessagesAdminEntitlementResolver,
+)
 from core.entitlements.resolvers.messages_storage_entitlement_resolver import (
     MessagesStorageEntitlementResolver,
 )
@@ -32,6 +35,7 @@ TYPE_TO_ACCESS_RESOLVER = {
 TYPE_TO_ADMIN_RESOLVER = {
     "adc": ExtendedAdminEntitlementResolver,
     "esd": ExtendedAdminEntitlementResolver,
+    "messages": MessagesAdminEntitlementResolver,
 }
 
 

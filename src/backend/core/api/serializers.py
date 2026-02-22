@@ -308,7 +308,7 @@ class OperatorSerializer(serializers.ModelSerializer):
         We don't expose all the configuration, because it may contain sensitive data.
         """
         config = obj.config or {}
-        whitelist_keys = ["idps"]
+        whitelist_keys = ["idps", "support_email"]
         return {key: config[key] for key in whitelist_keys if key in config}
 
 

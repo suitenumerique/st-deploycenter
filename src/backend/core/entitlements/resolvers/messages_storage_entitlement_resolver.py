@@ -17,13 +17,30 @@ class MessagesStorageEntitlementResolver(EntitlementResolver):
             return (False, {"can_store": False})
 
         max_storage = entitlement.config.get("max_storage") or 0
+        storage_used = int(metric.value) if metric else 0
 
-        # If max storage is 0 or undefined, the entitlement is unlimited
         if max_storage == 0:
-            return (True, {"can_store": True})
-        if metric.value > max_storage:
-            return (False, {"can_store": False})
-        return (True, {"can_store": True})
+            return (
+                True,
+                {"can_store": True, "max_storage": 0, "storage_used": storage_used},
+            )
+        if storage_used > max_storage:
+            return (
+                False,
+                {
+                    "can_store": False,
+                    "max_storage": max_storage,
+                    "storage_used": storage_used,
+                },
+            )
+        return (
+            True,
+            {
+                "can_store": True,
+                "max_storage": max_storage,
+                "storage_used": storage_used,
+            },
+        )
 
     def _get_metric(self, context, entitlement):
         """
