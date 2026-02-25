@@ -17,7 +17,7 @@ class MessagesStorageEntitlementResolver(EntitlementResolver):
             return (False, {"can_store": False})
 
         max_storage = entitlement.config.get("max_storage") or 0
-        storage_used = int(metric.value) if metric else 0
+        storage_used = metric.value
 
         if max_storage == 0:
             return (

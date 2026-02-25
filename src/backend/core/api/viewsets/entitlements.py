@@ -190,4 +190,13 @@ class EntitlementView(APIView):
                 **get_admin_entitlement_resolver(service).resolve(entitlement_context),
             }
 
-        return Response({"operator": operator_data, "entitlements": entitlements_data})
+        # Separate metric fields from entitlements.
+        metrics_data = {}
+        for key in ("storage_used",):
+            if key in entitlements_data:
+                metrics_data[key] = entitlements_data.pop(key)
+
+        response_data = {"operator": operator_data, "entitlements": entitlements_data}
+        if metrics_data:
+            response_data["metrics"] = metrics_data
+        return Response(response_data)

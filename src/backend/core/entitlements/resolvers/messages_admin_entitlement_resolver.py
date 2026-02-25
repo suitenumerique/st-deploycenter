@@ -1,6 +1,6 @@
 """Messages admin entitlement resolver."""
 
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 
 from core import models
 from core.entitlements.resolvers.admin_entitlement_resolver import (
@@ -13,6 +13,10 @@ class MessagesAdminEntitlementResolver(AdminEntitlementResolver):
     Replaces the base admin resolver with can_admin_maildomains:
     a list of mail domain names the user can admin across all organizations
     for the Messages service.
+
+    This resolver gathers all accounts matching the given email or id
+    across organizations, and returns only the domain names (not org IDs)
+    from active subscriptions where the user has admin access.
     """
 
     def resolve(self, context):
@@ -32,13 +36,19 @@ class MessagesAdminEntitlementResolver(AdminEntitlementResolver):
         admin_accounts = models.Account.objects.filter(
             account_filter,
             type="user",
+        ).prefetch_related(
+            Prefetch(
+                "service_links",
+                queryset=models.AccountServiceLink.objects.filter(service=service),
+                to_attr="service_links_for_service",
+            )
         )
 
         admin_org_ids = set()
         for account in admin_accounts:
             if "admin" in (account.roles or []):
                 admin_org_ids.add(account.organization_id)
-            service_link = account.service_links.filter(service=service).first()
+            service_link = account.service_links_for_service[0] if account.service_links_for_service else None
             if service_link and "admin" in (service_link.roles or []):
                 admin_org_ids.add(account.organization_id)
 

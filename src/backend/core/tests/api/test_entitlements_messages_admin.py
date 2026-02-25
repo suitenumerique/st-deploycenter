@@ -11,7 +11,6 @@ from core.tests.utils import assert_equals_partial
 pytestmark = pytest.mark.django_db
 
 
-@pytest.mark.django_db()
 def test_api_entitlements_messages_can_admin_maildomains_org_admin():
     """User with org-level admin role gets domains from subscription metadata."""
     user = factories.UserFactory()
@@ -66,7 +65,6 @@ def test_api_entitlements_messages_can_admin_maildomains_org_admin():
     )
 
 
-@pytest.mark.django_db()
 def test_api_entitlements_messages_can_admin_maildomains_service_admin():
     """User with service-level admin role gets domains from subscription metadata."""
     user = factories.UserFactory()
@@ -122,7 +120,64 @@ def test_api_entitlements_messages_can_admin_maildomains_service_admin():
     )
 
 
-@pytest.mark.django_db()
+def test_api_entitlements_messages_can_admin_maildomains_admin_on_other_service():
+    """User with admin role on another service should NOT get domains for the messages service."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    messages_service = factories.ServiceFactory(
+        type="messages",
+        config={"entitlements_api_key": "test_token"},
+    )
+    other_service = factories.ServiceFactory(type="other")
+
+    factories.ServiceSubscriptionFactory(
+        organization=organization,
+        service=messages_service,
+        operator=operator,
+        metadata={"domains": ["domain1.com"]},
+    )
+
+    # User has admin on the other service, not on messages
+    account = factories.AccountFactory(
+        organization=organization,
+        type="user",
+        external_id="xyz",
+        email="test@example.com",
+        roles=[],
+    )
+    account.service_links.create(service=other_service, roles=["admin"])
+
+    response = client.get(
+        "/api/v1.0/entitlements/",
+        query_params={
+            "service_id": messages_service.id,
+            "account_type": "user",
+            "account_id": "xyz",
+            "siret": organization.siret,
+        },
+        headers={"X-Service-Auth": "Bearer test_token"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert_equals_partial(
+        data,
+        {
+            "entitlements": {
+                "can_access": True,
+                "can_admin_maildomains": [],
+            },
+        },
+    )
+
+
 def test_api_entitlements_messages_can_admin_maildomains_not_admin():
     """User without admin role gets empty can_admin_maildomains."""
     user = factories.UserFactory()
@@ -177,7 +232,6 @@ def test_api_entitlements_messages_can_admin_maildomains_not_admin():
     )
 
 
-@pytest.mark.django_db()
 def test_api_entitlements_messages_can_admin_maildomains_multiple_orgs():
     """User admin in multiple orgs gets domains from all their subscriptions."""
     user = factories.UserFactory()
@@ -239,7 +293,6 @@ def test_api_entitlements_messages_can_admin_maildomains_multiple_orgs():
     assert sorted(domains) == ["org1-domain.com", "org2-domain.com", "org2-other.com"]
 
 
-@pytest.mark.django_db()
 def test_api_entitlements_messages_can_admin_maildomains_no_domains_metadata():
     """Admin user with subscription that has no domains in metadata gets empty list."""
     user = factories.UserFactory()
@@ -294,7 +347,6 @@ def test_api_entitlements_messages_can_admin_maildomains_no_domains_metadata():
     )
 
 
-@pytest.mark.django_db()
 def test_api_entitlements_messages_can_admin_maildomains_by_email():
     """can_admin_maildomains works when looking up user by email."""
     user = factories.UserFactory()

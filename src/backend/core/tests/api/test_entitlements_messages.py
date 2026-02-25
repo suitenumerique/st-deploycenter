@@ -17,7 +17,6 @@ pytestmark = pytest.mark.django_db
 # pylint: disable=unused-argument
 
 
-@pytest.mark.django_db()
 def test_subscription_entitlements_default():
     """When a messages service subscription is created, a default messages storage entitlement should be created."""
     user = factories.UserFactory()
@@ -61,7 +60,6 @@ def test_subscription_entitlements_default():
     assert entitlement_organization.config["max_storage"] == 1000 * 1000 * 1000 * 50
 
 
-@pytest.mark.django_db()
 @responses.activate
 @pytest.mark.parametrize(
     "account_key,account_key_value,account_key_http_alias",
@@ -156,8 +154,10 @@ def test_api_entitlements_mailbox_can_store(
             "can_store": True,
             "can_store_resolve_level": "mailbox",
             "max_storage": 1000,
-            "storage_used": 500,
             "can_admin_maildomains": [],
+        },
+        "metrics": {
+            "storage_used": 500,
         },
     }
 
@@ -224,8 +224,10 @@ def test_api_entitlements_mailbox_can_store(
             "can_store": False,
             "can_store_resolve_level": "mailbox",
             "max_storage": 1000,
-            "storage_used": 1001,
             "can_admin_maildomains": [],
+        },
+        "metrics": {
+            "storage_used": 1001,
         },
     }
 
@@ -240,7 +242,6 @@ def test_api_entitlements_mailbox_can_store(
     assert metrics.first().organization == organization
 
 
-@pytest.mark.django_db()
 @responses.activate
 @pytest.mark.parametrize(
     "organization_storage_used,mailbox_storage_used,can_store,resolve_level",
@@ -408,8 +409,10 @@ def test_api_entitlements_organization_can_store(
             "can_store": can_store,
             "can_store_resolve_level": resolve_level,
             "max_storage": expected_max_storage,
-            "storage_used": expected_storage_used,
             "can_admin_maildomains": [],
+        },
+        "metrics": {
+            "storage_used": expected_storage_used,
         },
     }
 
@@ -464,7 +467,6 @@ def test_api_entitlements_organization_can_store(
     )
 
 
-@pytest.mark.django_db()
 @responses.activate
 @pytest.mark.parametrize(
     "override_max_storage,mailbox_storage_used,can_store_before_override,can_store",
@@ -609,8 +611,10 @@ def test_api_entitlements_mailbox_override_can_store(
             "can_store": can_store_before_override,
             "can_store_resolve_level": "mailbox",
             "max_storage": 500,
-            "storage_used": mailbox_storage_used,
             "can_admin_maildomains": [],
+        },
+        "metrics": {
+            "storage_used": mailbox_storage_used,
         },
     }
 
@@ -653,8 +657,10 @@ def test_api_entitlements_mailbox_override_can_store(
             "can_store": can_store,
             "can_store_resolve_level": "mailbox_override",
             "max_storage": override_max_storage,
-            "storage_used": mailbox_storage_used,
             "can_admin_maildomains": [],
+        },
+        "metrics": {
+            "storage_used": mailbox_storage_used,
         },
     }
 
@@ -750,8 +756,10 @@ def test_api_entitlements_mailbox_override_can_store(
             "can_store": can_store_before_override,
             "can_store_resolve_level": "mailbox",
             "max_storage": 500,
-            "storage_used": mailbox_storage_used,
             "can_admin_maildomains": [],
+        },
+        "metrics": {
+            "storage_used": mailbox_storage_used,
         },
     }
     metrics_mailbox = models.Metric.objects.filter(
@@ -868,7 +876,9 @@ def test_api_entitlements_list_unlimited_storage(
             "can_store": True,
             "can_store_resolve_level": "mailbox",
             "max_storage": 0,
-            "storage_used": storage_used,
             "can_admin_maildomains": [],
+        },
+        "metrics": {
+            "storage_used": storage_used,
         },
     }
