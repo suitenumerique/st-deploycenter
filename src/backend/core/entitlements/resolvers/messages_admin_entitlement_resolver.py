@@ -48,7 +48,11 @@ class MessagesAdminEntitlementResolver(AdminEntitlementResolver):
         for account in admin_accounts:
             if "admin" in (account.roles or []):
                 admin_org_ids.add(account.organization_id)
-            service_link = account.service_links_for_service[0] if account.service_links_for_service else None
+            service_link = (
+                account.service_links_for_service[0]
+                if account.service_links_for_service
+                else None
+            )
             if service_link and "admin" in (service_link.roles or []):
                 admin_org_ids.add(account.organization_id)
 

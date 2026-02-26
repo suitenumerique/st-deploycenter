@@ -536,6 +536,18 @@ class Organization(BaseModel):
                 - mail_domain: The mail domain to use (str or None)
                 - status: MailDomainStatus enum value
         """
+
+        if self.type == "other":
+            # type=other orgs are not in scope of RPNT
+            if self.adresse_messagerie_domain:
+                return (self.adresse_messagerie_domain, self.MailDomainStatus.VALID)
+            if self.site_internet_domain:
+                return (
+                    self.site_internet_domain,
+                    self.MailDomainStatus.NEED_EMAIL_SETUP,
+                )
+            return (None, self.MailDomainStatus.INVALID)
+
         if not self.rpnt:
             return (None, self.MailDomainStatus.INVALID)
 

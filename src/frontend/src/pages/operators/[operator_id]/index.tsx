@@ -249,9 +249,10 @@ export default function Operator() {
             headerName: "RPNT",
             size: 100,
             enableSorting: false,
-            renderCell: (params) => (
-              <RpntBadge rpnt={params.row.rpnt} siret={params.row.siret} />
-            ),
+            renderCell: (params) =>
+              params.row.type !== "other" ? (
+                <RpntBadge rpnt={params.row.rpnt} siret={params.row.siret} />
+              ) : null,
           },
         ]}
         rows={organizations?.results || []}

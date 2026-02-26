@@ -101,7 +101,15 @@ export default function Organization() {
           />
           <div className="dc__container__content__subtitle">
             {activeTab === "services"
-              ? t("organizations.services.subtitle")
+              ? t(
+                  organization?.type === "commune"
+                    ? "organizations.services.subtitle_commune"
+                    : organization?.type === "region"
+                      ? "organizations.services.subtitle_region"
+                      : organization?.type === "departement"
+                        ? "organizations.services.subtitle_departement"
+                        : "organizations.services.subtitle_organisation",
+                )
               : t("accounts.search")}
           </div>
         </>
@@ -151,7 +159,7 @@ export default function Organization() {
                 </span>
               </div>
             )}
-            {organization?.siret && (
+            {organization?.siret && organization?.type !== "other" && (
               <div className="dc__organization__header__details__item">
                 <span className="dc__organization__header__details__item__label">
                   {t("organizations.details.rpnt")}

@@ -31,6 +31,10 @@
         "services": {
           "title": "Services",
           "subtitle": "Liste des services disponibles pour cette collectivité",
+          "subtitle_commune": "Liste des services disponibles pour cette commune",
+          "subtitle_region": "Liste des services disponibles pour cette région",
+          "subtitle_departement": "Liste des services disponibles pour ce département",
+          "subtitle_organisation": "Liste des services disponibles pour cette organisation",
           "status": "Activé",
           "disable_modal": {
             "title": "Désactivation du service",
