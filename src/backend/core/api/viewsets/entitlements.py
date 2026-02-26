@@ -24,6 +24,19 @@ from core.entitlements.resolvers.entitlement_resolver import (
 from core.tasks.metrics import scrape_service_usage_metrics
 
 
+class EntitlementOperatorSerializer(OperatorSerializer):
+    """
+    Serialize operators for entitlements, with some fields removed.
+    """
+
+    class Meta(OperatorSerializer.Meta):
+        fields = [
+            f
+            for f in OperatorSerializer.Meta.fields
+            if f not in ("user_role", "is_active")
+        ]
+
+
 # pylint: disable=abstract-method
 class EntitlementViewSerializer(serializers.Serializer):
     """
@@ -107,7 +120,9 @@ class EntitlementView(APIView):
         }
 
         if service_subscription and service_subscription.is_active:
-            operator_data = OperatorSerializer(service_subscription.operator).data
+            operator_data = EntitlementOperatorSerializer(
+                service_subscription.operator
+            ).data
 
             unique_identifier, unique_identifier_value = (
                 get_context_account_unique_identifier(entitlement_context)
@@ -175,4 +190,13 @@ class EntitlementView(APIView):
                 **get_admin_entitlement_resolver(service).resolve(entitlement_context),
             }
 
-        return Response({"operator": operator_data, "entitlements": entitlements_data})
+        # Separate metric fields from entitlements.
+        metrics_data = {}
+        for key in ("storage_used",):
+            if key in entitlements_data:
+                metrics_data[key] = entitlements_data.pop(key)
+
+        response_data = {"operator": operator_data, "entitlements": entitlements_data}
+        if metrics_data:
+            response_data["metrics"] = metrics_data
+        return Response(response_data)

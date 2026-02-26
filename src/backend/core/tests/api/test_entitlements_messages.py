@@ -9,7 +9,6 @@ from responses import matchers
 from rest_framework.test import APIClient
 
 from core import factories, models
-from core.tests.utils import assert_equals_partial
 
 pytestmark = pytest.mark.django_db
 
@@ -18,7 +17,6 @@ pytestmark = pytest.mark.django_db
 # pylint: disable=unused-argument
 
 
-@pytest.mark.django_db()
 def test_subscription_entitlements_default():
     """When a messages service subscription is created, a default messages storage entitlement should be created."""
     user = factories.UserFactory()
@@ -62,7 +60,6 @@ def test_subscription_entitlements_default():
     assert entitlement_organization.config["max_storage"] == 1000 * 1000 * 1000 * 50
 
 
-@pytest.mark.django_db()
 @responses.activate
 @pytest.mark.parametrize(
     "account_key,account_key_value,account_key_http_alias",
@@ -111,6 +108,7 @@ def test_api_entitlements_mailbox_can_store(
     )
 
     service = factories.ServiceFactory(
+        type="messages",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
@@ -120,6 +118,7 @@ def test_api_entitlements_mailbox_can_store(
     service_subscription = factories.ServiceSubscriptionFactory(
         organization=organization, service=service, operator=operator
     )
+    models.Entitlement.objects.all().delete()
     factories.EntitlementFactory(
         service_subscription=service_subscription,
         type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
@@ -143,20 +142,24 @@ def test_api_entitlements_mailbox_can_store(
     )
     assert response.status_code == 200
     data = response.json()
-    assert_equals_partial(
-        data,
-        {
-            "operator": {
-                "id": str(operator.id),
-                "name": operator.name,
-            },
-            "entitlements": {
-                "can_access": True,
-                "can_store": True,
-                "can_store_resolve_level": "mailbox",
-            },
+    assert data == {
+        "operator": {
+            "id": str(operator.id),
+            "name": operator.name,
+            "url": operator.url,
+            "config": {},
         },
-    )
+        "entitlements": {
+            "can_access": True,
+            "can_store": True,
+            "can_store_resolve_level": "mailbox",
+            "max_storage": 1000,
+            "can_admin_maildomains": [],
+        },
+        "metrics": {
+            "storage_used": 500,
+        },
+    }
 
     # Metrics should be stored in the database
     metrics = models.Metric.objects.filter(service=service, organization=organization)
@@ -209,20 +212,24 @@ def test_api_entitlements_mailbox_can_store(
     )
     assert response.status_code == 200
     data = response.json()
-    assert_equals_partial(
-        data,
-        {
-            "operator": {
-                "id": str(operator.id),
-                "name": operator.name,
-            },
-            "entitlements": {
-                "can_access": True,
-                "can_store": False,
-                "can_store_resolve_level": "mailbox",
-            },
+    assert data == {
+        "operator": {
+            "id": str(operator.id),
+            "name": operator.name,
+            "url": operator.url,
+            "config": {},
         },
-    )
+        "entitlements": {
+            "can_access": True,
+            "can_store": False,
+            "can_store_resolve_level": "mailbox",
+            "max_storage": 1000,
+            "can_admin_maildomains": [],
+        },
+        "metrics": {
+            "storage_used": 1001,
+        },
+    }
 
     # Metrics should be stored in the database
     metrics = models.Metric.objects.filter(service=service, organization=organization)
@@ -235,7 +242,6 @@ def test_api_entitlements_mailbox_can_store(
     assert metrics.first().organization == organization
 
 
-@pytest.mark.django_db()
 @responses.activate
 @pytest.mark.parametrize(
     "organization_storage_used,mailbox_storage_used,can_store,resolve_level",
@@ -342,6 +348,7 @@ def test_api_entitlements_organization_can_store(
     )
 
     service = factories.ServiceFactory(
+        type="messages",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
@@ -351,6 +358,7 @@ def test_api_entitlements_organization_can_store(
     service_subscription = factories.ServiceSubscriptionFactory(
         organization=organization, service=service, operator=operator
     )
+    models.Entitlement.objects.all().delete()
     factories.EntitlementFactory(
         service_subscription=service_subscription,
         type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
@@ -383,20 +391,30 @@ def test_api_entitlements_organization_can_store(
     )
     assert response.status_code == 200
     data = response.json()
-    assert_equals_partial(
-        data,
-        {
-            "operator": {
-                "id": str(operator.id),
-                "name": operator.name,
-            },
-            "entitlements": {
-                "can_access": True,
-                "can_store": can_store,
-                "can_store_resolve_level": resolve_level,
-            },
-        },
+    expected_max_storage = 10000 if resolve_level == "organization" else 1000
+    expected_storage_used = (
+        organization_storage_used
+        if resolve_level == "organization"
+        else mailbox_storage_used
     )
+    assert data == {
+        "operator": {
+            "id": str(operator.id),
+            "name": operator.name,
+            "url": operator.url,
+            "config": {},
+        },
+        "entitlements": {
+            "can_access": True,
+            "can_store": can_store,
+            "can_store_resolve_level": resolve_level,
+            "max_storage": expected_max_storage,
+            "can_admin_maildomains": [],
+        },
+        "metrics": {
+            "storage_used": expected_storage_used,
+        },
+    }
 
     # Check the number of created metrics for this subscription.
     assert (
@@ -449,7 +467,6 @@ def test_api_entitlements_organization_can_store(
     )
 
 
-@pytest.mark.django_db()
 @responses.activate
 @pytest.mark.parametrize(
     "override_max_storage,mailbox_storage_used,can_store_before_override,can_store",
@@ -539,6 +556,7 @@ def test_api_entitlements_mailbox_override_can_store(
     )
 
     service = factories.ServiceFactory(
+        type="messages",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
@@ -548,6 +566,7 @@ def test_api_entitlements_mailbox_override_can_store(
     service_subscription = factories.ServiceSubscriptionFactory(
         organization=organization, service=service, operator=operator
     )
+    models.Entitlement.objects.all().delete()
     factories.EntitlementFactory(
         service_subscription=service_subscription,
         type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
@@ -580,19 +599,24 @@ def test_api_entitlements_mailbox_override_can_store(
     )
     assert response.status_code == 200
     data = response.json()
-    assert_equals_partial(
-        data,
-        {
-            "operator": {
-                "id": str(operator.id),
-                "name": operator.name,
-            },
-            "entitlements": {
-                "can_access": True,
-                "can_store": can_store_before_override,
-            },
+    assert data == {
+        "operator": {
+            "id": str(operator.id),
+            "name": operator.name,
+            "url": operator.url,
+            "config": {},
         },
-    )
+        "entitlements": {
+            "can_access": True,
+            "can_store": can_store_before_override,
+            "can_store_resolve_level": "mailbox",
+            "max_storage": 500,
+            "can_admin_maildomains": [],
+        },
+        "metrics": {
+            "storage_used": mailbox_storage_used,
+        },
+    }
 
     # Create a new entitlement as mailbox override.
     account = models.Account.objects.get(
@@ -621,20 +645,24 @@ def test_api_entitlements_mailbox_override_can_store(
     )
     assert response.status_code == 200
     data = response.json()
-    assert_equals_partial(
-        data,
-        {
-            "operator": {
-                "id": str(operator.id),
-                "name": operator.name,
-            },
-            "entitlements": {
-                "can_access": True,
-                "can_store": can_store,
-                "can_store_resolve_level": "mailbox_override",
-            },
+    assert data == {
+        "operator": {
+            "id": str(operator.id),
+            "name": operator.name,
+            "url": operator.url,
+            "config": {},
         },
-    )
+        "entitlements": {
+            "can_access": True,
+            "can_store": can_store,
+            "can_store_resolve_level": "mailbox_override",
+            "max_storage": override_max_storage,
+            "can_admin_maildomains": [],
+        },
+        "metrics": {
+            "storage_used": mailbox_storage_used,
+        },
+    }
 
     # Check the number of created metrics for this subscription.
     assert (
@@ -716,20 +744,24 @@ def test_api_entitlements_mailbox_override_can_store(
     )
     assert response.status_code == 200
     data = response.json()
-    assert_equals_partial(
-        data,
-        {
-            "operator": {
-                "id": str(operator.id),
-                "name": operator.name,
-            },
-            "entitlements": {
-                "can_access": True,
-                "can_store": can_store_before_override,
-                "can_store_resolve_level": "mailbox",
-            },
+    assert data == {
+        "operator": {
+            "id": str(operator.id),
+            "name": operator.name,
+            "url": operator.url,
+            "config": {},
         },
-    )
+        "entitlements": {
+            "can_access": True,
+            "can_store": can_store_before_override,
+            "can_store_resolve_level": "mailbox",
+            "max_storage": 500,
+            "can_admin_maildomains": [],
+        },
+        "metrics": {
+            "storage_used": mailbox_storage_used,
+        },
+    }
     metrics_mailbox = models.Metric.objects.filter(
         service=service,
         organization=organization,
@@ -800,6 +832,7 @@ def test_api_entitlements_list_unlimited_storage(
     )
 
     service = factories.ServiceFactory(
+        type="messages",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
@@ -809,6 +842,7 @@ def test_api_entitlements_list_unlimited_storage(
     service_subscription = factories.ServiceSubscriptionFactory(
         organization=organization, service=service, operator=operator
     )
+    models.Entitlement.objects.all().delete()
     factories.EntitlementFactory(
         service_subscription=service_subscription,
         type=models.Entitlement.EntitlementType.MESSAGES_STORAGE,
@@ -830,17 +864,21 @@ def test_api_entitlements_list_unlimited_storage(
     )
     assert response.status_code == 200
     data = response.json()
-    assert_equals_partial(
-        data,
-        {
-            "operator": {
-                "id": str(operator.id),
-                "name": operator.name,
-            },
-            "entitlements": {
-                "can_access": True,
-                "can_store": True,  # Should be True even with high usage when max_storage is 0 or missing
-                "can_store_resolve_level": "mailbox",
-            },
+    assert data == {
+        "operator": {
+            "id": str(operator.id),
+            "name": operator.name,
+            "url": operator.url,
+            "config": {},
         },
-    )
+        "entitlements": {
+            "can_access": True,
+            "can_store": True,
+            "can_store_resolve_level": "mailbox",
+            "max_storage": 0,
+            "can_admin_maildomains": [],
+        },
+        "metrics": {
+            "storage_used": storage_used,
+        },
+    }

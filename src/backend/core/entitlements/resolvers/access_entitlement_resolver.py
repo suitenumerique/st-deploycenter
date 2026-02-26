@@ -40,7 +40,7 @@ class AccessEntitlementResolver:
         Resolve the access entitlement.
         """
         can_access, can_access_reason = self._resolve_with_subscription(context)
-        return {
-            "can_access": can_access,
-            "can_access_reason": can_access_reason,
-        }
+        res = {"can_access": can_access}
+        if can_access_reason:
+            res["can_access_reason"] = can_access_reason
+        return res
