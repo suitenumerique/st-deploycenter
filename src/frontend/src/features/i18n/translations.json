@@ -72,7 +72,7 @@
                   "title": "Domaines email",
                   "description": "Sélectionnez les domaines email pour ce service.",
                   "suggested": "(suggéré)",
-                  "no_domains": "Aucun domaine disponible. Ajoutez un domaine ci-dessous.",
+                  "no_domains": "Aucun domaine disponible. Vous devez d'abord activer ProConnect.",
                   "add_placeholder": "exemple.fr",
                   "add_button": "Ajouter"
                 }
