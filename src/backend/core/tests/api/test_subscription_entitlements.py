@@ -21,7 +21,7 @@ def test_api_subscription_entitlements_anonymous():
     factories.OperatorOrganizationRoleFactory(
         operator=operator, organization=organization_ok1
     )
-    service1 = factories.ServiceFactory()
+    service1 = factories.ServiceFactory(type="test")
     factories.ServiceSubscriptionFactory(
         organization=organization_ok1, service=service1, operator=operator
     )
@@ -47,7 +47,7 @@ def test_api_subscription_entitlements_no_role():
     factories.OperatorOrganizationRoleFactory(
         operator=operator, organization=organization_ok1
     )
-    service1 = factories.ServiceFactory()
+    service1 = factories.ServiceFactory(type="test")
     factories.ServiceSubscriptionFactory(
         organization=organization_ok1, service=service1, operator=operator
     )
@@ -89,8 +89,8 @@ def test_api_subscription_entitlements_list():
         operator=operator2, organization=organization_nok2
     )
 
-    service1 = factories.ServiceFactory()
-    service2 = factories.ServiceFactory()
+    service1 = factories.ServiceFactory(type="test")
+    service2 = factories.ServiceFactory(type="test")
     factories.ServiceSubscriptionFactory(
         organization=organization_nok1, service=service2, operator=operator2
     )
@@ -201,8 +201,8 @@ def test_api_subscription_entitlements_list_filtering():
         operator=operator2, organization=organization_nok2
     )
 
-    service1 = factories.ServiceFactory()
-    factories.ServiceFactory()
+    service1 = factories.ServiceFactory(type="test")
+    factories.ServiceFactory(type="test")
     subscription = factories.ServiceSubscriptionFactory(
         organization=organization_ok1, service=service1, operator=operator
     )
@@ -353,8 +353,8 @@ def test_api_subscription_entitlements_patch():
         operator=operator2, organization=organization_nok2
     )
 
-    service1 = factories.ServiceFactory()
-    service2 = factories.ServiceFactory()
+    service1 = factories.ServiceFactory(type="test")
+    service2 = factories.ServiceFactory(type="test")
     factories.ServiceSubscriptionFactory(
         organization=organization_nok1, service=service2, operator=operator2
     )
@@ -444,8 +444,8 @@ def test_api_subscription_entitlements_cannot_patch_role():
         operator=operator2, organization=organization_nok2
     )
 
-    service1 = factories.ServiceFactory()
-    service2 = factories.ServiceFactory()
+    service1 = factories.ServiceFactory(type="test")
+    service2 = factories.ServiceFactory(type="test")
     factories.ServiceSubscriptionFactory(
         organization=organization_nok1, service=service2, operator=operator2
     )
@@ -485,7 +485,7 @@ def test_api_subscription_create_with_entitlements():
     factories.OperatorOrganizationRoleFactory(
         operator=operator, organization=organization
     )
-    service = factories.ServiceFactory()
+    service = factories.ServiceFactory(type="test")
 
     # Create subscription with entitlements
     response = client.patch(
@@ -534,7 +534,7 @@ def test_api_subscription_update_with_entitlements():
     factories.OperatorOrganizationRoleFactory(
         operator=operator, organization=organization
     )
-    service = factories.ServiceFactory()
+    service = factories.ServiceFactory(type="test")
 
     # Create subscription first
     subscription = factories.ServiceSubscriptionFactory(
@@ -582,7 +582,7 @@ def test_api_subscription_entitlements_does_not_override_account_specific():
     factories.OperatorOrganizationRoleFactory(
         operator=operator, organization=organization
     )
-    service = factories.ServiceFactory()
+    service = factories.ServiceFactory(type="test")
 
     # Create subscription with account-specific entitlement
     subscription = factories.ServiceSubscriptionFactory(
@@ -644,7 +644,7 @@ def test_api_subscription_with_empty_entitlements_array():
     factories.OperatorOrganizationRoleFactory(
         operator=operator, organization=organization
     )
-    service = factories.ServiceFactory()
+    service = factories.ServiceFactory(type="test")
 
     # Create subscription with an entitlement
     subscription = factories.ServiceSubscriptionFactory(
@@ -685,7 +685,7 @@ def test_api_subscription_without_entitlements_key():
     factories.OperatorOrganizationRoleFactory(
         operator=operator, organization=organization
     )
-    service = factories.ServiceFactory()
+    service = factories.ServiceFactory(type="test")
 
     # Create subscription with an entitlement
     subscription = factories.ServiceSubscriptionFactory(
@@ -726,7 +726,7 @@ def test_api_subscription_with_duplicate_entitlements():
     factories.OperatorOrganizationRoleFactory(
         operator=operator, organization=organization
     )
-    service = factories.ServiceFactory()
+    service = factories.ServiceFactory(type="test")
 
     # Create subscription with duplicate entitlements in request
     response = client.patch(
@@ -768,7 +768,7 @@ def test_api_subscription_with_unknown_entitlement_type():
     factories.OperatorOrganizationRoleFactory(
         operator=operator, organization=organization
     )
-    service = factories.ServiceFactory()
+    service = factories.ServiceFactory(type="test")
 
     # Create subscription with unknown entitlement type
     response = client.patch(
