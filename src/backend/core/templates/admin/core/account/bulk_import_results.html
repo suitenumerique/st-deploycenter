@@ -1,0 +1,144 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+&rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+&rsaquo; <a href="{% url 'admin:core_account_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+&rsaquo; {% trans 'Bulk Account Import Results' %}
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>{% trans 'Bulk Account Import Results' %}</h1>
+
+<div class="results">
+    <h2>{% trans 'Summary' %}</h2>
+    <table>
+        <tr>
+            <th>{% trans 'Accounts created' %}:</th>
+            <td><strong style="color: green;">{{ results.accounts_created }}</strong></td>
+        </tr>
+        <tr>
+            <th>{% trans 'Accounts updated (roles merged)' %}:</th>
+            <td><strong style="color: orange;">{{ results.accounts_updated }}</strong></td>
+        </tr>
+        <tr>
+            <th>{% trans 'Service links created' %}:</th>
+            <td><strong style="color: green;">{{ results.service_links_created }}</strong></td>
+        </tr>
+        <tr>
+            <th>{% trans 'Service links updated (roles merged)' %}:</th>
+            <td><strong style="color: orange;">{{ results.service_links_updated }}</strong></td>
+        </tr>
+        <tr>
+            <th>{% trans 'Codes not found in database' %}:</th>
+            <td><strong style="color: red;">{{ results.not_found_codes|length }}</strong></td>
+        </tr>
+        <tr>
+            <th>{% trans 'Invalid lines skipped' %}:</th>
+            <td><strong style="color: red;">{{ results.invalid_lines|length }}</strong></td>
+        </tr>
+    </table>
+</div>
+
+{% if results.not_found_codes %}
+<div class="not-found-sirets">
+    <h2>{% trans 'Codes Not Found in Organization Database' %}</h2>
+    <p>{% trans 'The following SIRET/SIREN/INSEE codes were not found in the Organization database and could not be processed:' %}</p>
+
+    <div class="siret-list">
+        <textarea readonly rows="10" cols="20" style="font-family: monospace; font-size: 12px;">{% for code in results.not_found_codes %}{{ code }}
+{% endfor %}</textarea>
+    </div>
+
+    <p><strong>{% trans 'Note' %}:</strong> {% trans 'These codes may need to be added to the Organization database first, or they may be invalid.' %}</p>
+</div>
+{% endif %}
+
+{% if results.invalid_lines %}
+<div class="not-found-sirets">
+    <h2>{% trans 'Invalid Lines Skipped' %}</h2>
+    <p>{% trans 'The following lines could not be parsed (expected format: code,email):' %}</p>
+
+    <div class="siret-list">
+        <textarea readonly rows="10" cols="40" style="font-family: monospace; font-size: 12px;">{% for line in results.invalid_lines %}{{ line }}
+{% endfor %}</textarea>
+    </div>
+</div>
+{% endif %}
+
+<div class="actions">
+    <a href="{% url 'admin:core_account_bulk_import' %}" class="button">{% trans 'Import More' %}</a>
+    <a href="{% url 'admin:core_account_changelist' %}" class="button">{% trans 'View All Accounts' %}</a>
+</div>
+
+<style>
+.results table {
+    border-collapse: collapse;
+    margin: 20px 0;
+    background-color: #fff;
+    border: 1px solid #ddd;
+}
+.results th, .results td {
+    padding: 12px 16px;
+    border: 1px solid #ddd;
+    text-align: left;
+    color: #333;
+}
+.results th {
+    background-color: #f8f9fa;
+    font-weight: bold;
+    color: #333;
+}
+.results td {
+    background-color: #fff;
+}
+.not-found-sirets {
+    margin: 30px 0;
+    padding: 20px;
+    background-color: #fff3cd;
+    border: 1px solid #ffeaa7;
+    border-radius: 4px;
+    color: #856404;
+}
+.not-found-sirets h2 {
+    color: #856404;
+    margin-top: 0;
+}
+.not-found-sirets p {
+    color: #856404;
+    margin-bottom: 15px;
+}
+.siret-list textarea {
+    width: 100%;
+    max-width: 500px;
+    margin: 10px 0;
+    padding: 10px;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    color: #333;
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.4;
+}
+.actions {
+    margin: 30px 0;
+}
+.actions .button {
+    margin-right: 10px;
+    background-color: #417690;
+    color: white;
+    padding: 8px 16px;
+    text-decoration: none;
+    border-radius: 4px;
+    display: inline-block;
+}
+.actions .button:hover {
+    background-color: #205067;
+}
+</style>
+{% endblock %}

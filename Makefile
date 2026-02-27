@@ -297,6 +297,11 @@ pip-audit: ## check the dependencies
 	@$(COMPOSE) run --rm --no-deps -e HOME=/tmp --build backend-dev pip-audit
 .PHONY: pip-audit
 
+import-dpnt: ## import the DPNT dataset
+	@echo "$(BOLD)Importing DPNT dataset$(RESET)"
+	@$(MANAGE_DB) run_task import_dpnt_dataset
+.PHONY: import-dpnt
+
 collectstatic: ## collect static files
 	@$(MANAGE_DB) collectstatic --noinput
 .PHONY: collectstatic

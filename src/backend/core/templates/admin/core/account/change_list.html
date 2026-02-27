@@ -1,0 +1,11 @@
+{% extends "admin/change_list.html" %}
+{% load i18n admin_urls %}
+
+{% block object-tools-items %}
+    <li>
+        <a href="{{ bulk_import_url }}" class="addlink">
+            {% trans 'Bulk Account Import' %}
+        </a>
+    </li>
+    {{ block.super }}
+{% endblock %}

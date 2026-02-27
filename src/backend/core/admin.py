@@ -340,6 +340,141 @@ class BulkSubscriptionImportForm(forms.Form):
         return parsed
 
 
+class BulkAccountImportForm(forms.Form):
+    """Form for bulk importing accounts with optional roles and service links."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._invalid_lines = []
+
+    global_roles = forms.CharField(
+        widget=forms.Textarea(attrs={"rows": 3, "cols": 50}),
+        label=_("Global Roles (JSON array)"),
+        help_text=_("Optional JSON array of role strings to assign to all accounts."),
+        required=False,
+        initial="[]",
+    )
+
+    service = forms.ModelChoiceField(
+        queryset=models.Service.objects.all(),
+        required=False,
+        empty_label=_("-- No service --"),
+        label=_("Service"),
+        help_text=_("Optional service to link accounts to."),
+    )
+
+    service_roles = forms.CharField(
+        widget=forms.Textarea(attrs={"rows": 3, "cols": 50}),
+        label=_("Service Roles (JSON array)"),
+        help_text=_(
+            "Optional JSON array of role strings for the service link. "
+            "Requires a service to be selected."
+        ),
+        required=False,
+        initial="[]",
+    )
+
+    account_data = forms.CharField(
+        widget=forms.Textarea(
+            attrs={
+                "rows": 15,
+                "cols": 80,
+                "placeholder": "code,email\n13055,user@example.com\n200054781,other@example.com",
+            }
+        ),
+        label=_("Account Data"),
+        help_text=_(
+            "One entry per line: SIRET/SIREN/INSEE code, then a comma, then the email. "
+            "Spaces and hyphens in codes are ignored."
+        ),
+    )
+
+    def clean_global_roles(self):
+        """Validate and parse the global roles JSON array."""
+        raw = self.cleaned_data.get("global_roles", "").strip()
+        if not raw:
+            return []
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise forms.ValidationError(_("Invalid JSON: {}").format(str(e))) from e
+        if not isinstance(parsed, list) or not all(isinstance(r, str) for r in parsed):
+            raise forms.ValidationError(
+                _("Global roles must be a JSON array of strings.")
+            )
+        return parsed
+
+    def clean_service_roles(self):
+        """Validate and parse the service roles JSON array."""
+        raw = self.cleaned_data.get("service_roles", "").strip()
+        if not raw:
+            return []
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise forms.ValidationError(_("Invalid JSON: {}").format(str(e))) from e
+        if not isinstance(parsed, list) or not all(isinstance(r, str) for r in parsed):
+            raise forms.ValidationError(
+                _("Service roles must be a JSON array of strings.")
+            )
+        return parsed
+
+    def clean_account_data(self):
+        """Parse and validate account data lines into (code, email) tuples."""
+        raw = self.cleaned_data.get("account_data", "").strip()
+        if not raw:
+            raise forms.ValidationError(_("Please enter at least one code,email pair."))
+
+        lines = [line.strip() for line in raw.split("\n") if line.strip()]
+        if not lines:
+            raise forms.ValidationError(_("Please enter at least one code,email pair."))
+
+        valid_pairs = []
+        invalid_lines = []
+
+        for line in lines:
+            parts = line.split(",", 1)
+            if len(parts) != 2:
+                invalid_lines.append(line)
+                continue
+
+            raw_code, email = parts[0].strip(), parts[1].strip()
+            clean_code = raw_code.replace(" ", "").replace("-", "")
+
+            if not (clean_code.isdigit() and len(clean_code) in (5, 9, 14)):
+                invalid_lines.append(line)
+                continue
+
+            if "@" not in email:
+                invalid_lines.append(line)
+                continue
+
+            valid_pairs.append((clean_code, email))
+
+        # Store invalid lines for reporting without blocking valid ones
+        self._invalid_lines = invalid_lines
+
+        if not valid_pairs:
+            raise forms.ValidationError(
+                _("No valid code,email pairs found. Check the format: code,email")
+            )
+
+        return valid_pairs
+
+    def clean(self):
+        """Cross-validate: service_roles requires a service."""
+        cleaned = super().clean()
+        service = cleaned.get("service")
+        service_roles = cleaned.get("service_roles", [])
+
+        if service_roles and not service:
+            raise forms.ValidationError(
+                _("Service roles were provided but no service was selected.")
+            )
+
+        return cleaned
+
+
 class OperatorUsersInline(admin.TabularInline):
     """Inline admin for users associated with an operator."""
 
@@ -1186,6 +1321,8 @@ class AccountServiceLinkInline(admin.TabularInline):
 class AccountAdmin(admin.ModelAdmin):
     """Admin class for the Account model"""
 
+    change_list_template = "admin/core/account/change_list.html"
+
     list_display = ("id", "external_id", "type", "email", "organization")
     list_filter = ("type", "organization__operator_roles__operator")
     search_fields = ("external_id", "email", "organization__name")
@@ -1193,6 +1330,194 @@ class AccountAdmin(admin.ModelAdmin):
     readonly_fields = ("id", "created_at", "updated_at")
     autocomplete_fields = ["organization"]
     inlines = [AccountServiceLinkInline]
+
+    def get_urls(self):
+        """Add custom URLs for bulk account import."""
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "bulk-import/",
+                self.admin_site.admin_view(self.bulk_import_view),
+                name="core_account_bulk_import",
+            ),
+            path(
+                "bulk-import-results/",
+                self.admin_site.admin_view(self.bulk_import_results_view),
+                name="core_account_bulk_import_results",
+            ),
+        ]
+        return custom_urls + urls
+
+    def changelist_view(self, request, extra_context=None):
+        """Add bulk import link to changelist view."""
+        extra_context = extra_context or {}
+        extra_context["bulk_import_url"] = reverse("admin:core_account_bulk_import")
+        return super().changelist_view(request, extra_context)
+
+    def bulk_import_view(self, request):
+        """View for bulk importing accounts."""
+        if request.method == "POST":
+            form = BulkAccountImportForm(request.POST)
+            if form.is_valid():
+                global_roles = form.cleaned_data["global_roles"]
+                service = form.cleaned_data.get("service")
+                service_roles = form.cleaned_data.get("service_roles", [])
+                account_data = form.cleaned_data["account_data"]
+                invalid_lines = getattr(form, "_invalid_lines", [])
+
+                results = self._process_bulk_account_import(
+                    account_data, global_roles, service, service_roles
+                )
+                results["invalid_lines"] = invalid_lines
+
+                request.session["bulk_account_import_results"] = results
+
+                messages.success(
+                    request,
+                    _(
+                        "Bulk import completed: {accounts_created} accounts created, "
+                        "{accounts_updated} updated, "
+                        "{service_links_created} service links created, "
+                        "{service_links_updated} updated, "
+                        "{not_found} codes not found."
+                    ).format(
+                        accounts_created=results["accounts_created"],
+                        accounts_updated=results["accounts_updated"],
+                        service_links_created=results["service_links_created"],
+                        service_links_updated=results["service_links_updated"],
+                        not_found=len(results["not_found_codes"]),
+                    ),
+                )
+
+                return HttpResponseRedirect(
+                    reverse("admin:core_account_bulk_import_results")
+                )
+        else:
+            form = BulkAccountImportForm()
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": _("Bulk Account Import"),
+            "form": form,
+            "opts": self.model._meta,  # pylint: disable=protected-access # noqa: SLF001
+            "has_view_permission": self.has_view_permission(request),
+        }
+        return render(
+            request,
+            "admin/core/account/bulk_import.html",
+            context,
+        )
+
+    def bulk_import_results_view(self, request):
+        """View for displaying bulk account import results."""
+        results = request.session.get("bulk_account_import_results")
+        if not results:
+            messages.error(request, _("No bulk import results found."))
+            return HttpResponseRedirect(reverse("admin:core_account_changelist"))
+
+        del request.session["bulk_account_import_results"]
+
+        context = {
+            **self.admin_site.each_context(request),
+            "results": results,
+            "title": _("Bulk Account Import Results"),
+            "opts": self.model._meta,  # pylint: disable=protected-access # noqa: SLF001
+            "has_view_permission": self.has_view_permission(request),
+        }
+
+        return render(
+            request,
+            "admin/core/account/bulk_import_results.html",
+            context,
+        )
+
+    def _process_bulk_account_import(
+        self, account_data, global_roles, service, service_roles
+    ):
+        """Process the bulk account import operation.
+
+        Args:
+            account_data: List of (code, email) tuples.
+            global_roles: List of role strings.
+            service: Optional Service instance.
+            service_roles: List of role strings for service links.
+
+        Returns:
+            dict: Results with counts and not_found_codes.
+        """
+        # Group pairs by code: {code: [email1, email2, ...]}
+        code_emails = {}
+        for code, email in account_data:
+            code_emails.setdefault(code, []).append(email)
+
+        unique_codes = list(code_emails.keys())
+        org_groups, not_found_codes = resolve_organizations_from_codes(unique_codes)
+
+        # Build code -> orgs mapping (org_groups is parallel to unique_codes minus not_found)
+        code_orgs = {}
+        found_idx = 0
+        for code in unique_codes:
+            if code in not_found_codes:
+                continue
+            code_orgs[code] = org_groups[found_idx]
+            found_idx += 1
+
+        counts = {
+            "accounts_created": 0,
+            "accounts_updated": 0,
+            "service_links_created": 0,
+            "service_links_updated": 0,
+        }
+
+        with transaction.atomic():
+            for code, emails in code_emails.items():
+                orgs = code_orgs.get(code, [])
+                for email in emails:
+                    for org in orgs:
+                        self._import_single_account(
+                            email, org, global_roles, service, service_roles, counts
+                        )
+
+        return {**counts, "not_found_codes": not_found_codes}
+
+    def _import_single_account(
+        self, email, org, global_roles, service, service_roles, counts
+    ):
+        """Create or update a single account and optional service link.
+
+        Mutates the counts dict in place.
+        """
+        account, created = models.Account.objects.get_or_create(
+            email=email,
+            type="user",
+            organization=org,
+            defaults={"roles": global_roles},
+        )
+        if created:
+            counts["accounts_created"] += 1
+        else:
+            existing_roles = set(account.roles or [])
+            new_roles = existing_roles | set(global_roles)
+            if new_roles != existing_roles:
+                account.roles = sorted(new_roles)
+                account.save()
+                counts["accounts_updated"] += 1
+
+        if service:
+            link, link_created = models.AccountServiceLink.objects.get_or_create(
+                account=account,
+                service=service,
+                defaults={"roles": service_roles},
+            )
+            if link_created:
+                counts["service_links_created"] += 1
+            else:
+                existing_link_roles = set(link.roles or [])
+                new_link_roles = existing_link_roles | set(service_roles)
+                if new_link_roles != existing_link_roles:
+                    link.roles = sorted(new_link_roles)
+                    link.save()
+                    counts["service_links_updated"] += 1
 
 
 @admin.register(models.AccountServiceLink)
