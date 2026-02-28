@@ -12,10 +12,11 @@ import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMessagesAdminCount, useOrganizationServices } from "@/hooks/useQueries";
 import { useOperatorContext } from "@/features/layouts/components/GlobalLayout";
+import { useAuth } from "@/features/auth/Auth";
 import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
 import {
   Button,
-  Checkbox,
+  Input,
   Modal,
   ModalSize,
   useModal,
@@ -31,6 +32,8 @@ export const MessagesServiceBlock = (props: {
 }) => {
   const { t } = useTranslation();
   const { operatorId } = useOperatorContext();
+  const { user } = useAuth();
+  const isSuperUser = user?.is_superuser ?? false;
   const blockProps = useServiceBlock(props.service, props.organization);
   const domainModal = useModal();
   const [showDomainError, setShowDomainError] = useState(false);
@@ -130,6 +133,7 @@ export const MessagesServiceBlock = (props: {
               domains={domains}
               proConnectDomains={proConnectDomains}
               onSave={handleDomainsChange}
+              isSuperUser={isSuperUser}
             />
           )}
           <ServiceAttribute
@@ -184,57 +188,69 @@ const DomainSelectorModal = (props: {
   onClose: () => void;
   domains: string[];
   proConnectDomains: string[];
+  isSuperUser: boolean;
   onSave: (
     domains: string[],
     options?: MutateOptions<unknown, unknown, unknown, unknown>
   ) => void;
 }) => {
   const { t } = useTranslation();
-  const [selectedDomains, setSelectedDomains] = useState<string[]>(props.domains);
+  const [currentDomains, setCurrentDomains] = useState<string[]>(props.domains);
+  const [extraDomains, setExtraDomains] = useState<string[]>([]);
+  const [newDomainInput, setNewDomainInput] = useState("");
   const [isPending, setIsPending] = useState(false);
   const [showSpinner, setShowSpinner] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const spinnerTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  // Sync selectedDomains when props.domains changes (e.g., after external update)
+  // Sync currentDomains when props.domains changes (e.g., after external update)
   useEffect(() => {
-    setSelectedDomains(props.domains);
+    setCurrentDomains(props.domains);
   }, [props.domains]);
 
-  // Combine existing domains and ProConnect domains for the list
+  // Combine existing domains, ProConnect domains, and superuser-added domains for the list
   const allDomains = useMemo(() => {
-    const combined = new Set([...props.domains, ...props.proConnectDomains]);
+    const combined = new Set([...currentDomains, ...props.proConnectDomains, ...extraDomains]);
     return Array.from(combined).sort();
-  }, [props.domains, props.proConnectDomains]);
+  }, [currentDomains, props.proConnectDomains, extraDomains]);
 
   useEffect(() => {
     return () => clearTimeout(spinnerTimeout.current);
   }, []);
 
-  const handleToggleDomain = (domain: string) => {
-    setSelectedDomains((prev) =>
-      prev.includes(domain)
-        ? prev.filter((d) => d !== domain)
-        : [...prev, domain]
-    );
+  const handleDeleteDomain = (domain: string) => {
+    setCurrentDomains((prev) => prev.filter((d) => d !== domain));
+    setExtraDomains((prev) => prev.filter((d) => d !== domain));
+  };
+
+  const handleAddDomain = () => {
+    const domain = newDomainInput.trim().toLowerCase();
+    if (!domain || !domain.includes(".")) return;
+    if (!currentDomains.includes(domain)) {
+      setCurrentDomains((prev) => [...prev, domain]);
+    }
+    if (!allDomains.includes(domain)) {
+      setExtraDomains((prev) => [...prev, domain]);
+    }
+    setNewDomainInput("");
   };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    // Check if selection differs from what was passed in
-    const sortedSelected = [...selectedDomains].sort();
+    // Check if domains differ from what was passed in
+    const sortedCurrent = [...currentDomains].sort();
     const sortedOriginal = [...props.domains].sort();
     const hasChanged =
-      sortedSelected.length !== sortedOriginal.length ||
-      !sortedSelected.every((d, i) => d === sortedOriginal[i]);
+      sortedCurrent.length !== sortedOriginal.length ||
+      !sortedCurrent.every((d, i) => d === sortedOriginal[i]);
 
     if (hasChanged) {
       setIsPending(true);
       setSaveError(false);
       spinnerTimeout.current = setTimeout(() => setShowSpinner(true), 600);
 
-      props.onSave(selectedDomains, {
+      props.onSave(currentDomains, {
         onSuccess: () => {
           clearTimeout(spinnerTimeout.current);
           setIsPending(false);
@@ -291,11 +307,17 @@ const DomainSelectorModal = (props: {
             <div className="dc__domain-selector__list">
               {allDomains.map((domain) => (
                 <div key={domain} className="dc__domain-selector__item">
-                  <Checkbox
-                    label={domain}
-                    checked={selectedDomains.includes(domain)}
-                    onChange={() => handleToggleDomain(domain)}
-                  />
+                  <span className="dc__domain-selector__item__name">{domain}</span>
+                  {props.isSuperUser && (
+                    <Button
+                      size="small"
+                      color="secondary"
+                      icon={<Icon name="delete" />}
+                      className="dc__domain-selector__item__delete"
+                      title={t(`${PREFIX}.domains.modal.delete_label`)}
+                      onClick={() => handleDeleteDomain(domain)}
+                    />
+                  )}
                 </div>
               ))}
               {allDomains.length === 0 && (
@@ -304,6 +326,35 @@ const DomainSelectorModal = (props: {
                 </p>
               )}
             </div>
+            {props.isSuperUser ? (
+              <div className="dc__domain-selector__add">
+                <Input
+                  label=""
+                  placeholder={t(`${PREFIX}.domains.modal.add_placeholder`)}
+                  value={newDomainInput}
+                  onChange={(e) => setNewDomainInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddDomain();
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  color="secondary"
+                  onClick={handleAddDomain}
+                  disabled={!newDomainInput.trim().includes(".")}
+                >
+                  {t(`${PREFIX}.domains.modal.add_button`)}
+                </Button>
+              </div>
+            ) : (
+              <div className="dc__service__info">
+                <Icon name="info" size={IconSize.SMALL} />
+                {t(`${PREFIX}.domains.modal.contact_support`)}
+              </div>
+            )}
             {saveError && (
               <p className="dc__domain-selector__error">
                 {t("api.error.unexpected")}

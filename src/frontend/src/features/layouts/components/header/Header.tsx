@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { fetchAPI } from "@/features/api/fetchApi";
 import { useOperatorContext } from "../GlobalLayout";
+import Link from "next/link";
 
 export const HeaderIcon = () => {
   const {
@@ -13,11 +14,14 @@ export const HeaderIcon = () => {
   } = useOperatorContext();
   return (
     <div className="drive__header__left">
-      <div className="drive__header__logo" />
-      <div className="drive__header__operator">
+      <Link href="/" className="drive__header__logo" />
+      <Link
+        href={operator ? `/operators/${operator.id}` : "/"}
+        className="drive__header__operator"
+      >
         {operator?.name}
         {isOperatorLoading && <Spinner />}
-      </div>
+      </Link>
     </div>
   );
 };

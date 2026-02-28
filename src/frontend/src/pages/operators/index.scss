@@ -1,6 +1,41 @@
 .dc__operators__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.5rem;
+}
+
+.dc__operator-card {
   display: flex;
-  gap: 1rem;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1.5rem;
+  border: 1px solid var(--c--theme--colors--greyscale-200);
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--c--theme--font--families--base);
+  transition: all 0.15s ease-in-out;
+  box-shadow: 0 2px 6px 0 rgba(0, 0, 0, 0.05);
+
+  &:hover {
+    border-color: var(--c--theme--colors--primary-500);
+    box-shadow: 0 4px 12px 0 rgba(0, 0, 0, 0.1);
+  }
+
+  &__name {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--c--theme--colors--greyscale-900);
+  }
+
+  &__url {
+    font-size: 13px;
+    color: var(--c--theme--colors--greyscale-500);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 .dc__organizations__list {

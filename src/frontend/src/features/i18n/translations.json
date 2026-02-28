@@ -74,11 +74,13 @@
                 "warning": "Vous devez configurer au moins un domaine email avant de pouvoir activer ce service.",
                 "modal": {
                   "title": "Domaines email",
-                  "description": "Sélectionnez les domaines email pour ce service.",
+                  "description": "Domaines email configurés pour ce service.",
                   "suggested": "(suggéré)",
                   "no_domains": "Aucun domaine disponible. Vous devez d'abord activer ProConnect.",
                   "add_placeholder": "exemple.fr",
-                  "add_button": "Ajouter"
+                  "add_button": "Ajouter",
+                  "delete_label": "Supprimer",
+                  "contact_support": "Si vous souhaitez utiliser d'autres domaines, veuillez contacter le support ANCT."
                 }
               },
               "admins": {

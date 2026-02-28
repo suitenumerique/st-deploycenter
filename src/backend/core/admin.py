@@ -500,6 +500,18 @@ class OrganizationServicesInline(admin.TabularInline):
     list_select_related = ["service"]
 
 
+class OrganizationOperatorRolesInline(admin.TabularInline):
+    """Inline admin for operator roles associated with an organization."""
+
+    model = models.OperatorOrganizationRole
+    extra = 0
+    readonly_fields = ("id", "created_at", "updated_at")
+    autocomplete_fields = ["operator"]
+    fields = ("operator", "role", "created_at", "updated_at")
+    verbose_name = _("operator role")
+    verbose_name_plural = _("operator roles")
+
+
 @admin.register(models.User)
 class UserAdmin(auth_admin.UserAdmin):
     """Admin class for the User model"""
@@ -752,7 +764,7 @@ class OrganizationAdmin(admin.ModelAdmin):
         ),
         (_("Metadata"), {"fields": ("created_at", "updated_at")}),
     )
-    inlines = [OrganizationServicesInline]
+    inlines = [OrganizationOperatorRolesInline, OrganizationServicesInline]
 
 
 @admin.register(models.Service)

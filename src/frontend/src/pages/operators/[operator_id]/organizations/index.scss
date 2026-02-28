@@ -524,8 +524,13 @@
     align-items: center;
     gap: 0.75rem;
 
-    .c__checkbox {
-      margin: 0;
+    &__name {
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    &__delete {
+      margin-left: auto;
     }
   }
 
@@ -548,15 +553,24 @@
   &__add {
     display: flex;
     gap: 0.5rem;
-    align-items: stretch;
+    align-items: center;
 
     .c__field {
       flex: 1;
       margin-bottom: 0;
+
+      .c__input__wrapper {
+        align-items: center;
+      }
+
+      .labelled-box__children {
+        padding-top: 0;
+      }
     }
 
     > button {
       flex-shrink: 0;
+      height: 3.5rem;
     }
   }
 }

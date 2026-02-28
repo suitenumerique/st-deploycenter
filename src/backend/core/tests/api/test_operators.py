@@ -127,6 +127,37 @@ def test_api_operators_services_with_role():
     assert results[0]["id"] == service.id
 
 
+def test_api_operators_list_superuser():
+    """Superusers should be able to list all operators regardless of roles."""
+    user = factories.UserFactory(is_superuser=True)
+    client = APIClient()
+    client.force_login(user)
+
+    operator1 = factories.OperatorFactory()
+    operator2 = factories.OperatorFactory()
+    operator3 = factories.OperatorFactory()
+
+    response = client.get("/api/v1.0/operators/")
+    assert response.status_code == 200
+    results = response.json()["results"]
+    assert len(results) == 3
+    returned_ids = {r["id"] for r in results}
+    assert returned_ids == {str(operator1.id), str(operator2.id), str(operator3.id)}
+
+
+def test_api_operators_retrieve_superuser():
+    """Superusers should be able to retrieve any operator regardless of roles."""
+    user = factories.UserFactory(is_superuser=True)
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+
+    response = client.get(f"/api/v1.0/operators/{operator.id}/")
+    assert response.status_code == 200
+    assert response.json()["id"] == str(operator.id)
+
+
 def test_api_operators_exposed_config():
     """Test that the exposed config is the expected one."""
     user = factories.UserFactory()

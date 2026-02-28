@@ -10,6 +10,7 @@ $tablet: map.get($themes, "default", "theme", "breakpoints", "tablet");
 }
 
 .drive__header__logo {
+  display: block;
   background-image: url("/assets/logo.svg");
   width: 151px;
   height: 40px;
@@ -23,6 +24,11 @@ $tablet: map.get($themes, "default", "theme", "breakpoints", "tablet");
   font-weight: 400;
   color: #2845c1;
   position: relative;
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
 }
 
 .c__header__right {

@@ -1,4 +1,4 @@
-import { getOperators } from "@/features/api/Repository";
+import { getOperators, Operator } from "@/features/api/Repository";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useRouter } from "next/router";
@@ -6,7 +6,21 @@ import { Container } from "@/features/layouts/components/container/Container";
 import { getGlobalExplorerLayout } from "@/features/layouts/components/GlobalLayout";
 import { useTranslation } from "react-i18next";
 import { SpinnerPage } from "@/features/ui/components/spinner/SpinnerPage";
-import { Button } from "@openfun/cunningham-react";
+
+const OperatorCard = ({ operator }: { operator: Operator }) => {
+  const router = useRouter();
+  return (
+    <button
+      className="dc__operator-card"
+      onClick={() => router.push(`/operators/${operator.id}`)}
+    >
+      <span className="dc__operator-card__name">{operator.name}</span>
+      {operator.url && (
+        <span className="dc__operator-card__url">{operator.url}</span>
+      )}
+    </button>
+  );
+};
 
 export default function Operators() {
   const { data, isLoading } = useQuery({
@@ -35,12 +49,7 @@ export default function Operators() {
     <Container title={t("operators.title")} subtitle={t("operators.subtitle")}>
       <div className="dc__operators__list">
         {data?.results.map((operator) => (
-          <Button
-            key={operator.id}
-            onClick={() => router.push(`/operators/${operator.id}`)}
-          >
-            {operator.name}
-          </Button>
+          <OperatorCard key={operator.id} operator={operator} />
         ))}
       </div>
     </Container>

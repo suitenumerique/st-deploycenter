@@ -54,9 +54,11 @@ const getProConnectMessage = (
       }
 
       // If the domain is unknown to the RPNT, ask for declaration
-      if (organization.mail_domain_status !== MailDomainStatus.VALID || subscriptionDomains[0] != organization.mail_domain) {
-        message.alert = <span>Le domaine {domainsList} n&apos;est pas présent dans l&apos;adresse de messagerie déclarée sur Service-Public.gouv.fr. Vous devez la <a href="https://suiteterritoriale.anct.gouv.fr/conformite/referentiel#2.1" target="_blank" rel="noopener noreferrer">mettre à jour</a> pour assurer la conformité au RPNT.</span>;
-        message.icon = "warning";
+      if (organization.type != "other") {
+        if (organization.mail_domain_status !== MailDomainStatus.VALID || subscriptionDomains[0] != organization.mail_domain) {
+          message.alert = <span>Le domaine {domainsList} n&apos;est pas présent dans l&apos;adresse de messagerie déclarée sur Service-Public.gouv.fr. Vous devez la <a href="https://suiteterritoriale.anct.gouv.fr/conformite/referentiel#2.1" target="_blank" rel="noopener noreferrer">mettre à jour</a> pour assurer la conformité au RPNT.</span>;
+          message.icon = "warning";
+        }
       }
 
       return message;

@@ -40,4 +40,19 @@ def test_api_users_retrieve_me_authenticated():
         "email": user.email,
         "full_name": user.full_name,
         "language": user.language,
+        "is_superuser": False,
     }
+
+
+def test_api_users_retrieve_me_superuser():
+    """Superusers should see is_superuser=True in their user data."""
+    user = factories.UserFactory(is_superuser=True)
+
+    client = APIClient()
+    client.force_login(user)
+
+    response = client.get("/api/v1.0/users/me/")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["is_superuser"] is True

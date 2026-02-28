@@ -31,9 +31,12 @@ class OperatorViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         """
         Return only operators that the logged-in user has at least one UserOperatorRole for.
+        Superusers can see all operators.
         """
         if self.request.auth and isinstance(self.request.auth, models.Operator):
             return models.Operator.objects.filter(id=self.request.auth.id)
+        if self.request.user.is_superuser:
+            return models.Operator.objects.all().prefetch_related("user_roles")
         return models.Operator.objects.filter(
             user_roles__user=self.request.user
         ).prefetch_related("user_roles")

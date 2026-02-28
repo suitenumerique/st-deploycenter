@@ -102,8 +102,8 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = models.User
-        fields = ["id", "email", "full_name", "language"]
-        read_only_fields = ["id", "email", "full_name"]
+        fields = ["id", "email", "full_name", "language", "is_superuser"]
+        read_only_fields = ["id", "email", "full_name", "is_superuser"]
 
 
 class UserField(serializers.PrimaryKeyRelatedField):
