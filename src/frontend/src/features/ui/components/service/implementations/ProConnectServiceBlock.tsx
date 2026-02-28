@@ -231,7 +231,7 @@ export const ProConnectServiceBlock = (props: {
         </ul>
       </>}
       canActivateSubscription={async () => {
-        if (message.disabled) {
+        if (message.disabled && !isSuperUser) {
           return false;
         }
         return new Promise((resolve) => {
