@@ -526,18 +526,34 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
 
         mail_domain = organization.mail_domain if organization else None
         existing_domains = current_metadata.get("domains")
+        superuser_domains = attrs.get("metadata", {}).get("domains")
+
+        # Superusers can override domains
+        if self._is_superuser() and isinstance(superuser_domains, list):
+            resolved_domains = superuser_domains
+        else:
+            resolved_domains = existing_domains or (
+                [mail_domain] if mail_domain else []
+            )
 
         # When activating a subscription, we must have a valid domain.
-        if is_active and not (mail_domain or existing_domains):
+        if is_active and not resolved_domains:
             raise serializers.ValidationError(
                 {"metadata": "Mail domain is required for ProConnect subscription."}
             )
 
-        # Build the metadata dict explicitly. Domains cannot be overridden from the REST API for now.
+        # Build the metadata dict explicitly.
         attrs["metadata"] = {
             "idp_id": new_idp_id or current_idp_id,
-            "domains": existing_domains or ([mail_domain] if mail_domain else []),
+            "domains": resolved_domains,
         }
+
+    def _is_superuser(self):
+        """Check if the current request user is a superuser."""
+        request = self.context.get("request")
+        if request and hasattr(request, "user"):
+            return getattr(request.user, "is_superuser", False)
+        return False
 
     def _get_organization(self):
         """Resolve the organization from instance or view kwargs."""

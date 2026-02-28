@@ -180,10 +180,20 @@ export const AccountsTab = ({
             field: "email",
             headerName: t("accounts.columns.email"),
             highlight: true,
+            renderCell: (params) => (
+              <span className="dc__accounts__ellipsis">
+                {params.row.email}
+              </span>
+            ),
           },
           {
             field: "external_id",
             headerName: t("accounts.columns.external_id"),
+            renderCell: (params) => (
+              <span className="dc__accounts__ellipsis">
+                {params.row.external_id}
+              </span>
+            ),
           },
           {
             field: "type",

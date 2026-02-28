@@ -339,3 +339,205 @@ def test_api_organization_proconnect_subscription_cannot_update_idp_id_when_acti
             "Deactivate the subscription first to change the IDP."
         ]
     }
+
+
+def test_api_organization_proconnect_superuser_can_override_domains():
+    """Test that a superuser can override domains on an org with RPNT mail_domain."""
+    user = factories.UserFactory(is_superuser=True)
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory(
+        rpnt=["1.1", "1.2", "2.1", "2.2", "2.3"],
+        adresse_messagerie="contact@commune.fr",
+        site_internet="https://www.commune.fr",
+    )
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    service = factories.ServiceFactory(type="proconnect")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/subscription/",
+        {
+            "metadata": {
+                "idp_id": "abc123",
+                "domains": ["custom.fr", "other.fr"],
+            },
+            "is_active": True,
+        },
+        format="json",
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["metadata"]["domains"] == ["custom.fr", "other.fr"]
+    assert data["metadata"]["idp_id"] == "abc123"
+
+
+def test_api_organization_proconnect_regular_user_cannot_override_domains():
+    """Test that a regular user cannot override domains — they are forced back to RPNT."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory(
+        rpnt=["1.1", "1.2", "2.1", "2.2", "2.3"],
+        adresse_messagerie="contact@commune.fr",
+        site_internet="https://www.commune.fr",
+    )
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    service = factories.ServiceFactory(type="proconnect")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/subscription/",
+        {
+            "metadata": {
+                "idp_id": "abc123",
+                "domains": ["custom.fr", "other.fr"],
+            },
+            "is_active": True,
+        },
+        format="json",
+    )
+    assert response.status_code == 201
+    data = response.json()
+    # Domains are forced back to RPNT-derived value
+    assert data["metadata"]["domains"] == ["commune.fr"]
+
+
+def test_api_organization_proconnect_superuser_can_set_domains_without_rpnt():
+    """Test that a superuser can set domains on an org without mail_domain."""
+    user = factories.UserFactory(is_superuser=True)
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    # Organization without RPNT / mail_domain
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    service = factories.ServiceFactory(type="proconnect")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/subscription/",
+        {
+            "metadata": {
+                "idp_id": "abc123",
+                "domains": ["custom.fr"],
+            },
+            "is_active": True,
+        },
+        format="json",
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["metadata"]["domains"] == ["custom.fr"]
+
+
+def test_api_organization_proconnect_regular_user_cannot_set_domains_without_rpnt():
+    """Test that a regular user on an org without mail_domain still fails."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    service = factories.ServiceFactory(type="proconnect")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/subscription/",
+        {
+            "metadata": {
+                "idp_id": "abc123",
+                "domains": ["custom.fr"],
+            },
+            "is_active": True,
+        },
+        format="json",
+    )
+    assert response.status_code == 400
+    assert "Mail domain is required" in str(response.json())
+
+
+def test_api_organization_proconnect_superuser_can_update_existing_domains():
+    """Test that a superuser can update domains on an existing subscription."""
+    user = factories.UserFactory(is_superuser=True)
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory(
+        rpnt=["1.1", "1.2", "2.1", "2.2", "2.3"],
+        adresse_messagerie="contact@commune.fr",
+        site_internet="https://www.commune.fr",
+    )
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    service = factories.ServiceFactory(type="proconnect")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    # Create an active subscription first
+    factories.ServiceSubscriptionFactory(
+        organization=organization,
+        service=service,
+        operator=operator,
+        metadata={"idp_id": "abc123", "domains": ["commune.fr"]},
+        is_active=True,
+    )
+
+    # Superuser updates domains
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/subscription/",
+        {
+            "metadata": {
+                "idp_id": "abc123",
+                "domains": ["new-domain.fr", "another.fr"],
+            },
+        },
+        format="json",
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["metadata"]["domains"] == ["new-domain.fr", "another.fr"]
+
+
+def test_api_organization_proconnect_superuser_empty_domains_blocks_activation():
+    """Test that a superuser sending empty domains with is_active=true gets 400."""
+    user = factories.UserFactory(is_superuser=True)
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    service = factories.ServiceFactory(type="proconnect")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/subscription/",
+        {
+            "metadata": {
+                "idp_id": "abc123",
+                "domains": [],
+            },
+            "is_active": True,
+        },
+        format="json",
+    )
+    assert response.status_code == 400
+    assert "Mail domain is required" in str(response.json())

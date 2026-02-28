@@ -155,7 +155,7 @@ export const orderingToSortModel = (ordering: string): SortModel => {
 };
 
 export const getOperators = async (): Promise<PaginatedResponse<Operator>> => {
-  const response = await fetchAPI("operators/");
+  const response = await fetchAPI("operators/?n=100");
   const data = (await response.json()) as PaginatedResponse<Operator>;
   return data;
 };

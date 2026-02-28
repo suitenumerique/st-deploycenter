@@ -149,7 +149,7 @@ export default function Organization() {
             </span>
           </div>
           <div className="dc__organization__header__details">
-            {organization?.population && (
+            {!!organization?.population && (
               <div className="dc__organization__header__details__item">
                 <span className="dc__organization__header__details__item__label">
                   {t("organizations.details.population")}

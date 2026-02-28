@@ -956,7 +956,8 @@ class ServiceSubscription(BaseModel):
         if self.service.type != "proconnect":
             return
 
-        if not self.organization.mail_domain:
+        # Accept either org mail_domain OR domains already set in metadata
+        if not self.organization.mail_domain and not self.metadata.get("domains"):
             raise ValidationError(
                 "Mail domain is required for ProConnect subscription."
             )

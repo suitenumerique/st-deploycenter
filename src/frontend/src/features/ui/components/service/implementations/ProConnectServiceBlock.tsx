@@ -6,6 +6,7 @@ import {
   ServiceSubscription,
 } from "@/features/api/Repository";
 import { useOperatorContext } from "@/features/layouts/components/GlobalLayout";
+import { useAuth } from "@/features/auth/Auth";
 import { useMemo } from "react";
 import {
   ServiceBlock,
@@ -21,6 +22,8 @@ import {
 } from "@openfun/cunningham-react";
 import { ServiceAttribute } from "../ServiceAttribute";
 import { Icon, IconSize } from "@gouvfr-lasuite/ui-kit";
+import { DomainSelectorModal } from "../DomainSelectorModal";
+import { MutateOptions } from "@tanstack/react-query";
 
 /**
  * Helper function to get ProConnect message and icon based on organization and subscription state
@@ -134,8 +137,11 @@ export const ProConnectServiceBlock = (props: {
   organization: Organization;
 }) => {
   const { operator } = useOperatorContext();
+  const { user } = useAuth();
+  const isSuperUser = user?.is_superuser ?? false;
   const blockProps = useServiceBlock(props.service, props.organization);
   const subscription = props.service.subscription;
+  const domainModal = useModal();
 
   // Use the subscription's operator IDPs to display the correct IDP name,
   // even when viewing a subscription managed by another operator.
@@ -154,6 +160,23 @@ export const ProConnectServiceBlock = (props: {
     }
     return null;
   }, [subscription?.metadata?.domains]);
+
+  const domains = subscriptionDomains ?? [];
+
+  const handleDomainsChange = (
+    newDomains: string[],
+    options?: MutateOptions<unknown, unknown, unknown, unknown>
+  ) => {
+    blockProps.onChangeSubscription(
+      {
+        metadata: {
+          ...subscription?.metadata,
+          domains: newDomains,
+        },
+      },
+      options
+    );
+  };
 
   const {
     handleSubmit,
@@ -285,13 +308,40 @@ export const ProConnectServiceBlock = (props: {
                     
                   </>
                 )}
-              />     
+              />
 
-              {message.text && <ServiceAttribute>
+              {isSuperUser && (
+                <>
+                  {domainModal.isOpen && (
+                    <DomainSelectorModal
+                      {...domainModal}
+                      domains={domains}
+                      isSuperUser={isSuperUser}
+                      onSave={handleDomainsChange}
+                    />
+                  )}
+                  <ServiceAttribute
+                    name="Domaines"
+                    interactive={!blockProps.isManagedByOtherOperator}
+                    onClick={() => domainModal.open()}
+                    value={
+                      domains.length > 0
+                        ? <span className="dc__domains-list">
+                            {domains.map((domain) => (
+                              <span key={domain}>{domain}</span>
+                            ))}
+                          </span>
+                        : "Aucun"
+                    }
+                  />
+                </>
+              )}
+
+              {!isSuperUser && message.text && <ServiceAttribute>
                 <div className="dc__service__attribute_text">{message.text}</div>
               </ServiceAttribute>}
-              
-              {message.alert && message.icon && <div className={message.icon == "warning" ? "dc__service__warning" : "dc__service__info"}>
+
+              {!isSuperUser && message.alert && message.icon && <div className={message.icon == "warning" ? "dc__service__warning" : "dc__service__info"}>
                   <Icon name={message.icon} size={IconSize.SMALL} />
                   {message.alert}
               </div>}

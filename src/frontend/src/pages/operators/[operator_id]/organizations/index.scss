@@ -383,6 +383,13 @@
 .dc__accounts {
   padding: 0 32px;
 
+  &__ellipsis {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: block;
+  }
+
   &__roles-cell {
     display: flex;
     flex-direction: column;
