@@ -390,7 +390,8 @@
     display: block;
     position: relative;
 
-    &:hover {
+    &:hover,
+    &:focus-within {
       overflow: visible;
       z-index: 10;
       background: var(--c--theme--colors--greyscale-000, #fff);

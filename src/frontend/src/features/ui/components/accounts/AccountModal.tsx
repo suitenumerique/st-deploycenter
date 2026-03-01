@@ -159,7 +159,7 @@ export const AccountModal = ({
   const updateServiceLinks = (accountId: string): Promise<void> => {
     const serviceUpdates = Object.entries(serviceLinkRoles).map(
       ([serviceId, roles]) => {
-        const scope = serviceLinkScopes[serviceId] || {};
+        const scope = roles.includes("admin") ? (serviceLinkScopes[serviceId] || {}) : {};
         return updateServiceLinkAsync({
           operatorId,
           organizationId,

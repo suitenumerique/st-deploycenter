@@ -61,13 +61,14 @@ export const MessagesServiceBlock = (props: {
     const proConnectServices = services?.results?.filter(
       (s) => s.type === SERVICE_TYPE_PROCONNECT
     ) ?? [];
-    return proConnectServices.flatMap((s) => {
+    const domains = proConnectServices.flatMap((s) => {
       const pcDomains = s.subscription?.metadata?.domains;
       if (Array.isArray(pcDomains)) {
         return pcDomains as string[];
       }
       return [];
     });
+    return Array.from(new Set(domains));
   }, [services]);
 
   // Use saved domains if explicitly set (even if empty), otherwise fall back to ProConnect domains

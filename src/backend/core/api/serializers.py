@@ -1,5 +1,7 @@
 """Client serializers for the deploycenter core app."""
 
+from django.db import transaction
+
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
@@ -523,6 +525,15 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
                 [mail_domain] if mail_domain else []
             )
 
+        # Normalize domains: lowercase, strip whitespace, deduplicate
+        resolved_domains = sorted(
+            {
+                d.strip().lower()
+                for d in resolved_domains
+                if isinstance(d, str) and d.strip()
+            }
+        )
+
         # When activating a subscription, we must have a valid domain.
         if is_active and not resolved_domains:
             raise serializers.ValidationError(
@@ -531,23 +542,35 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
 
         # Domain uniqueness: no two active ProConnect subscriptions may share
         # a domain (across all organizations and operators).
+        # select_for_update inside atomic to prevent TOCTOU races.
         if resolved_domains and is_active:
-            current_sub_id = instance.pk if instance else None
-            other_subs = models.ServiceSubscription.objects.filter(
-                service__type="proconnect",
-                is_active=True,
-            ).exclude(pk=current_sub_id)
-            for sub in other_subs:
-                overlap = set(sub.metadata.get("domains", [])) & set(resolved_domains)
-                if overlap:
-                    raise serializers.ValidationError(
-                        {
-                            "metadata": (
-                                f"Domain(s) {', '.join(sorted(overlap))} already used "
-                                f"by another active ProConnect subscription."
-                            )
-                        }
+            with transaction.atomic():
+                current_sub_id = instance.pk if instance else None
+                other_subs = (
+                    models.ServiceSubscription.objects.filter(
+                        service__type="proconnect",
+                        is_active=True,
                     )
+                    .select_for_update()
+                    .exclude(pk=current_sub_id)
+                )
+                for sub in other_subs:
+                    existing = {
+                        d.strip().lower()
+                        for d in sub.metadata.get("domains", [])
+                        if isinstance(d, str)
+                    }
+                    overlap = existing & set(resolved_domains)
+                    if overlap:
+                        raise serializers.ValidationError(
+                            {
+                                "metadata": (
+                                    f"Domain(s) {', '.join(sorted(overlap))} "
+                                    f"already used by another active "
+                                    f"ProConnect subscription."
+                                )
+                            }
+                        )
 
         # Build the metadata dict explicitly
         attrs["metadata"] = {

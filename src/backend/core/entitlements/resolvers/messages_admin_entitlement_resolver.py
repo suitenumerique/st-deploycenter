@@ -103,4 +103,4 @@ class MessagesAdminEntitlementResolver(AdminEntitlementResolver):
                 # Restricted: intersect scope domains with subscription domains
                 domains.extend(d for d in subscription_domains if d in allowed)
 
-        return {"can_admin_maildomains": domains}
+        return {"can_admin_maildomains": list(dict.fromkeys(domains))}

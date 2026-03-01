@@ -406,7 +406,7 @@ def test_api_organization_proconnect_superuser_can_update_existing_domains():
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["metadata"]["domains"] == ["new-domain.fr", "another.fr"]
+    assert data["metadata"]["domains"] == ["another.fr", "new-domain.fr"]
 
 
 def test_api_organization_proconnect_superuser_empty_domains_blocks_activation():

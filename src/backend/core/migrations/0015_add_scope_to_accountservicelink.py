@@ -13,6 +13,14 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='accountservicelink',
             name='scope',
-            field=models.JSONField(blank=True, default=dict, help_text='Scope restrictions for roles. Empty means unrestricted. Example: {"domains": ["x.fr"]}', verbose_name='scope'),
+            field=models.JSONField(
+                blank=True,
+                default=dict,
+                help_text=(
+                    "Scope restrictions for roles. Empty means unrestricted."
+                    ' Example: {"domains": ["x.fr"]}'
+                ),
+                verbose_name="scope",
+            ),
         ),
     ]
