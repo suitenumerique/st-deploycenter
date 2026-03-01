@@ -925,7 +925,6 @@ def test_api_organizations_services_list_includes_other_operator_subscription():
     assert subscription["operator_name"] == "Operator 2"
     assert subscription["is_active"] is True
     assert "created_at" in subscription
-    assert "operator_idps" in subscription
 
 
 def test_api_organizations_services_shows_service_with_only_other_operator_subscription():
@@ -1057,4 +1056,3 @@ def test_api_organizations_services_subscription_includes_operator_info():
     assert subscription["is_active"] is True
     assert subscription["operator_id"] == str(operator1.id)
     assert subscription["operator_name"] == "Operator 1"
-    assert "operator_idps" in subscription

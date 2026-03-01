@@ -345,6 +345,7 @@ class ServiceSerializer(serializers.ModelSerializer):
             "help_center_url",
             "population_limits",
             "auto_admin_population_threshold",
+            "idp_id",
         ]
         return {key: config[key] for key in whitelist_keys if key in config}
 
@@ -498,8 +499,7 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
         """
         Validate ProConnect subscription data.
         Handles both update (instance exists) and create (no instance) cases.
-        It is not possible to update the IDP for an active ProConnect subscription.
-        Deactivate the subscription first to change the IDP.
+        IDP is now stored in Service.config.idp_id (immutable per service).
         """
         service_type = self._get_service_type()
         if service_type != "proconnect":
@@ -510,19 +510,6 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
 
         current_metadata = instance.metadata if instance else {}
         is_active = attrs.get("is_active", instance.is_active if instance else True)
-        current_idp_id = current_metadata.get("idp_id")
-        new_idp_id = attrs.get("metadata", {}).get("idp_id")
-
-        # Are we changing an IDP while a subscription is active?
-        if instance and is_active and new_idp_id and current_idp_id != new_idp_id:
-            raise serializers.ValidationError(
-                {
-                    "metadata": (
-                        "Cannot update idp_id for an active ProConnect subscription. "
-                        "Deactivate the subscription first to change the IDP."
-                    )
-                }
-            )
 
         mail_domain = organization.mail_domain if organization else None
         existing_domains = current_metadata.get("domains")
@@ -542,9 +529,28 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
                 {"metadata": "Mail domain is required for ProConnect subscription."}
             )
 
-        # Build the metadata dict explicitly.
+        # Domain uniqueness: no two active ProConnect subscriptions may share
+        # a domain (across all organizations and operators).
+        if resolved_domains and is_active:
+            current_sub_id = instance.pk if instance else None
+            other_subs = models.ServiceSubscription.objects.filter(
+                service__type="proconnect",
+                is_active=True,
+            ).exclude(pk=current_sub_id)
+            for sub in other_subs:
+                overlap = set(sub.metadata.get("domains", [])) & set(resolved_domains)
+                if overlap:
+                    raise serializers.ValidationError(
+                        {
+                            "metadata": (
+                                f"Domain(s) {', '.join(sorted(overlap))} already used "
+                                f"by another active ProConnect subscription."
+                            )
+                        }
+                    )
+
+        # Build the metadata dict explicitly
         attrs["metadata"] = {
-            "idp_id": new_idp_id or current_idp_id,
             "domains": resolved_domains,
         }
 
@@ -600,19 +606,23 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
         merged_metadata["auto_admin"] = auto_admin
         attrs["metadata"] = merged_metadata
 
-    def _get_service_type(self):
-        """Resolve the service type from instance or view kwargs."""
+    def _get_service(self):
+        """Resolve the service from instance or view kwargs."""
         if self.instance:
-            return self.instance.service.type
+            return self.instance.service
 
         view = self.context.get("view")
         if view and "service_id" in getattr(view, "kwargs", {}):
             try:
-                service = models.Service.objects.get(id=view.kwargs["service_id"])
-                return service.type
+                return models.Service.objects.get(id=view.kwargs["service_id"])
             except models.Service.DoesNotExist:
                 return None
         return None
+
+    def _get_service_type(self):
+        """Resolve the service type from instance or view kwargs."""
+        service = self._get_service()
+        return service.type if service else None
 
     def validate(self, attrs):
         """Validate subscription data."""
@@ -638,26 +648,17 @@ class SubscriptionWithOperatorSerializer(ServiceSubscriptionSerializer):
 
     operator_id = serializers.UUIDField(source="operator.id", read_only=True)
     operator_name = serializers.CharField(source="operator.name", read_only=True)
-    operator_idps = serializers.SerializerMethodField()
 
     class Meta:
         model = models.ServiceSubscription
         fields = ServiceSubscriptionSerializer.Meta.fields + [
             "operator_id",
             "operator_name",
-            "operator_idps",
         ]
         read_only_fields = ServiceSubscriptionSerializer.Meta.read_only_fields + [
             "operator_id",
             "operator_name",
-            "operator_idps",
         ]
-
-    def get_operator_idps(self, obj):
-        """Return the operator's IDP list from their config."""
-        if obj.operator and obj.operator.config:
-            return obj.operator.config.get("idps", [])
-        return []
 
 
 class ServiceSubscriptionWithServiceSerializer(ServiceSubscriptionSerializer):
@@ -796,7 +797,7 @@ class AccountServiceLinkSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = models.AccountServiceLink
-        fields = ["roles", "service"]
+        fields = ["roles", "scope", "service"]
 
 
 class AccountSerializer(serializers.ModelSerializer):

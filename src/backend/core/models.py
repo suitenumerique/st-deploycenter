@@ -931,24 +931,11 @@ class ServiceSubscription(BaseModel):
         if service_handler:
             service_handler.create_default_entitlements(self)
 
-    @property
-    def idp_name(self):
-        """
-        Get the name of the IDP for the ProConnect subscription.
-        """
-        if not self.metadata.get("idp_id"):
-            return None
-        if not self.operator.config["idps"]:
-            return None
-        for idp in self.operator.config["idps"]:
-            if idp["id"] == self.metadata.get("idp_id"):
-                return idp["name"]
-        return None
-
     def validate_proconnect_subscription(self):
         """
         When activating a ProConnect subscription, we need to validate
         that the mail domain and IDP are set.
+        IDP is stored in service.config.idp_id.
         """
         if not self.is_active:
             return
@@ -962,7 +949,8 @@ class ServiceSubscription(BaseModel):
                 "Mail domain is required for ProConnect subscription."
             )
 
-        if not self.metadata.get("idp_id"):
+        service_config = self.service.config or {}
+        if not service_config.get("idp_id"):
             raise ValidationError("IDP is required for ProConnect subscription.")
 
     def validate_can_activate(self):
@@ -1016,6 +1004,16 @@ class AccountServiceLink(BaseModel):
         default=list,
         blank=True,
         help_text=_("Array of role strings for this account"),
+    )
+
+    scope = models.JSONField(
+        _("scope"),
+        default=dict,
+        blank=True,
+        help_text=_(
+            "Scope restrictions for roles. Empty means unrestricted. "
+            'Example: {"domains": ["x.fr"]}'
+        ),
     )
 
     class Meta:

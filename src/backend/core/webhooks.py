@@ -229,7 +229,7 @@ class WebhookClient:
 
         # Fetch service-specific roles (accounts linked to this service with roles)
         service_roles = [
-            {"email": link.account.email, "roles": link.roles}
+            {"email": link.account.email, "roles": link.roles, "scope": link.scope}
             for link in AccountServiceLink.objects.filter(
                 service=service,
                 account__organization=organization,
@@ -246,7 +246,6 @@ class WebhookClient:
             "subscription_created_at": subscription.created_at.isoformat(),
             "subscription_updated_at": subscription.updated_at.isoformat(),
             "subscription_metadata": subscription.metadata,
-            "subscription_idp_name": subscription.idp_name,
             "subscription_is_active": subscription.is_active,
             "subscription_domains": ",".join(
                 subscription.metadata.get("domains") or []

@@ -214,6 +214,9 @@
           "service_types": {
             "rdvsp": "RDV SP"
           }
+        },
+        "scope": {
+          "domains_label": "Domaines autorisés"
         }
       },
       "feedback": {

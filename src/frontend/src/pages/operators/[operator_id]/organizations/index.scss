@@ -388,12 +388,36 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     display: block;
+    position: relative;
+
+    &:hover {
+      overflow: visible;
+      z-index: 10;
+      background: var(--c--theme--colors--greyscale-000, #fff);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+      border-radius: 4px;
+      padding: 2px 6px;
+      margin: -2px -6px;
+    }
   }
 
   &__roles-cell {
     display: flex;
     flex-direction: column;
     line-height: 1.4;
+    position: relative;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    &:hover {
+      overflow: visible;
+      z-index: 10;
+      background: var(--c--theme--colors--greyscale-000, #fff);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+      border-radius: 4px;
+      padding: 4px 8px;
+      margin: -4px -8px;
+    }
   }
 
   .c__datagrid.dc__accounts__list {

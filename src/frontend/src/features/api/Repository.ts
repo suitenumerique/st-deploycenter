@@ -59,7 +59,6 @@ export type ServiceSubscription = {
   entitlements: Entitlement[];
   operator_id?: string;
   operator_name?: string;
-  operator_idps?: OperatorIdp[];
 };
 
 // Input type for creating/updating subscriptions
@@ -92,6 +91,7 @@ export const SERVICE_TYPE_DRIVE = "drive";
 
 export type AccountServiceLink = {
   roles: string[];
+  scope: Record<string, unknown>;
   service: {
     id: string;
     name: string;
@@ -133,6 +133,7 @@ export type Service = {
   config?: {
     help_center_url?: string;
     auto_admin_population_threshold?: number;
+    idp_id?: string;
   };
   entitlement_defaults?: EntitlementDefault[];
 };
@@ -323,7 +324,7 @@ export const deleteAccount = async (accountId: string): Promise<void> => {
 export const updateAccountServiceLink = async (
   accountId: string,
   serviceId: string,
-  data: { roles: string[] }
+  data: { roles: string[]; scope?: Record<string, unknown> }
 ): Promise<AccountServiceLink> => {
   const response = await fetchAPI(
     `accounts/${accountId}/services/${serviceId}/`,

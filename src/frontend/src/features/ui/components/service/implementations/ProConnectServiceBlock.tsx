@@ -1,23 +1,16 @@
 import {
   MailDomainStatus,
-  OperatorIdp,
   Organization,
   Service,
-  ServiceSubscription,
 } from "@/features/api/Repository";
-import { useOperatorContext } from "@/features/layouts/components/GlobalLayout";
 import { useAuth } from "@/features/auth/Auth";
 import { useMemo } from "react";
 import {
   ServiceBlock,
   useServiceBlock,
 } from "@/features/ui/components/service/ServiceBlock";
-import { Controller, useForm } from "react-hook-form";
 import {
   Button,
-  Modal,
-  ModalSize,
-  Select,
   useModal,
 } from "@openfun/cunningham-react";
 import { ServiceAttribute } from "../ServiceAttribute";
@@ -120,37 +113,20 @@ const getProConnectMessage = (
 /**
  * Handles the ProConnect service block.
  *
- * There are two independents flows:
- *
- * - Activate the subscription
- *   When trying to activate the subscription, we need to validate the data first via canActivateSubscription.
- *   That's why we use a form to validate the data, so it's a future proof solution for future potentially
- *   more complicated validation rules.
- *
- * - Update the IDP
- *   When updating the IDP, we need to save the change to the backend independently
- *   of the form validation. ( Because we setup the IDP before activating the subscription )
- *   It's not possible to update the IDP after activating the subscription.
+ * IDP is now stored in service.config.idp_id (immutable per service)
+ * and displayed as read-only.
  */
 export const ProConnectServiceBlock = (props: {
   service: Service;
   organization: Organization;
 }) => {
-  const { operator } = useOperatorContext();
   const { user } = useAuth();
   const isSuperUser = user?.is_superuser ?? false;
   const blockProps = useServiceBlock(props.service, props.organization);
   const subscription = props.service.subscription;
   const domainModal = useModal();
 
-  // Use the subscription's operator IDPs to display the correct IDP name,
-  // even when viewing a subscription managed by another operator.
-  // Fallback to current operator's IDPs when no subscription exists yet,
-  // so the user can select an IDP before creating the subscription.
-  const availableIdps = subscription?.operator_idps ?? operator?.config.idps ?? [];
-  const getIdp = (idp_id: string) => {
-    return availableIdps.find((idp) => idp.id === idp_id);
-  };
+  const idpId = props.service.config?.idp_id;
 
   // Get domains from subscription metadata if available
   const subscriptionDomains = useMemo(() => {
@@ -178,29 +154,6 @@ export const ProConnectServiceBlock = (props: {
     );
   };
 
-  const {
-    handleSubmit,
-    control,
-    formState: { errors },
-  } = useForm({
-    defaultValues: {
-      mail_domain: props.organization.mail_domain,
-      idp_id: subscription?.metadata?.idp_id,
-    },
-  });
-
-  const saveIdpChange = (idp?: OperatorIdp) => {
-    const data: Partial<ServiceSubscription> = {
-      metadata: {idp_id: idp?.id},
-    };
-    if (!subscription || blockProps.isManagedByOtherOperator) {
-      data.is_active = false;
-    }
-    blockProps.onChangeSubscription(data);
-  };
-
-  const idpModal = useModal();
-
   // Check if subscription is less than 48 hours old
   const isSubscriptionLessThan48Hours = useMemo(() => {
     if (!subscription?.created_at) {
@@ -218,6 +171,17 @@ export const ProConnectServiceBlock = (props: {
     subscription?.is_active || false
   );
 
+  // Activation requires an IDP to be configured on the service
+  const canActivateSubscription = async () => {
+    if (message.disabled && !isSuperUser) {
+      return false;
+    }
+    if (!idpId) {
+      return false;
+    }
+    return true;
+  };
+
   return (
     <ServiceBlock
       {...blockProps}
@@ -230,85 +194,11 @@ export const ProConnectServiceBlock = (props: {
           <li>des procédures sont en place pour maintenir cet annuaire à jour.</li>
         </ul>
       </>}
-      canActivateSubscription={async () => {
-        if (message.disabled && !isSuperUser) {
-          return false;
-        }
-        return new Promise((resolve) => {
-          handleSubmit(
-            () => resolve(true),
-            () => resolve(false)
-          )();
-        });
-      }}
+      canActivateSubscription={canActivateSubscription}
       content={
         <>
           <form>
             <div className="dc__service__attribute__container">
-
-              <Controller
-                control={control}
-                name="idp_id"
-                rules={{ required: true }}
-                render={({ field: { value, onChange } }) => (
-                  <>
-                    <Modal
-                      size={ModalSize.SMALL}
-                      title="Modification du FI"
-                      closeOnEsc={true}
-                      closeOnClickOutside={true}
-                      {...idpModal}
-                      rightActions={
-                        <>
-                          <Button type="submit" onClick={idpModal.close}>
-                            Fermer
-                          </Button>
-                        </>
-                      }
-                    >
-                      <div className="dc__service__attribute__modal__content">
-                        <p className="dc__service__attribute__modal__content__help">
-                          Sélectionnez un FI pour l&apos;organisation.
-                        </p>
-                        <Select
-                          label="Fournisseur d'Identité"
-                          value={value}
-                          onChange={(e) => {
-                            const idp = getIdp(e.target.value as string);
-                            onChange(idp?.id || "");
-                            saveIdpChange(idp);
-                          }}
-                          options={
-                            availableIdps.map((idp) => ({
-                              label: idp.name,
-                              value: idp.id,
-                            }))
-                          }
-                        />
-                      </div>
-                    </Modal>
-                    <ServiceAttribute
-                      name="Fournisseur d'Identité"
-                      interactive={!subscription?.is_active && !blockProps.isManagedByOtherOperator}
-                      onClick={() => idpModal.open()}
-                      value={
-                        getIdp(value)?.name ??
-                        "Aucun"
-                      }
-                    >
-                      {errors.idp_id?.type === "required" && (
-                        <p
-                          role="alert"
-                          className="dc__service__attribute__error"
-                        >
-                          Vous devez sélectionner un FI.
-                        </p>
-                      )}
-                    </ServiceAttribute>
-                    
-                  </>
-                )}
-              />
 
               {isSuperUser && (
                 <>

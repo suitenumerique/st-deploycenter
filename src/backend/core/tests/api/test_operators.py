@@ -183,3 +183,26 @@ def test_api_operators_exposed_config():
     assert len(results) == 1
     keys = list(results[0]["config"].keys())
     assert keys == ["idps"]
+
+
+def test_api_operators_list_superuser_page_size():
+    """Superusers should be able to list all operators using page_size parameter."""
+    user = factories.UserFactory(is_superuser=True)
+    client = APIClient()
+    client.force_login(user)
+
+    factories.OperatorFactory.create_batch(25)
+
+    # Default page size should be 20
+    response = client.get("/api/v1.0/operators/")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["count"] == 25
+    assert len(data["results"]) == 20
+
+    # With page_size=100, all operators should be returned
+    response = client.get("/api/v1.0/operators/?page_size=100")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["count"] == 25
+    assert len(data["results"]) == 25

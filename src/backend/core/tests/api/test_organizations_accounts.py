@@ -673,6 +673,89 @@ def test_api_organizations_accounts_patch_service_link_operator_not_allowed(
 
 
 ##
+## Patch service links with scope
+##
+
+
+@pytest.mark.parametrize("auth_method", ["user", "external_api_key"])
+def test_api_organizations_accounts_patch_service_link_with_scope(
+    account_test_setup, auth_method
+):
+    """PATCH service link with scope persists and is returned in GET."""
+    client = APIClient()
+    if auth_method == "user":
+        client.force_login(account_test_setup["user"])
+    elif auth_method == "external_api_key":
+        client.credentials(HTTP_AUTHORIZATION="Bearer test-external-api-key-12345")
+
+    operator = account_test_setup["operator"]
+    organization_ok1 = account_test_setup["organization_ok1"]
+    service1 = account_test_setup["service1"]
+
+    # Create an account
+    response = client.post(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/accounts/",
+        data={
+            "email": "scoped@example.com",
+            "type": "user",
+            "roles": [],
+        },
+        format="json",
+    )
+    assert response.status_code == 201
+    account_id = response.json()["id"]
+
+    # Patch service link with roles and scope
+    response = client.patch(
+        f"/api/v1.0/accounts/{account_id}/services/{service1.id}/",
+        data={
+            "roles": ["admin"],
+            "scope": {"domains": ["x.fr"]},
+        },
+        format="json",
+    )
+    assert response.status_code == 200
+    assert_equals_partial(
+        response.json(),
+        {
+            "roles": ["admin"],
+            "scope": {"domains": ["x.fr"]},
+        },
+    )
+
+    # Verify scope persisted via GET
+    response = client.get(f"/api/v1.0/accounts/{account_id}/")
+    assert response.status_code == 200
+    account_data = response.json()
+    assert len(account_data["service_links"]) == 1
+    assert_equals_partial(
+        account_data["service_links"][0],
+        {
+            "roles": ["admin"],
+            "scope": {"domains": ["x.fr"]},
+        },
+    )
+
+    # Patch again with empty scope (unrestricted)
+    response = client.patch(
+        f"/api/v1.0/accounts/{account_id}/services/{service1.id}/",
+        data={
+            "roles": ["admin"],
+            "scope": {},
+        },
+        format="json",
+    )
+    assert response.status_code == 200
+    assert_equals_partial(
+        response.json(),
+        {
+            "roles": ["admin"],
+            "scope": {},
+        },
+    )
+
+
+##
 ## Delete account
 ##
 

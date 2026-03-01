@@ -56,16 +56,18 @@ export const MessagesServiceBlock = (props: {
     props.organization.id
   );
 
-  // Get default domains from ProConnect service
+  // Get default domains from all ProConnect services
   const proConnectDomains = useMemo(() => {
-    const proConnectService = services?.results?.find(
+    const proConnectServices = services?.results?.filter(
       (s) => s.type === SERVICE_TYPE_PROCONNECT
-    );
-    const pcDomains = proConnectService?.subscription?.metadata?.domains;
-    if (Array.isArray(pcDomains)) {
-      return pcDomains as string[];
-    }
-    return [];
+    ) ?? [];
+    return proConnectServices.flatMap((s) => {
+      const pcDomains = s.subscription?.metadata?.domains;
+      if (Array.isArray(pcDomains)) {
+        return pcDomains as string[];
+      }
+      return [];
+    });
   }, [services]);
 
   // Use saved domains if explicitly set (even if empty), otherwise fall back to ProConnect domains

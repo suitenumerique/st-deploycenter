@@ -1536,7 +1536,7 @@ class AccountAdmin(admin.ModelAdmin):
 class AccountServiceLinkAdmin(admin.ModelAdmin):
     """Admin class for the AccountServiceLink model"""
 
-    list_display = ("id", "account", "service", "roles")
+    list_display = ("id", "account", "service", "roles", "scope")
     list_filter = ("service",)
     search_fields = (
         "account__email",
