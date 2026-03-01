@@ -774,6 +774,7 @@ class ServiceAdmin(admin.ModelAdmin):
     form = ServiceForm
     change_form_template = "admin/core/service/change_form.html"
     list_display = ("name", "instance_name", "type", "url", "is_active", "created_at")
+    actions = ["duplicate_service"]
     list_filter = ("is_active", "created_at")
     search_fields = ("name", "type", "description")
     ordering = ("name", "type", "url")
@@ -840,6 +841,28 @@ class ServiceAdmin(admin.ModelAdmin):
 
         # For normal form submissions, call the parent method
         return super().response_change(request, obj)
+
+    @admin.action(description=_("Duplicate selected services"))
+    def duplicate_service(self, request, queryset):
+        """Clone selected services."""
+        count = 0
+        for original in queryset:
+            original_required_services = list(original.required_services.all())
+
+            original.pk = None
+            original.id = None
+            original.name = f"{original.name} (copy)"
+            original.save()
+
+            if original_required_services:
+                original.required_services.set(original_required_services)
+
+            count += 1
+
+        messages.success(
+            request,
+            _("{} service(s) duplicated successfully.").format(count),
+        )
 
 
 class OperatorFilter(admin.SimpleListFilter):

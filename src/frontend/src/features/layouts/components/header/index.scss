@@ -24,6 +24,7 @@ $tablet: map.get($themes, "default", "theme", "breakpoints", "tablet");
   font-weight: 400;
   color: #2845c1;
   position: relative;
+  top: 0.5px;
   text-decoration: none;
 
   &:hover {
