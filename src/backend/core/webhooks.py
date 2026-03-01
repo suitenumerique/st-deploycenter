@@ -5,6 +5,7 @@ Handles ServiceSubscription lifecycle events with configurable templates and con
 
 import logging
 import re
+from collections import defaultdict
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -228,14 +229,19 @@ class WebhookClient:
         ]
 
         # Fetch service-specific roles (accounts linked to this service with roles)
-        service_roles = [
-            {"email": link.account.email, "roles": link.roles, "scope": link.scope}
-            for link in AccountServiceLink.objects.filter(
+        # Aggregate by email into dict format
+        email_roles = defaultdict(dict)
+        for link in (
+            AccountServiceLink.objects.filter(
                 service=service,
                 account__organization=organization,
             )
-            .exclude(roles=[])
+            .exclude(role="")
             .select_related("account")
+        ):
+            email_roles[link.account.email][link.role] = {"scope": link.scope or {}}
+        service_roles = [
+            {"email": email, "roles": roles} for email, roles in email_roles.items()
         ]
 
         context_data = {

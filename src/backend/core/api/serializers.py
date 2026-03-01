@@ -1,5 +1,7 @@
 """Client serializers for the deploycenter core app."""
 
+from collections import defaultdict
+
 from django.db import transaction
 
 from drf_spectacular.utils import extend_schema_field
@@ -808,28 +810,10 @@ class OrganizationServiceSerializer(ServiceSerializer):
         return data
 
 
-class AccountServiceLinkSerializer(serializers.ModelSerializer):
-    """Serialize account service links."""
-
-    service = ServiceLightSerializer(read_only=True)
-    roles = serializers.ListField(
-        child=serializers.CharField(max_length=100),
-        required=False,
-        default=list,
-    )
-
-    class Meta:
-        model = models.AccountServiceLink
-        fields = ["roles", "scope", "service"]
-
-
 class AccountSerializer(serializers.ModelSerializer):
     """Serialize accounts."""
 
-    service_links = AccountServiceLinkSerializer(
-        many=True,
-        read_only=True,
-    )
+    service_links = serializers.SerializerMethodField()
     roles = serializers.ListField(
         child=serializers.CharField(max_length=100),
         required=False,
@@ -840,3 +824,18 @@ class AccountSerializer(serializers.ModelSerializer):
         model = models.Account
         fields = ["id", "email", "external_id", "type", "roles", "service_links"]
         read_only_fields = ["id", "service_links"]
+
+    def get_service_links(self, obj):
+        """Aggregate one-row-per-role into dict format grouped by service."""
+        by_service = defaultdict(lambda: {"roles": {}, "service": None})
+        for link in obj.service_links.all():
+            entry = by_service[link.service_id]
+            if entry["service"] is None:
+                entry["service"] = {
+                    "id": link.service.id,
+                    "name": link.service.name,
+                    "instance_name": link.service.instance_name,
+                    "type": link.service.type,
+                }
+            entry["roles"][link.role] = {"scope": link.scope or {}}
+        return list(by_service.values())

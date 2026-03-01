@@ -277,7 +277,7 @@ export const useMutationUpdateAccountServiceLink = () => {
       organizationId: string;
       accountId: string;
       serviceId: string;
-      data: { roles: string[]; scope?: Record<string, unknown> };
+      data: { roles: Record<string, { scope?: Record<string, unknown> }> };
     }) => {
       return updateAccountServiceLink(accountId, serviceId, data);
     },

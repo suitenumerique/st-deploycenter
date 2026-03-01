@@ -32,7 +32,7 @@ class AccountFilter(django_filters.FilterSet):
                 service_id, role = parts[1], parts[2]
                 return queryset.filter(
                     service_links__service_id=service_id,
-                    service_links__roles__contains=[role],
+                    service_links__role=role,
                 ).distinct()
 
         return queryset.none()

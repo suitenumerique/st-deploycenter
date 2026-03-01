@@ -20,6 +20,7 @@ export type DomainSelectorModalProps = {
 
 export const DomainSelectorModal = (props: DomainSelectorModalProps) => {
   const { t } = useTranslation();
+  const hasSavedDomains = props.domains.length > 0;
   const [currentDomains, setCurrentDomains] = useState<string[]>(props.domains);
   const [extraDomains, setExtraDomains] = useState<string[]>([]);
   const [newDomainInput, setNewDomainInput] = useState("");
@@ -35,11 +36,12 @@ export const DomainSelectorModal = (props: DomainSelectorModalProps) => {
     setCurrentDomains(props.domains);
   }, [props.domains]);
 
-  // Combine existing domains, suggested domains, and superuser-added domains for the list
+  // Only show suggestions when no domains are saved yet (first-time setup)
   const allDomains = useMemo(() => {
-    const combined = new Set([...currentDomains, ...suggestedDomains, ...extraDomains]);
+    const suggestions = hasSavedDomains ? [] : suggestedDomains;
+    const combined = new Set([...currentDomains, ...suggestions, ...extraDomains]);
     return Array.from(combined).sort();
-  }, [currentDomains, suggestedDomains, extraDomains]);
+  }, [currentDomains, suggestedDomains, extraDomains, hasSavedDomains]);
 
   useEffect(() => {
     return () => clearTimeout(spinnerTimeout.current);

@@ -43,8 +43,10 @@ class MessagesAdminEntitlementResolver(AdminEntitlementResolver):
         ).prefetch_related(
             Prefetch(
                 "service_links",
-                queryset=models.AccountServiceLink.objects.filter(service=service),
-                to_attr="service_links_for_service",
+                queryset=models.AccountServiceLink.objects.filter(
+                    service=service, role="admin"
+                ),
+                to_attr="admin_service_links_for_service",
             )
         )
 
@@ -58,13 +60,13 @@ class MessagesAdminEntitlementResolver(AdminEntitlementResolver):
                 admin_org_domains[org_id] = None
                 continue
 
-            service_link = (
-                account.service_links_for_service[0]
-                if account.service_links_for_service
+            admin_link = (
+                account.admin_service_links_for_service[0]
+                if account.admin_service_links_for_service
                 else None
             )
-            if service_link and "admin" in (service_link.roles or []):
-                scope_domains = (service_link.scope or {}).get("domains")
+            if admin_link:
+                scope_domains = (admin_link.scope or {}).get("domains")
 
                 if scope_domains:
                     # Scoped: merge with existing restrictions for this org

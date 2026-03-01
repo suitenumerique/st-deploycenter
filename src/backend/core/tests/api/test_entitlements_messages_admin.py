@@ -95,7 +95,7 @@ def test_api_entitlements_messages_can_admin_maildomains_service_admin():
         email="test@example.com",
         roles=[],
     )
-    account.service_links.create(service=service, roles=["admin"])
+    account.service_links.create(service=service, role="admin")
 
     response = client.get(
         "/api/v1.0/entitlements/",
@@ -153,7 +153,7 @@ def test_api_entitlements_messages_can_admin_maildomains_admin_on_other_service(
         email="test@example.com",
         roles=[],
     )
-    account.service_links.create(service=other_service, roles=["admin"])
+    account.service_links.create(service=other_service, role="admin")
 
     response = client.get(
         "/api/v1.0/entitlements/",
@@ -432,7 +432,7 @@ def test_api_entitlements_messages_can_admin_maildomains_domain_scoped_service_a
         roles=[],
     )
     account.service_links.create(
-        service=service, roles=["admin"], scope={"domains": ["d1.com"]}
+        service=service, role="admin", scope={"domains": ["d1.com"]}
     )
 
     response = client.get(
@@ -488,7 +488,7 @@ def test_api_entitlements_messages_can_admin_maildomains_unrestricted_service_ad
         email="test@example.com",
         roles=[],
     )
-    account.service_links.create(service=service, roles=["admin"], scope={})
+    account.service_links.create(service=service, role="admin", scope={})
 
     response = client.get(
         "/api/v1.0/entitlements/",
@@ -602,7 +602,7 @@ def test_api_entitlements_messages_can_admin_maildomains_mixed_orgs_scoped():
         roles=[],
     )
     account_b.service_links.create(
-        service=service, roles=["admin"], scope={"domains": ["org-b1.fr"]}
+        service=service, role="admin", scope={"domains": ["org-b1.fr"]}
     )
 
     response = client.get(
@@ -654,7 +654,7 @@ def test_api_entitlements_messages_can_admin_maildomains_stale_scope_domains_dis
     # scope has "removed.fr" which is no longer in subscription
     account.service_links.create(
         service=service,
-        roles=["admin"],
+        role="admin",
         scope={"domains": ["a.fr", "removed.fr"]},
     )
 
@@ -713,7 +713,7 @@ def test_api_entitlements_messages_can_admin_maildomains_all_scope_domains_remov
     )
     account.service_links.create(
         service=service,
-        roles=["admin"],
+        role="admin",
         scope={"domains": ["gone.fr"]},
     )
 

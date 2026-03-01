@@ -1516,27 +1516,21 @@ class AccountAdmin(admin.ModelAdmin):
                 counts["accounts_updated"] += 1
 
         if service:
-            link, link_created = models.AccountServiceLink.objects.get_or_create(
-                account=account,
-                service=service,
-                defaults={"roles": service_roles},
-            )
-            if link_created:
-                counts["service_links_created"] += 1
-            else:
-                existing_link_roles = set(link.roles or [])
-                new_link_roles = existing_link_roles | set(service_roles)
-                if new_link_roles != existing_link_roles:
-                    link.roles = sorted(new_link_roles)
-                    link.save()
-                    counts["service_links_updated"] += 1
+            for role_name in service_roles:
+                _link, link_created = models.AccountServiceLink.objects.get_or_create(
+                    account=account,
+                    service=service,
+                    role=role_name,
+                )
+                if link_created:
+                    counts["service_links_created"] += 1
 
 
 @admin.register(models.AccountServiceLink)
 class AccountServiceLinkAdmin(admin.ModelAdmin):
     """Admin class for the AccountServiceLink model"""
 
-    list_display = ("id", "account", "service", "roles", "scope")
+    list_display = ("id", "account", "service", "role", "scope")
     list_filter = ("service",)
     search_fields = (
         "account__email",

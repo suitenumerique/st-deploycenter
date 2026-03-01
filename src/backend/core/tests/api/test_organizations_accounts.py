@@ -617,7 +617,7 @@ def test_api_organizations_accounts_patch_service_link(account_test_setup, auth_
     assert_equals_partial(
         response.json(),
         {
-            "roles": ["admin"],
+            "roles": {"admin": {"scope": {}}},
         },
     )
 
@@ -633,7 +633,7 @@ def test_api_organizations_accounts_patch_service_link(account_test_setup, auth_
             "roles": ["admin"],
             "service_links": [
                 {
-                    "roles": ["admin"],
+                    "roles": {"admin": {"scope": {}}},
                     "service": {"id": service1.id, "name": "test-service-1"},
                 }
             ],
@@ -705,12 +705,11 @@ def test_api_organizations_accounts_patch_service_link_with_scope(
     assert response.status_code == 201
     account_id = response.json()["id"]
 
-    # Patch service link with roles and scope
+    # Patch service link with scope using new dict format
     response = client.patch(
         f"/api/v1.0/accounts/{account_id}/services/{service1.id}/",
         data={
-            "roles": ["admin"],
-            "scope": {"domains": ["x.fr"]},
+            "roles": {"admin": {"scope": {"domains": ["x.fr"]}}},
         },
         format="json",
     )
@@ -718,8 +717,7 @@ def test_api_organizations_accounts_patch_service_link_with_scope(
     assert_equals_partial(
         response.json(),
         {
-            "roles": ["admin"],
-            "scope": {"domains": ["x.fr"]},
+            "roles": {"admin": {"scope": {"domains": ["x.fr"]}}},
         },
     )
 
@@ -731,8 +729,7 @@ def test_api_organizations_accounts_patch_service_link_with_scope(
     assert_equals_partial(
         account_data["service_links"][0],
         {
-            "roles": ["admin"],
-            "scope": {"domains": ["x.fr"]},
+            "roles": {"admin": {"scope": {"domains": ["x.fr"]}}},
         },
     )
 
@@ -740,8 +737,7 @@ def test_api_organizations_accounts_patch_service_link_with_scope(
     response = client.patch(
         f"/api/v1.0/accounts/{account_id}/services/{service1.id}/",
         data={
-            "roles": ["admin"],
-            "scope": {},
+            "roles": {"admin": {"scope": {}}},
         },
         format="json",
     )
@@ -749,8 +745,7 @@ def test_api_organizations_accounts_patch_service_link_with_scope(
     assert_equals_partial(
         response.json(),
         {
-            "roles": ["admin"],
-            "scope": {},
+            "roles": {"admin": {"scope": {}}},
         },
     )
 

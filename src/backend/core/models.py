@@ -999,11 +999,9 @@ class AccountServiceLink(BaseModel):
         help_text=_("Service this account is associated with"),
     )
 
-    roles = models.JSONField(
-        _("roles"),
-        default=list,
-        blank=True,
-        help_text=_("Array of role strings for this account"),
+    role = models.CharField(
+        _("role"),
+        max_length=100,
     )
 
     scope = models.JSONField(
@@ -1011,7 +1009,7 @@ class AccountServiceLink(BaseModel):
         default=dict,
         blank=True,
         help_text=_(
-            "Scope restrictions for roles. Empty means unrestricted. "
+            "Scope restrictions for this role. Empty means unrestricted. "
             'Example: {"domains": ["x.fr"]}'
         ),
     )
@@ -1020,14 +1018,14 @@ class AccountServiceLink(BaseModel):
         db_table = "deploycenter_account_service_link"
         verbose_name = _("account service link")
         verbose_name_plural = _("account service links")
-        unique_together = ["account", "service"]
+        unique_together = ["account", "service", "role"]
         indexes = [
             models.Index(fields=["account"]),
             models.Index(fields=["service"]),
         ]
 
     def __str__(self):
-        return f"{self.account.email} - {self.service.name}"
+        return f"{self.account.email} - {self.service.name} - {self.role}"
 
 
 class Account(BaseModel):

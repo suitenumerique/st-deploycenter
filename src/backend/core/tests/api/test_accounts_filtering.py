@@ -176,7 +176,7 @@ def test_api_accounts_filter_by_service_role(filtering_setup):
     models.AccountServiceLink.objects.create(
         account=filtering_setup["account2"],
         service=service,
-        roles=["admin"],
+        role="admin",
     )
 
     # Filter by service.<id>.admin should return only bob
@@ -207,12 +207,12 @@ def test_api_accounts_filter_by_service_role_scoped_to_service(filtering_setup):
     models.AccountServiceLink.objects.create(
         account=filtering_setup["account1"],
         service=service_a,
-        roles=["admin"],
+        role="admin",
     )
     models.AccountServiceLink.objects.create(
         account=filtering_setup["account2"],
         service=service_b,
-        roles=["admin"],
+        role="admin",
     )
 
     # Filter on service_a should only return account1

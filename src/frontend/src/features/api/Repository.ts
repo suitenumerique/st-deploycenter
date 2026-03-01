@@ -89,9 +89,10 @@ export const SERVICE_TYPE_ESD = "esd";
 export const SERVICE_TYPE_MESSAGES = "messages";
 export const SERVICE_TYPE_DRIVE = "drive";
 
+export type AccountServiceLinkRole = { scope: Record<string, unknown> };
+
 export type AccountServiceLink = {
-  roles: string[];
-  scope: Record<string, unknown>;
+  roles: Record<string, AccountServiceLinkRole>;
   service: {
     id: string;
     name: string;
@@ -324,7 +325,7 @@ export const deleteAccount = async (accountId: string): Promise<void> => {
 export const updateAccountServiceLink = async (
   accountId: string,
   serviceId: string,
-  data: { roles: string[]; scope?: Record<string, unknown> }
+  data: { roles: Record<string, { scope?: Record<string, unknown> }> }
 ): Promise<AccountServiceLink> => {
   const response = await fetchAPI(
     `accounts/${accountId}/services/${serviceId}/`,

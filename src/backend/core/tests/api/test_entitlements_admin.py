@@ -237,7 +237,7 @@ def test_api_entitlements_is_admin_true_service_level(
         **{account_key: account_key_value},
     )
 
-    account.service_links.create(service=service, roles=["admin"])
+    account.service_links.create(service=service, role="admin")
 
     # Test that we can upload to the drive
     response = client.get(

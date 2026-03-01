@@ -2,6 +2,7 @@
 API endpoints for Account model.
 """
 
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 
 from django_filters.rest_framework import DjangoFilterBackend
@@ -135,16 +136,74 @@ class AccountViewSet(
     ]
 
     @action(detail=True, methods=["patch"], url_path="services/(?P<service_id>[^/.]+)")
+    @transaction.atomic
     def service_link_update(self, request, *args, **kwargs):
-        """Partially update the service link for the given account and service."""
+        """Partially update the service link for the given account and service.
+
+        Accepts both legacy list format and new dict format for roles:
+        - List (legacy): {"roles": ["admin", "editor"]} → each role gets empty scope
+        - Dict (new): {"roles": {"admin": {"scope": {"domains": ["x.fr"]}}}}
+        """
         account = self.get_object()
         service = get_object_or_404(models.Service, id=kwargs["service_id"])
-        service_link = account.service_links.filter(service=service).first()
-        if not service_link:
-            service_link = account.service_links.create(service=service)
-        serializer = serializers.AccountServiceLinkSerializer(
-            service_link, data=request.data, partial=True
-        )
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data)
+
+        raw_roles = request.data.get("roles", {})
+
+        if isinstance(raw_roles, list):
+            # Legacy list format → convert to dict with empty scope
+            desired = {role_name: {"scope": {}} for role_name in raw_roles}
+        else:
+            # New dict format
+            desired = raw_roles
+
+        # Diff with existing DB rows and create/update/delete
+        existing = {
+            link.role: link for link in account.service_links.filter(service=service)
+        }
+
+        for role_name, config in desired.items():
+            scope = (config or {}).get("scope", {})
+            if role_name in existing:
+                link = existing[role_name]
+                if link.scope != scope:
+                    link.scope = scope
+                    link.save(update_fields=["scope"])
+            else:
+                account.service_links.create(
+                    service=service, role=role_name, scope=scope
+                )
+
+        # Delete roles no longer present
+        roles_to_delete = set(existing.keys()) - set(desired.keys())
+        if roles_to_delete:
+            account.service_links.filter(
+                service=service, role__in=roles_to_delete
+            ).delete()
+
+        return Response(self._aggregate_service_links(account, service))
+
+    @staticmethod
+    def _aggregate_service_links(account, service):
+        """Build aggregated response for a single service's links."""
+        links = account.service_links.filter(service=service).select_related("service")
+        roles = {}
+        service_data = None
+        for link in links:
+            if service_data is None:
+                service_data = {
+                    "id": link.service.id,
+                    "name": link.service.name,
+                    "instance_name": link.service.instance_name,
+                    "type": link.service.type,
+                }
+            roles[link.role] = {"scope": link.scope or {}}
+        return {
+            "roles": roles,
+            "service": service_data
+            or {
+                "id": service.id,
+                "name": service.name,
+                "instance_name": service.instance_name,
+                "type": service.type,
+            },
+        }
