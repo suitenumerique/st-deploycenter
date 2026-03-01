@@ -1517,13 +1517,15 @@ class AccountAdmin(admin.ModelAdmin):
 
         if service:
             for role_name in service_roles:
-                _link, link_created = models.AccountServiceLink.objects.get_or_create(
+                _link, created = models.AccountServiceLink.objects.get_or_create(
                     account=account,
                     service=service,
                     role=role_name,
                 )
-                if link_created:
+                if created:
                     counts["service_links_created"] += 1
+                else:
+                    counts["service_links_updated"] += 1
 
 
 @admin.register(models.AccountServiceLink)

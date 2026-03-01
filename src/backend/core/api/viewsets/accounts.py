@@ -9,7 +9,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, mixins, status, viewsets
 from rest_framework import permissions as drf_permissions
 from rest_framework.decorators import action
-from rest_framework.exceptions import NotFound
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
 from rest_framework.settings import api_settings
 
@@ -150,11 +150,22 @@ class AccountViewSet(
         raw_roles = request.data.get("roles", {})
 
         if isinstance(raw_roles, list):
-            # Legacy list format → convert to dict with empty scope
+            if not all(isinstance(r, str) for r in raw_roles):
+                raise ValidationError({"roles": "List format must contain strings."})
             desired = {role_name: {"scope": {}} for role_name in raw_roles}
-        else:
-            # New dict format
+        elif isinstance(raw_roles, dict):
+            for role_name, config in raw_roles.items():
+                if not isinstance(role_name, str):
+                    raise ValidationError({"roles": "Role names must be strings."})
+                if config is not None and not isinstance(config, dict):
+                    raise ValidationError(
+                        {
+                            "roles": f"Role '{role_name}' config must be an object or null."
+                        }
+                    )
             desired = raw_roles
+        else:
+            raise ValidationError({"roles": "Must be a list or object."})
 
         # Diff with existing DB rows and create/update/delete
         existing = {

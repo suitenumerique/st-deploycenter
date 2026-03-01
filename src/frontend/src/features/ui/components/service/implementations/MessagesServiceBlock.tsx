@@ -68,7 +68,7 @@ export const MessagesServiceBlock = (props: {
       }
       return [];
     });
-    return Array.from(new Set(domains));
+    return Array.from(new Set(domains)).sort();
   }, [services]);
 
   // Use saved domains if explicitly set (even if empty), otherwise fall back to ProConnect domains

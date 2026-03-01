@@ -2,7 +2,7 @@
 
 from collections import defaultdict
 
-from django.db import transaction
+from django.db.models import Q
 
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
@@ -544,35 +544,46 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
 
         # Domain uniqueness: no two active ProConnect subscriptions may share
         # a domain (across all organizations and operators).
-        # select_for_update inside atomic to prevent TOCTOU races.
+        # Uses JSON containment queries to find conflicts at the DB level
+        # instead of iterating all subscriptions in Python.
+        # select_for_update prevents TOCTOU races (locks held until the
+        # view-level transaction commits).
         if resolved_domains and is_active:
-            with transaction.atomic():
-                current_sub_id = instance.pk if instance else None
-                other_subs = (
-                    models.ServiceSubscription.objects.filter(
-                        service__type="proconnect",
-                        is_active=True,
-                    )
-                    .select_for_update()
-                    .exclude(pk=current_sub_id)
+            current_sub_id = instance.pk if instance else None
+            overlap_q = Q()
+            for domain in resolved_domains:
+                overlap_q |= Q(metadata__domains__contains=[domain])
+
+            conflicting_subs = (
+                models.ServiceSubscription.objects.filter(
+                    overlap_q,
+                    service__type="proconnect",
+                    is_active=True,
                 )
-                for sub in other_subs:
-                    existing = {
-                        d.strip().lower()
-                        for d in sub.metadata.get("domains", [])
-                        if isinstance(d, str)
-                    }
-                    overlap = existing & set(resolved_domains)
-                    if overlap:
-                        raise serializers.ValidationError(
-                            {
-                                "metadata": (
-                                    f"Domain(s) {', '.join(sorted(overlap))} "
-                                    f"already used by another active "
-                                    f"ProConnect subscription."
-                                )
-                            }
+                .select_for_update()
+                .exclude(pk=current_sub_id)
+                .values_list("metadata", flat=True)
+            )
+
+            overlap = set()
+            for meta in conflicting_subs:
+                existing = {
+                    d.strip().lower()
+                    for d in (meta or {}).get("domains", [])
+                    if isinstance(d, str)
+                }
+                overlap |= existing & set(resolved_domains)
+
+            if overlap:
+                raise serializers.ValidationError(
+                    {
+                        "metadata": (
+                            f"Domain(s) {', '.join(sorted(overlap))} "
+                            f"already used by another active "
+                            f"ProConnect subscription."
                         )
+                    }
+                )
 
         # Build the metadata dict explicitly
         attrs["metadata"] = {
@@ -826,7 +837,11 @@ class AccountSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "service_links"]
 
     def get_service_links(self, obj):
-        """Aggregate one-row-per-role into dict format grouped by service."""
+        """Aggregate one-row-per-role into dict format grouped by service.
+
+        Expects service_links and service_links__service to be prefetched
+        (see OrganizationAccountsViewSet.get_queryset).
+        """
         by_service = defaultdict(lambda: {"roles": {}, "service": None})
         for link in obj.service_links.all():
             entry = by_service[link.service_id]

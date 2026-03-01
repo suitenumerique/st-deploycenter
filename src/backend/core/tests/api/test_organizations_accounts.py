@@ -750,6 +750,49 @@ def test_api_organizations_accounts_patch_service_link_with_scope(
     )
 
 
+@pytest.mark.parametrize(
+    "payload,expected_error",
+    [
+        # roles is a bare string
+        ({"roles": "admin"}, "Must be a list or object."),
+        # roles is an integer
+        ({"roles": 42}, "Must be a list or object."),
+        # list contains non-strings
+        ({"roles": [123]}, "List format must contain strings."),
+        ({"roles": [{"admin": {}}]}, "List format must contain strings."),
+        # dict with non-dict config value
+        ({"roles": {"admin": "yes"}}, "config must be an object or null."),
+        ({"roles": {"admin": ["scope"]}}, "config must be an object or null."),
+    ],
+)
+def test_api_organizations_accounts_patch_service_link_invalid_roles_format(
+    account_test_setup, payload, expected_error
+):
+    """PATCH service link with invalid roles format returns 400."""
+    client = APIClient()
+    client.force_login(account_test_setup["user"])
+
+    operator = account_test_setup["operator"]
+    organization = account_test_setup["organization_ok1"]
+    service = account_test_setup["service1"]
+
+    # Create an account first
+    response = client.post(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/accounts/",
+        data={"email": "validation@example.com", "type": "user", "roles": []},
+        format="json",
+    )
+    account_id = response.json()["id"]
+
+    response = client.patch(
+        f"/api/v1.0/accounts/{account_id}/services/{service.id}/",
+        data=payload,
+        format="json",
+    )
+    assert response.status_code == 400
+    assert expected_error in str(response.json())
+
+
 ##
 ## Delete account
 ##
