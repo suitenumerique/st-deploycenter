@@ -316,10 +316,10 @@ def test_api_organization_service_inactive():
     )
     assert response.status_code == 404
 
-    # Test that the subscription can be created with is_active=True (default)
+    # Test that the subscription can be created with is_active=True
     response = client.patch(
         f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/services/{service1.id}/subscription/",
-        {},
+        {"is_active": True},
         format="json",
     )
     assert response.status_code == 201

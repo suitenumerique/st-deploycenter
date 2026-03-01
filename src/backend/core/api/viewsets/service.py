@@ -216,7 +216,7 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
             return Response(serializer.data, status=status.HTTP_200_OK)
 
         # Create new subscription with provided data, using defaults for missing fields
-        is_active = serializer.validated_data.get("is_active", True)
+        is_active = serializer.validated_data.get("is_active", False)
         metadata = serializer.validated_data.get("metadata", {})
         subscription = models.ServiceSubscription.objects.create(
             organization=organization,

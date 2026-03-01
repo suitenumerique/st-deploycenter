@@ -181,7 +181,7 @@ export const AccountsTab = ({
             headerName: t("accounts.columns.email"),
             highlight: true,
             renderCell: (params) => (
-              <span className="dc__accounts__ellipsis">
+              <span className="dc__accounts__ellipsis" title={params.row.email}>
                 {params.row.email}
               </span>
             ),
@@ -190,7 +190,7 @@ export const AccountsTab = ({
             field: "external_id",
             headerName: t("accounts.columns.external_id"),
             renderCell: (params) => (
-              <span className="dc__accounts__ellipsis">
+              <span className="dc__accounts__ellipsis" title={params.row.external_id}>
                 {params.row.external_id}
               </span>
             ),
@@ -238,7 +238,10 @@ export const AccountsTab = ({
 
               if (parts.length === 0) return <>-</>;
               return (
-                <div className="dc__accounts__roles-cell">
+                <div
+                  className="dc__accounts__roles-cell"
+                  title={parts.join("\n")}
+                >
                   {parts.map((part, i) => (
                     <span key={i}>{part}</span>
                   ))}

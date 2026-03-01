@@ -144,7 +144,9 @@ export default function Operator() {
             options={[
               { label: t("organizations.filter.services.all"), value: "" },
               ...(operatorServices?.results || []).map((service) => ({
-                label: service.name,
+                label: service.instance_name
+                  ? `${service.name} (${service.instance_name})`
+                  : service.name,
                 value: service.id,
               })),
             ]}
@@ -218,10 +220,12 @@ export default function Operator() {
                       >
                         {params.row.service_subscriptions
                           .filter((s) => s.is_active)
-                          .map(
-                            (serviceSubscription) =>
-                              serviceSubscription.service!.name
-                          )
+                          .map((serviceSubscription) => {
+                            const s = serviceSubscription.service!;
+                            return s.instance_name
+                              ? `${s.name} (${s.instance_name})`
+                              : s.name;
+                          })
                           .join(", ")}
                       </Link>
                     }
