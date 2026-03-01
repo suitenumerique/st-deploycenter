@@ -1122,7 +1122,7 @@ class TestWebhookRoles:
             email="service-user@test.org",
             organization=sample_organization,
         )
-        account3 = Account.objects.create(
+        Account.objects.create(
             email="no-service-role@test.org",
             organization=sample_organization,
         )
@@ -1131,18 +1131,17 @@ class TestWebhookRoles:
         AccountServiceLink.objects.create(
             account=account1,
             service=service,
-            roles=["admin"],
+            role="admin",
         )
         AccountServiceLink.objects.create(
             account=account2,
             service=service,
-            roles=["editor", "viewer"],
+            role="editor",
         )
-        # Link without roles (should not be included)
         AccountServiceLink.objects.create(
-            account=account3,
+            account=account2,
             service=service,
-            roles=[],
+            role="viewer",
         )
 
         # Create subscription - this triggers the signal
@@ -1169,14 +1168,17 @@ class TestWebhookRoles:
             (r for r in service_roles if r["email"] == account1.email), None
         )
         assert admin_role is not None
-        assert admin_role["roles"] == ["admin"]
+        assert admin_role["roles"] == {"admin": {"scope": {}}}
 
         # Check service user
         user_role = next(
             (r for r in service_roles if r["email"] == account2.email), None
         )
         assert user_role is not None
-        assert user_role["roles"] == ["editor", "viewer"]
+        assert user_role["roles"] == {
+            "editor": {"scope": {}},
+            "viewer": {"scope": {}},
+        }
 
     def test_webhook_roles_empty_when_no_roles(
         self, webhook_server, sample_organization, sample_operator
@@ -1317,12 +1319,12 @@ class TestWebhookRoles:
         AccountServiceLink.objects.create(
             account=account,
             service=service1,
-            roles=["admin"],
+            role="admin",
         )
         AccountServiceLink.objects.create(
             account=account,
             service=service2,
-            roles=["viewer"],
+            role="viewer",
         )
 
         # Create subscription for service1 - this triggers the signal
@@ -1344,4 +1346,4 @@ class TestWebhookRoles:
         # Should only include roles for service1
         assert len(service_roles) == 1
         assert service_roles[0]["email"] == account.email
-        assert service_roles[0]["roles"] == ["admin"]
+        assert service_roles[0]["roles"] == {"admin": {"scope": {}}}

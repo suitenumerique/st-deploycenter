@@ -224,10 +224,15 @@ export const AccountsTab = ({
 
               account.service_links?.forEach((link) => {
                 const serviceDefs = getServiceRoles(link.service.type);
-                link.roles?.forEach((role) => {
+                Object.entries(link.roles || {}).forEach(([role, config]) => {
                   const def = serviceDefs.find((r) => r.value === role);
                   const label = def ? t(def.labelKey) : role;
-                  parts.push(`${link.service.name} : ${label}`);
+                  const scopeDomains = ((config.scope?.domains ?? []) as string[]);
+                  if (scopeDomains.length > 0) {
+                    parts.push(`${link.service.name} : ${label} (${scopeDomains.join(", ")})`);
+                  } else {
+                    parts.push(`${link.service.name} : ${label}`);
+                  }
                 });
               });
 

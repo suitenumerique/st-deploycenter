@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from core import models
 
 from .. import permissions, serializers
+from . import Pagination
 
 
 class OperatorViewSet(viewsets.ReadOnlyModelViewSet):
@@ -27,6 +28,7 @@ class OperatorViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = models.Operator.objects.all()
     serializer_class = serializers.OperatorSerializer
     permission_classes = [permissions.IsAuthenticatedWithAnyMethod]
+    pagination_class = Pagination
 
     def get_queryset(self):
         """

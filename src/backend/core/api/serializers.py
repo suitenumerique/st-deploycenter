@@ -1,5 +1,9 @@
 """Client serializers for the deploycenter core app."""
 
+from collections import defaultdict
+
+from django.db.models import Q
+
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
@@ -345,6 +349,7 @@ class ServiceSerializer(serializers.ModelSerializer):
             "help_center_url",
             "population_limits",
             "auto_admin_population_threshold",
+            "idp_id",
         ]
         return {key: config[key] for key in whitelist_keys if key in config}
 
@@ -498,8 +503,7 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
         """
         Validate ProConnect subscription data.
         Handles both update (instance exists) and create (no instance) cases.
-        It is not possible to update the IDP for an active ProConnect subscription.
-        Deactivate the subscription first to change the IDP.
+        IDP is now stored in Service.config.idp_id (immutable per service).
         """
         service_type = self._get_service_type()
         if service_type != "proconnect":
@@ -510,19 +514,6 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
 
         current_metadata = instance.metadata if instance else {}
         is_active = attrs.get("is_active", instance.is_active if instance else True)
-        current_idp_id = current_metadata.get("idp_id")
-        new_idp_id = attrs.get("metadata", {}).get("idp_id")
-
-        # Are we changing an IDP while a subscription is active?
-        if instance and is_active and new_idp_id and current_idp_id != new_idp_id:
-            raise serializers.ValidationError(
-                {
-                    "metadata": (
-                        "Cannot update idp_id for an active ProConnect subscription. "
-                        "Deactivate the subscription first to change the IDP."
-                    )
-                }
-            )
 
         mail_domain = organization.mail_domain if organization else None
         existing_domains = current_metadata.get("domains")
@@ -536,15 +527,66 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
                 [mail_domain] if mail_domain else []
             )
 
+        # Normalize domains: lowercase, strip whitespace, deduplicate
+        resolved_domains = sorted(
+            {
+                d.strip().lower()
+                for d in resolved_domains
+                if isinstance(d, str) and d.strip()
+            }
+        )
+
         # When activating a subscription, we must have a valid domain.
         if is_active and not resolved_domains:
             raise serializers.ValidationError(
                 {"metadata": "Mail domain is required for ProConnect subscription."}
             )
 
-        # Build the metadata dict explicitly.
+        # Domain uniqueness: no two active ProConnect subscriptions may share
+        # a domain (across all organizations and operators).
+        # Uses JSON containment queries to find conflicts at the DB level
+        # instead of iterating all subscriptions in Python.
+        # select_for_update prevents TOCTOU races (locks held until the
+        # view-level transaction commits).
+        if resolved_domains and is_active:
+            current_sub_id = instance.pk if instance else None
+            overlap_q = Q()
+            for domain in resolved_domains:
+                overlap_q |= Q(metadata__domains__contains=[domain])
+
+            conflicting_subs = (
+                models.ServiceSubscription.objects.filter(
+                    overlap_q,
+                    service__type="proconnect",
+                    is_active=True,
+                )
+                .select_for_update()
+                .exclude(pk=current_sub_id)
+                .values_list("metadata", flat=True)
+            )
+
+            overlap = set()
+            for meta in conflicting_subs:
+                existing = {
+                    d.strip().lower()
+                    for d in (meta or {}).get("domains", [])
+                    if isinstance(d, str)
+                }
+                overlap |= existing & set(resolved_domains)
+
+            if overlap:
+                raise serializers.ValidationError(
+                    {
+                        "metadata": (
+                            f"Domain(s) {', '.join(sorted(overlap))} "
+                            f"already used by another active "
+                            f"ProConnect subscription."
+                        )
+                    }
+                )
+
+        # Build the metadata dict explicitly
         attrs["metadata"] = {
-            "idp_id": new_idp_id or current_idp_id,
             "domains": resolved_domains,
         }
 
@@ -600,19 +642,23 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
         merged_metadata["auto_admin"] = auto_admin
         attrs["metadata"] = merged_metadata
 
-    def _get_service_type(self):
-        """Resolve the service type from instance or view kwargs."""
+    def _get_service(self):
+        """Resolve the service from instance or view kwargs."""
         if self.instance:
-            return self.instance.service.type
+            return self.instance.service
 
         view = self.context.get("view")
         if view and "service_id" in getattr(view, "kwargs", {}):
             try:
-                service = models.Service.objects.get(id=view.kwargs["service_id"])
-                return service.type
+                return models.Service.objects.get(id=view.kwargs["service_id"])
             except models.Service.DoesNotExist:
                 return None
         return None
+
+    def _get_service_type(self):
+        """Resolve the service type from instance or view kwargs."""
+        service = self._get_service()
+        return service.type if service else None
 
     def validate(self, attrs):
         """Validate subscription data."""
@@ -638,26 +684,17 @@ class SubscriptionWithOperatorSerializer(ServiceSubscriptionSerializer):
 
     operator_id = serializers.UUIDField(source="operator.id", read_only=True)
     operator_name = serializers.CharField(source="operator.name", read_only=True)
-    operator_idps = serializers.SerializerMethodField()
 
     class Meta:
         model = models.ServiceSubscription
         fields = ServiceSubscriptionSerializer.Meta.fields + [
             "operator_id",
             "operator_name",
-            "operator_idps",
         ]
         read_only_fields = ServiceSubscriptionSerializer.Meta.read_only_fields + [
             "operator_id",
             "operator_name",
-            "operator_idps",
         ]
-
-    def get_operator_idps(self, obj):
-        """Return the operator's IDP list from their config."""
-        if obj.operator and obj.operator.config:
-            return obj.operator.config.get("idps", [])
-        return []
 
 
 class ServiceSubscriptionWithServiceSerializer(ServiceSubscriptionSerializer):
@@ -784,28 +821,10 @@ class OrganizationServiceSerializer(ServiceSerializer):
         return data
 
 
-class AccountServiceLinkSerializer(serializers.ModelSerializer):
-    """Serialize account service links."""
-
-    service = ServiceLightSerializer(read_only=True)
-    roles = serializers.ListField(
-        child=serializers.CharField(max_length=100),
-        required=False,
-        default=list,
-    )
-
-    class Meta:
-        model = models.AccountServiceLink
-        fields = ["roles", "service"]
-
-
 class AccountSerializer(serializers.ModelSerializer):
     """Serialize accounts."""
 
-    service_links = AccountServiceLinkSerializer(
-        many=True,
-        read_only=True,
-    )
+    service_links = serializers.SerializerMethodField()
     roles = serializers.ListField(
         child=serializers.CharField(max_length=100),
         required=False,
@@ -816,3 +835,22 @@ class AccountSerializer(serializers.ModelSerializer):
         model = models.Account
         fields = ["id", "email", "external_id", "type", "roles", "service_links"]
         read_only_fields = ["id", "service_links"]
+
+    def get_service_links(self, obj):
+        """Aggregate one-row-per-role into dict format grouped by service.
+
+        Expects service_links and service_links__service to be prefetched
+        (see OrganizationAccountsViewSet.get_queryset).
+        """
+        by_service = defaultdict(lambda: {"roles": {}, "service": None})
+        for link in obj.service_links.all():
+            entry = by_service[link.service_id]
+            if entry["service"] is None:
+                entry["service"] = {
+                    "id": link.service.id,
+                    "name": link.service.name,
+                    "instance_name": link.service.instance_name,
+                    "type": link.service.type,
+                }
+            entry["roles"][link.role] = {"scope": link.scope or {}}
+        return list(by_service.values())

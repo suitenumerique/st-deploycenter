@@ -3,6 +3,7 @@ API endpoints for Service model.
 """
 # pylint: disable=line-too-long
 
+from django.db import transaction
 from django.db.models import Prefetch, Q
 from django.http import HttpResponse
 
@@ -187,6 +188,7 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(subscription)
         return Response(serializer.data)
 
+    @transaction.atomic
     def partial_update(self, request, *args, **kwargs):
         """
         Partially update or create the subscription for the operator-organization-service triple.

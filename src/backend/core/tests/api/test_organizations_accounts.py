@@ -617,7 +617,7 @@ def test_api_organizations_accounts_patch_service_link(account_test_setup, auth_
     assert_equals_partial(
         response.json(),
         {
-            "roles": ["admin"],
+            "roles": {"admin": {"scope": {}}},
         },
     )
 
@@ -633,7 +633,7 @@ def test_api_organizations_accounts_patch_service_link(account_test_setup, auth_
             "roles": ["admin"],
             "service_links": [
                 {
-                    "roles": ["admin"],
+                    "roles": {"admin": {"scope": {}}},
                     "service": {"id": service1.id, "name": "test-service-1"},
                 }
             ],
@@ -670,6 +670,127 @@ def test_api_organizations_accounts_patch_service_link_operator_not_allowed(
     assert response.json() == {
         "detail": "Vous n'avez pas la permission d'effectuer cette action."
     }
+
+
+##
+## Patch service links with scope
+##
+
+
+@pytest.mark.parametrize("auth_method", ["user", "external_api_key"])
+def test_api_organizations_accounts_patch_service_link_with_scope(
+    account_test_setup, auth_method
+):
+    """PATCH service link with scope persists and is returned in GET."""
+    client = APIClient()
+    if auth_method == "user":
+        client.force_login(account_test_setup["user"])
+    elif auth_method == "external_api_key":
+        client.credentials(HTTP_AUTHORIZATION="Bearer test-external-api-key-12345")
+
+    operator = account_test_setup["operator"]
+    organization_ok1 = account_test_setup["organization_ok1"]
+    service1 = account_test_setup["service1"]
+
+    # Create an account
+    response = client.post(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization_ok1.id}/accounts/",
+        data={
+            "email": "scoped@example.com",
+            "type": "user",
+            "roles": [],
+        },
+        format="json",
+    )
+    assert response.status_code == 201
+    account_id = response.json()["id"]
+
+    # Patch service link with scope using new dict format
+    response = client.patch(
+        f"/api/v1.0/accounts/{account_id}/services/{service1.id}/",
+        data={
+            "roles": {"admin": {"scope": {"domains": ["x.fr"]}}},
+        },
+        format="json",
+    )
+    assert response.status_code == 200
+    assert_equals_partial(
+        response.json(),
+        {
+            "roles": {"admin": {"scope": {"domains": ["x.fr"]}}},
+        },
+    )
+
+    # Verify scope persisted via GET
+    response = client.get(f"/api/v1.0/accounts/{account_id}/")
+    assert response.status_code == 200
+    account_data = response.json()
+    assert len(account_data["service_links"]) == 1
+    assert_equals_partial(
+        account_data["service_links"][0],
+        {
+            "roles": {"admin": {"scope": {"domains": ["x.fr"]}}},
+        },
+    )
+
+    # Patch again with empty scope (unrestricted)
+    response = client.patch(
+        f"/api/v1.0/accounts/{account_id}/services/{service1.id}/",
+        data={
+            "roles": {"admin": {"scope": {}}},
+        },
+        format="json",
+    )
+    assert response.status_code == 200
+    assert_equals_partial(
+        response.json(),
+        {
+            "roles": {"admin": {"scope": {}}},
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "payload,expected_error",
+    [
+        # roles is a bare string
+        ({"roles": "admin"}, "Must be a list or object."),
+        # roles is an integer
+        ({"roles": 42}, "Must be a list or object."),
+        # list contains non-strings
+        ({"roles": [123]}, "List format must contain strings."),
+        ({"roles": [{"admin": {}}]}, "List format must contain strings."),
+        # dict with non-dict config value
+        ({"roles": {"admin": "yes"}}, "config must be an object or null."),
+        ({"roles": {"admin": ["scope"]}}, "config must be an object or null."),
+    ],
+)
+def test_api_organizations_accounts_patch_service_link_invalid_roles_format(
+    account_test_setup, payload, expected_error
+):
+    """PATCH service link with invalid roles format returns 400."""
+    client = APIClient()
+    client.force_login(account_test_setup["user"])
+
+    operator = account_test_setup["operator"]
+    organization = account_test_setup["organization_ok1"]
+    service = account_test_setup["service1"]
+
+    # Create an account first
+    response = client.post(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/accounts/",
+        data={"email": "validation@example.com", "type": "user", "roles": []},
+        format="json",
+    )
+    account_id = response.json()["id"]
+
+    response = client.patch(
+        f"/api/v1.0/accounts/{account_id}/services/{service.id}/",
+        data=payload,
+        format="json",
+    )
+    assert response.status_code == 400
+    assert expected_error in str(response.json())
 
 
 ##

@@ -9,7 +9,7 @@ import {
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Account, Service } from "@/features/api/Repository";
+import { Account, Service, SERVICE_TYPE_MESSAGES } from "@/features/api/Repository";
 import {
   useMutationCreateAccount,
   useMutationUpdateAccount,
@@ -38,7 +38,7 @@ export const AccountModal = ({
 
   const { mutate: createAccount } = useMutationCreateAccount();
   const { mutate: updateAccount } = useMutationUpdateAccount();
-  const { mutate: updateServiceLink } = useMutationUpdateAccountServiceLink();
+  const { mutateAsync: updateServiceLinkAsync } = useMutationUpdateAccountServiceLink();
   const { data: services } = useOrganizationServices(
     operatorId,
     organizationId
@@ -49,7 +49,7 @@ export const AccountModal = ({
   const [type, setType] = useState("user");
   const [globalRoles, setGlobalRoles] = useState<string[]>([]);
   const [serviceLinkRoles, setServiceLinkRoles] = useState<
-    Record<string, string[]>
+    Record<string, Record<string, { scope: Record<string, unknown> }>>
   >({});
   const [isLoading, setIsLoading] = useState(false);
 
@@ -61,9 +61,12 @@ export const AccountModal = ({
         setExternalId(account.external_id || "");
         setType(account.type);
         setGlobalRoles(account.roles || []);
-        const initialServiceRoles: Record<string, string[]> = {};
+        const initialServiceRoles: Record<string, Record<string, { scope: Record<string, unknown> }>> = {};
         account.service_links?.forEach((link) => {
-          initialServiceRoles[link.service.id] = link.roles || [];
+          initialServiceRoles[link.service.id] = {};
+          Object.entries(link.roles || {}).forEach(([role, config]) => {
+            initialServiceRoles[link.service.id][role] = { scope: config.scope || {} };
+          });
         });
         setServiceLinkRoles(initialServiceRoles);
       } else {
@@ -81,7 +84,7 @@ export const AccountModal = ({
     (s) => s.operator_config
   );
 
-  const getServiceLinkRolesArray = (serviceId: string): string[] => {
+  const getServiceLinkRolesDict = (serviceId: string): Record<string, { scope: Record<string, unknown> }> => {
     if (serviceLinkRoles[serviceId] !== undefined) {
       return serviceLinkRoles[serviceId];
     }
@@ -89,9 +92,15 @@ export const AccountModal = ({
       const link = account.service_links?.find(
         (l) => l.service.id === serviceId
       );
-      return link?.roles || [];
+      if (link?.roles) {
+        const result: Record<string, { scope: Record<string, unknown> }> = {};
+        Object.entries(link.roles).forEach(([role, config]) => {
+          result[role] = { scope: config.scope || {} };
+        });
+        return result;
+      }
     }
-    return [];
+    return {};
   };
 
   const toggleGlobalRole = (role: string) => {
@@ -102,32 +111,56 @@ export const AccountModal = ({
 
   const toggleServiceRole = (serviceId: string, role: string) => {
     setServiceLinkRoles((prev) => {
-      const currentRoles = prev[serviceId] || getServiceLinkRolesArray(serviceId);
-      const newRoles = currentRoles.includes(role)
-        ? currentRoles.filter((r) => r !== role)
-        : [...currentRoles, role];
-      return { ...prev, [serviceId]: newRoles };
+      const currentRoles = { ...(prev[serviceId] || getServiceLinkRolesDict(serviceId)) };
+      if (role in currentRoles) {
+        delete currentRoles[role];
+      } else {
+        currentRoles[role] = { scope: {} };
+      }
+      return { ...prev, [serviceId]: currentRoles };
+    });
+  };
+
+  const toggleScopeDomain = (serviceId: string, domain: string, allDomains: string[]) => {
+    setServiceLinkRoles((prev) => {
+      const currentRoles = { ...(prev[serviceId] || getServiceLinkRolesDict(serviceId)) };
+      const adminConfig = currentRoles["admin"];
+      if (!adminConfig) return prev;
+
+      const currentScope = adminConfig.scope || {};
+      const hasDomainScope = "domains" in currentScope;
+      const currentDomains = hasDomainScope ? (currentScope.domains as string[]) : [...allDomains];
+      let newDomains: string[];
+      if (currentDomains.includes(domain)) {
+        newDomains = currentDomains.filter((d) => d !== domain);
+      } else {
+        newDomains = [...currentDomains, domain];
+      }
+
+      if (newDomains.length === 0) {
+        // No domains left → remove admin role entirely
+        delete currentRoles["admin"];
+      } else if (newDomains.length === allDomains.length) {
+        // All domains checked → unrestricted
+        currentRoles["admin"] = { scope: {} };
+      } else {
+        currentRoles["admin"] = { scope: { domains: newDomains } };
+      }
+      return { ...prev, [serviceId]: currentRoles };
     });
   };
 
   const updateServiceLinks = (accountId: string): Promise<void> => {
     const serviceUpdates = Object.entries(serviceLinkRoles).map(
-      ([serviceId, roles]) =>
-        new Promise<void>((resolve, reject) => {
-          updateServiceLink(
-            {
-              operatorId,
-              organizationId,
-              accountId,
-              serviceId,
-              data: { roles },
-            },
-            {
-              onSuccess: () => resolve(),
-              onError: (err) => reject(err),
-            }
-          );
-        })
+      ([serviceId, roles]) => {
+        return updateServiceLinkAsync({
+          operatorId,
+          organizationId,
+          accountId,
+          serviceId,
+          data: { roles },
+        });
+      }
     );
 
     if (serviceUpdates.length === 0) {
@@ -182,7 +215,7 @@ export const AccountModal = ({
         {
           onSuccess: (newAccount) => {
             const nonEmptyServiceRoles = Object.entries(serviceLinkRoles).filter(
-              ([, roles]) => roles.length > 0
+              ([, roles]) => Object.keys(roles).length > 0
             );
 
             if (nonEmptyServiceRoles.length === 0) {
@@ -229,22 +262,62 @@ export const AccountModal = ({
     );
   };
 
+  const renderDomainScope = (service: Service) => {
+    const subscriptionDomains: string[] =
+      (service.subscription?.metadata?.domains as string[]) || [];
+    if (subscriptionDomains.length === 0) return null;
+
+    const currentRoles = getServiceLinkRolesDict(service.id);
+    const adminScope = currentRoles["admin"]?.scope || {};
+    const hasDomainScope = "domains" in adminScope;
+    const scopeDomains = hasDomainScope ? (adminScope.domains as string[]) : [];
+    // No domains key = unrestricted = all checked
+    const isUnrestricted = !hasDomainScope;
+
+    return (
+      <div className="dc__accounts__modal__roles__scope">
+        <span className="dc__accounts__modal__roles__scope__label">
+          {t("accounts.scope.domains_label")}
+        </span>
+        <div className="dc__accounts__modal__roles__scope__checkboxes">
+          {subscriptionDomains.map((domain) => (
+            <Checkbox
+              key={domain}
+              label={domain}
+              checked={isUnrestricted || scopeDomains.includes(domain)}
+              onChange={() =>
+                toggleScopeDomain(
+                  service.id,
+                  domain,
+                  subscriptionDomains,
+                )
+              }
+            />
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   const renderServiceRoles = (service: Service) => {
     const serviceRoles = getServiceRoles(service.type);
     // Skip services with no roles defined
     if (serviceRoles.length === 0) {
       return null;
     }
-    const currentRoles = getServiceLinkRolesArray(service.id);
+    const currentRoles = getServiceLinkRolesDict(service.id);
+    const showDomainScope =
+      service.type === SERVICE_TYPE_MESSAGES && "admin" in currentRoles;
 
     return (
       <div key={service.id} className="dc__accounts__modal__roles__group">
         <h5 className="dc__accounts__modal__roles__group__title">
           {service.name}
         </h5>
-        {renderRoleCheckboxes(currentRoles, serviceRoles, (role) =>
+        {renderRoleCheckboxes(Object.keys(currentRoles), serviceRoles, (role) =>
           toggleServiceRole(service.id, role)
         )}
+        {showDomainScope && renderDomainScope(service)}
       </div>
     );
   };
