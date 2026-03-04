@@ -216,12 +216,12 @@ test: \
   #front-test
 .PHONY: test
 
-back-test: ## run back-end tests
+back-test: create-docker-network ## run back-end tests
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
 	bin/pytest $${args:-${1}}
 .PHONY: back-test
 
-back-test-parallel: ## run all back-end tests in parallel
+back-test-parallel: create-docker-network ## run all back-end tests in parallel
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
 	bin/pytest -n auto $${args:-${1}}
 .PHONY: back-test-parallel
