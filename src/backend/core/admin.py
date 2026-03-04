@@ -244,6 +244,44 @@ class BulkSiretImportForm(forms.ModelForm):
         ),
     )
 
+    sync_commune = forms.BooleanField(
+        required=False,
+        initial=False,
+        label=_("Sync communes"),
+        help_text=_("Remove commune roles not in this import"),
+    )
+
+    sync_epci = forms.BooleanField(
+        required=False,
+        initial=False,
+        label=_("Sync EPCIs"),
+        help_text=_("Remove EPCI roles not in this import"),
+    )
+
+    sync_departement = forms.BooleanField(
+        required=False,
+        initial=False,
+        label=_("Sync départements"),
+        help_text=_("Remove département roles not in this import"),
+    )
+
+    sync_region = forms.BooleanField(
+        required=False,
+        initial=False,
+        label=_("Sync régions"),
+        help_text=_("Remove région roles not in this import"),
+    )
+
+    sync_other = forms.BooleanField(
+        required=False,
+        initial=False,
+        label=_("Sync other"),
+        help_text=_(
+            "Remove other roles not in this import. "
+            "Warning: 'other' type roles may include manually added entries"
+        ),
+    )
+
     class Meta:
         model = models.OperatorOrganizationRole
         fields = ["operator", "role"]
@@ -968,6 +1006,19 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
                     _("SIRET Import"),
                     {"fields": ("siret_list", "expand_epci_to_communes")},
                 ),
+                (
+                    _("Full Sync (remove roles not in this import)"),
+                    {
+                        "fields": (
+                            "sync_commune",
+                            "sync_epci",
+                            "sync_departement",
+                            "sync_region",
+                            "sync_other",
+                        ),
+                        "classes": ("collapse",),
+                    },
+                ),
             )
         return self.fieldsets
 
@@ -988,18 +1039,36 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
         ]
         return custom_urls + urls
 
-    def _process_bulk_import(self, siret_list, operator, role, expand_epci):
+    def _process_bulk_import(
+        self, siret_list, operator, role, expand_epci, sync_types=None
+    ):
         """Process the bulk import of codes using shared resolution logic.
 
+        Args:
+            sync_types: list of org type strings (e.g. ["commune"]) for which
+                        existing roles NOT in the import should be deleted.
+
         Returns:
-            dict: Results with created_count, already_exists_count, not_found_codes
+            dict: Results with created_count, already_exists_count, not_found_codes,
+                  deleted_count, has_subscription_codes
         """
+        if sync_types is None:
+            sync_types = []
+
         org_groups, not_found_codes = resolve_organizations_from_codes(
             siret_list, expand_epci
         )
 
         created_count = 0
         already_exists_count = 0
+        deleted_count = 0
+        has_subscription_codes = []
+
+        # Collect all resolved organizations for sync exclusion
+        imported_orgs = set()
+        for orgs in org_groups:
+            for org in orgs:
+                imported_orgs.add(org.pk)
 
         with transaction.atomic():
             for orgs in org_groups:
@@ -1016,10 +1085,33 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
                         )
                         created_count += 1
 
+            # Sync: delete roles not in import for selected types
+            for org_type in sync_types:
+                roles_to_check = models.OperatorOrganizationRole.objects.filter(
+                    operator=operator,
+                    organization__type=org_type,
+                ).exclude(organization__pk__in=imported_orgs)
+
+                for role_obj in roles_to_check:
+                    has_active_sub = models.ServiceSubscription.objects.filter(
+                        operator=operator,
+                        organization=role_obj.organization,
+                        is_active=True,
+                    ).exists()
+                    if has_active_sub:
+                        org = role_obj.organization
+                        code = org.siret or org.siren or org.code_insee or str(org.pk)
+                        has_subscription_codes.append(code)
+                    else:
+                        role_obj.delete()
+                        deleted_count += 1
+
         return {
             "created_count": created_count,
             "already_exists_count": already_exists_count,
             "not_found_codes": not_found_codes,
+            "deleted_count": deleted_count,
+            "has_subscription_codes": has_subscription_codes,
         }
 
     def _handle_import_results(self, request, results, operator, role, siret_list):
@@ -1033,17 +1125,18 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
         }
 
         # Show success message
-        messages.success(
-            request,
-            _(
-                "Bulk import completed: {created} created, "
-                + "{already_exists} already existed, {not_found} not found."
-            ).format(
-                created=results["created_count"],
-                already_exists=results["already_exists_count"],
-                not_found=len(results["not_found_codes"]),
-            ),
+        deleted_count = results.get("deleted_count", 0)
+        msg = _(
+            "Bulk import completed: {created} created, "
+            "{already_exists} already existed, {not_found} not found."
+        ).format(
+            created=results["created_count"],
+            already_exists=results["already_exists_count"],
+            not_found=len(results["not_found_codes"]),
         )
+        if deleted_count:
+            msg += " " + _("{deleted} deleted (sync).").format(deleted=deleted_count)
+        messages.success(request, msg)
 
         return HttpResponseRedirect(
             reverse("admin:core_operatororganizationrole_bulk_import_results")
@@ -1059,8 +1152,19 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
                 siret_list = form.cleaned_data["siret_list"]
                 expand_epci = form.cleaned_data.get("expand_epci_to_communes", False)
 
+                sync_types = []
+                for org_type in [
+                    "commune",
+                    "epci",
+                    "departement",
+                    "region",
+                    "other",
+                ]:
+                    if form.cleaned_data.get(f"sync_{org_type}", False):
+                        sync_types.append(org_type)
+
                 results = self._process_bulk_import(
-                    siret_list, operator, role, expand_epci
+                    siret_list, operator, role, expand_epci, sync_types=sync_types
                 )
                 return self._handle_import_results(
                     request, results, operator, role, siret_list

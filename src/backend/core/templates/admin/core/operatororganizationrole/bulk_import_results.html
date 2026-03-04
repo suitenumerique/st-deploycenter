@@ -42,6 +42,12 @@
             <th>{% trans 'Not found in database' %}:</th>
             <td><strong style="color: red;">{{ results.not_found_codes|length }}</strong></td>
         </tr>
+        {% if results.deleted_count %}
+        <tr>
+            <th>{% trans 'Deleted (sync)' %}:</th>
+            <td><strong style="color: red;">{{ results.deleted_count }}</strong></td>
+        </tr>
+        {% endif %}
     </table>
 </div>
 
@@ -56,6 +62,18 @@
     </div>
     
     <p><strong>{% trans 'Note' %}:</strong> {% trans 'These codes may need to be added to the Organization database first, or they may be invalid.' %}</p>
+</div>
+{% endif %}
+
+{% if results.has_subscription_codes %}
+<div class="has-subscription-codes">
+    <h2>{% trans 'Roles Not Removed (Active Subscriptions)' %}</h2>
+    <p>{% trans 'The following organization roles could not be removed because they have active service subscriptions for this operator:' %}</p>
+
+    <div class="siret-list">
+        <textarea readonly rows="10" cols="20" style="font-family: monospace; font-size: 12px;">{% for code in results.has_subscription_codes %}{{ code }}
+{% endfor %}</textarea>
+    </div>
 </div>
 {% endif %}
 
@@ -99,6 +117,22 @@
 }
 .not-found-sirets p {
     color: #856404;
+    margin-bottom: 15px;
+}
+.has-subscription-codes {
+    margin: 30px 0;
+    padding: 20px;
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    border-radius: 4px;
+    color: #721c24;
+}
+.has-subscription-codes h2 {
+    color: #721c24;
+    margin-top: 0;
+}
+.has-subscription-codes p {
+    color: #721c24;
     margin-bottom: 15px;
 }
 .siret-list textarea {
