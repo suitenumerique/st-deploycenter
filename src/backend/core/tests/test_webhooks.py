@@ -1347,3 +1347,320 @@ class TestWebhookRoles:
         assert len(service_roles) == 1
         assert service_roles[0]["email"] == account.email
         assert service_roles[0]["roles"] == {"admin": {"scope": {}}}
+
+
+@pytest.mark.django_db
+class TestFilterValByActiveServiceSubscriptionMetadata:
+    """Test $filter_val_by_active_servicesubscription_metadata operator."""
+
+    def test_filters_list_by_active_subscription_metadata(
+        self, sample_organization, sample_operator
+    ):
+        """Filter a list value by domains from another service's active subscription."""
+        # Create two services
+        Service.objects.create(
+            name="Service A",
+            instance_name="service-a",
+            type="a",
+            url="https://a.example.com",
+        )
+        service_b = Service.objects.create(
+            name="Service B",
+            instance_name="service-b",
+            type="b",
+            url="https://b.example.com",
+        )
+
+        # Service B has an active subscription with domains in metadata
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service_b,
+            operator=sample_operator,
+            metadata={"domains": ["example.com", "test.org"]},
+            is_active=True,
+        )
+
+        config = WebhookConfig(
+            {
+                "url": "https://example.com/webhook",
+                "body": {
+                    "filtered_domains": {
+                        "$filter_val_by_active_servicesubscription_metadata": [
+                            "subscription_domains",
+                            service_b.id,
+                            "domains",
+                        ]
+                    }
+                },
+            }
+        )
+
+        context_data = {
+            "_organization": sample_organization,
+            "subscription_domains": ["example.com", "other.com", "test.org"],
+        }
+
+        result = config.render_body(context_data)
+        assert result["filtered_domains"] == ["example.com", "test.org"]
+
+    def test_filters_comma_separated_string(self, sample_organization, sample_operator):
+        """Filter a comma-separated string value."""
+        service_b = Service.objects.create(
+            name="Service B",
+            instance_name="service-b-str",
+            type="b",
+            url="https://b.example.com",
+        )
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service_b,
+            operator=sample_operator,
+            metadata={"domains": ["example.com"]},
+            is_active=True,
+        )
+
+        config = WebhookConfig(
+            {
+                "url": "https://example.com/webhook",
+                "body": {
+                    "filtered": {
+                        "$filter_val_by_active_servicesubscription_metadata": [
+                            "subscription_domains",
+                            service_b.id,
+                            "domains",
+                        ]
+                    }
+                },
+            }
+        )
+
+        context_data = {
+            "_organization": sample_organization,
+            "subscription_domains": "example.com,other.com,test.org",
+        }
+
+        result = config.render_body(context_data)
+        assert result["filtered"] == ["example.com"]
+
+    def test_returns_empty_when_no_active_subscription(
+        self, sample_organization, sample_operator
+    ):
+        """Return [] when the target service has no active subscription."""
+        service_b = Service.objects.create(
+            name="Service B",
+            instance_name="service-b-inactive",
+            type="b",
+            url="https://b.example.com",
+        )
+        # Create an inactive subscription
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service_b,
+            operator=sample_operator,
+            metadata={"domains": ["example.com"]},
+            is_active=False,
+        )
+
+        config = WebhookConfig(
+            {
+                "url": "https://example.com/webhook",
+                "body": {
+                    "filtered": {
+                        "$filter_val_by_active_servicesubscription_metadata": [
+                            "subscription_domains",
+                            service_b.id,
+                            "domains",
+                        ]
+                    }
+                },
+            }
+        )
+
+        context_data = {
+            "_organization": sample_organization,
+            "subscription_domains": ["example.com", "other.com"],
+        }
+
+        result = config.render_body(context_data)
+        assert result["filtered"] == []
+
+    def test_returns_empty_when_no_subscription_exists(self, sample_organization):
+        """Return [] when the target service has no subscription at all."""
+        config = WebhookConfig(
+            {
+                "url": "https://example.com/webhook",
+                "body": {
+                    "filtered": {
+                        "$filter_val_by_active_servicesubscription_metadata": [
+                            "subscription_domains",
+                            99999,
+                            "domains",
+                        ]
+                    }
+                },
+            }
+        )
+
+        context_data = {
+            "_organization": sample_organization,
+            "subscription_domains": ["example.com"],
+        }
+
+        result = config.render_body(context_data)
+        assert result["filtered"] == []
+
+    def test_returns_empty_when_metadata_field_missing(
+        self, sample_organization, sample_operator
+    ):
+        """Return [] when the metadata field doesn't exist in the subscription."""
+        service_b = Service.objects.create(
+            name="Service B",
+            instance_name="service-b-nometa",
+            type="b",
+            url="https://b.example.com",
+        )
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service_b,
+            operator=sample_operator,
+            metadata={},
+            is_active=True,
+        )
+
+        config = WebhookConfig(
+            {
+                "url": "https://example.com/webhook",
+                "body": {
+                    "filtered": {
+                        "$filter_val_by_active_servicesubscription_metadata": [
+                            "subscription_domains",
+                            service_b.id,
+                            "domains",
+                        ]
+                    }
+                },
+            }
+        )
+
+        context_data = {
+            "_organization": sample_organization,
+            "subscription_domains": ["example.com"],
+        }
+
+        result = config.render_body(context_data)
+        assert result["filtered"] == []
+
+    def test_returns_empty_when_source_value_missing(
+        self, sample_organization, sample_operator
+    ):
+        """Return [] when the source context key doesn't exist."""
+        service_b = Service.objects.create(
+            name="Service B",
+            instance_name="service-b-nosrc",
+            type="b",
+            url="https://b.example.com",
+        )
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service_b,
+            operator=sample_operator,
+            metadata={"domains": ["example.com"]},
+            is_active=True,
+        )
+
+        config = WebhookConfig(
+            {
+                "url": "https://example.com/webhook",
+                "body": {
+                    "filtered": {
+                        "$filter_val_by_active_servicesubscription_metadata": [
+                            "nonexistent_key",
+                            service_b.id,
+                            "domains",
+                        ]
+                    }
+                },
+            }
+        )
+
+        context_data = {
+            "_organization": sample_organization,
+        }
+
+        result = config.render_body(context_data)
+        assert result["filtered"] == []
+
+    def test_returns_empty_for_invalid_args(self):
+        """Return [] when args are invalid."""
+        config = WebhookConfig(
+            {
+                "url": "https://example.com/webhook",
+                "body": {
+                    "filtered": {
+                        "$filter_val_by_active_servicesubscription_metadata": "invalid"
+                    }
+                },
+            }
+        )
+
+        result = config.render_body({"_organization": None})
+        assert result["filtered"] == []
+
+    def test_returns_empty_when_no_organization(self):
+        """Return [] when no organization in context."""
+        config = WebhookConfig(
+            {
+                "url": "https://example.com/webhook",
+                "body": {
+                    "filtered": {
+                        "$filter_val_by_active_servicesubscription_metadata": [
+                            "subscription_domains",
+                            1,
+                            "domains",
+                        ]
+                    }
+                },
+            }
+        )
+
+        result = config.render_body({})
+        assert result["filtered"] == []
+
+    def test_preserves_order_of_source_list(self, sample_organization, sample_operator):
+        """Filtered results preserve the order of the source list."""
+        service_b = Service.objects.create(
+            name="Service B",
+            instance_name="service-b-order",
+            type="b",
+            url="https://b.example.com",
+        )
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service_b,
+            operator=sample_operator,
+            metadata={"domains": ["z.com", "a.com", "m.com"]},
+            is_active=True,
+        )
+
+        config = WebhookConfig(
+            {
+                "url": "https://example.com/webhook",
+                "body": {
+                    "filtered": {
+                        "$filter_val_by_active_servicesubscription_metadata": [
+                            "my_domains",
+                            service_b.id,
+                            "domains",
+                        ]
+                    }
+                },
+            }
+        )
+
+        context_data = {
+            "_organization": sample_organization,
+            "my_domains": ["m.com", "x.com", "a.com", "z.com"],
+        }
+
+        result = config.render_body(context_data)
+        assert result["filtered"] == ["m.com", "a.com", "z.com"]

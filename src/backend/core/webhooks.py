@@ -13,7 +13,7 @@ from django.utils import timezone
 
 import requests
 
-from core.models import Account, AccountServiceLink
+from core.models import Account, AccountServiceLink, ServiceSubscription
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +140,15 @@ class WebhookConfig:
                 raise ValueError(
                     f"$tpl must be a string, got {type(template_string).__name__}: {template_string}"
                 )
+            if (
+                "$filter_val_by_active_servicesubscription_metadata" in template_obj
+                and len(template_obj) == 1
+            ):
+                return self._filter_val_by_active_servicesubscription_metadata(
+                    template_obj["$filter_val_by_active_servicesubscription_metadata"],
+                    context_data,
+                )
+
             # Regular dict - render each key-value pair
             return {
                 key: self._render_template_object(value, context_data)
@@ -177,6 +186,67 @@ class WebhookConfig:
 
         # Replace {{variable}} with values from context
         return re.sub(r"\{\{(\w+)\}\}", replace_var, template_string)
+
+    def _filter_val_by_active_servicesubscription_metadata(
+        self, args: list, context_data: Dict[str, Any]
+    ) -> list:
+        """
+        Filter a context value list by the values from an active ServiceSubscription's metadata.
+
+        Args format: [context_key, service_id, metadata_field]
+        - context_key: key in context_data whose value is a list (or comma-separated string)
+        - service_id: the service ID to look up the subscription for
+        - metadata_field: the field name in the subscription's metadata to get allowed values
+
+        Returns the intersection: only values from context_key that are also in
+        the subscription's metadata[metadata_field].
+        Returns [] if no active subscription is found or args are invalid.
+        """
+        if not isinstance(args, list) or len(args) != 3:
+            logger.warning(
+                "$filter_val_by_active_servicesubscription_metadata requires "
+                "[context_key, service_id, metadata_field], got: %s",
+                args,
+            )
+            return []
+
+        context_key, service_id, metadata_field = args
+        organization = context_data.get("_organization")
+        if not organization:
+            logger.warning(
+                "$filter_val_by_active_servicesubscription_metadata: no organization in context"
+            )
+            return []
+
+        # Get the source list from context
+        source_value = context_data.get(context_key)
+        if source_value is None:
+            return []
+        if isinstance(source_value, str):
+            source_list = [v for v in source_value.split(",") if v]
+        elif isinstance(source_value, list):
+            source_list = source_value
+        else:
+            return []
+
+        # Look up the active subscription for this org + service
+        try:
+            subscription = ServiceSubscription.objects.get(
+                organization=organization,
+                service_id=service_id,
+                is_active=True,
+            )
+        except ServiceSubscription.DoesNotExist:
+            return []
+
+        # Get the allowed values from subscription metadata
+        allowed_values = subscription.metadata.get(metadata_field) or []
+        if not isinstance(allowed_values, list):
+            return []
+
+        # Filter: keep only source values that are in allowed_values
+        allowed_set = set(allowed_values)
+        return [v for v in source_list if v in allowed_set]
 
 
 class WebhookClient:
@@ -245,6 +315,8 @@ class WebhookClient:
         ]
 
         context_data = {
+            # Internal reference (not a template value)
+            "_organization": organization,
             "event_type": event_type,
             "timestamp": timezone.now().isoformat(),
             # Subscription data
