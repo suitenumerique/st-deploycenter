@@ -9,12 +9,38 @@ from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.auth import admin as auth_admin
 from django.db import transaction
+from django.db.models import JSONField
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import path, reverse
 from django.utils.translation import gettext_lazy as _
 
 from . import models
+
+
+class PrettyJSONWidget(forms.Textarea):
+    """A textarea widget that pretty-prints JSON content."""
+
+    def __init__(self, attrs=None):
+        default_attrs = {"cols": 80, "rows": 20, "style": "font-family: monospace;"}
+        if attrs:
+            default_attrs.update(attrs)
+        super().__init__(attrs=default_attrs)
+
+    def format_value(self, value):
+        if isinstance(value, str):
+            try:
+                value = json.dumps(json.loads(value), indent=2, ensure_ascii=False)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return value
+
+
+# Apply pretty JSON widget globally to all ModelAdmin classes
+admin.ModelAdmin.formfield_overrides = {
+    **admin.ModelAdmin.formfield_overrides,
+    JSONField: {"widget": PrettyJSONWidget},
+}
 
 
 def clean_siret_list(raw_text):
