@@ -14,6 +14,9 @@ from core.entitlements.resolvers.drive_storage_entitlement_resolver import (
 from core.entitlements.resolvers.extended_admin_entitlement_resolver import (
     ExtendedAdminEntitlementResolver,
 )
+from core.entitlements.resolvers.meet_access_entitlement_resolver import (
+    MeetAccessEntitlementResolver,
+)
 from core.entitlements.resolvers.messages_admin_entitlement_resolver import (
     MessagesAdminEntitlementResolver,
 )
@@ -29,12 +32,21 @@ TYPE_TO_RESOLVER = {
 
 TYPE_TO_ACCESS_RESOLVER = {
     "drive": DriveAccessEntitlementResolver,
+    "meet": MeetAccessEntitlementResolver,
 }
+
+
+class NoopAdminEntitlementResolver:
+    """No-op admin entitlement resolver for services that don't need admin entitlements."""
+
+    def resolve(self, context):
+        return {}
 
 
 TYPE_TO_ADMIN_RESOLVER = {
     "adc": ExtendedAdminEntitlementResolver,
     "esd": ExtendedAdminEntitlementResolver,
+    "meet": NoopAdminEntitlementResolver,
     "messages": MessagesAdminEntitlementResolver,
 }
 
