@@ -88,6 +88,7 @@ export const SERVICE_TYPE_ADC = "adc";
 export const SERVICE_TYPE_ESD = "esd";
 export const SERVICE_TYPE_MESSAGES = "messages";
 export const SERVICE_TYPE_DRIVE = "drive";
+export const SERVICE_TYPE_MEET = "meet";
 
 export type AccountServiceLinkRole = { scope: Record<string, unknown> };
 
