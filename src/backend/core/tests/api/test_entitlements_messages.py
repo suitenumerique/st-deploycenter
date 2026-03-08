@@ -334,7 +334,6 @@ def test_api_entitlements_organization_can_store(
                     "account": {
                         "type": "organization",
                         "id": str(organization.id),
-                        "email": "test@example.com",
                     },
                     "metrics": {"storage_used": organization_storage_used},
                 }
@@ -456,7 +455,6 @@ def test_api_entitlements_organization_can_store(
     assert metrics_organization.first().key == "storage_used"
     assert metrics_organization.first().account.type == "organization"
     assert metrics_organization.first().account.external_id == str(organization.id)
-    assert metrics_organization.first().account.email == "test@example.com"
     assert metrics_organization.first().organization == organization
 
     # Metrics endpoint should have been called
