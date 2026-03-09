@@ -49,6 +49,7 @@ class EntitlementViewSerializer(serializers.Serializer):
     account_email = serializers.EmailField(required=False)
     siret = serializers.CharField(required=True)
     service_id = serializers.IntegerField(required=True)
+    idp_id = serializers.CharField(required=False)
 
     def validate(self, attrs):
         """
@@ -196,7 +197,34 @@ class EntitlementView(APIView):
             if key in entitlements_data:
                 metrics_data[key] = entitlements_data.pop(key)
 
-        response_data = {"operator": operator_data, "entitlements": entitlements_data}
+        organization_data = None
+        if organization:
+            oidc_valid = None
+            idp_id = serializer.validated_data.get("idp_id")
+            if idp_id and organization.type in (
+                "commune",
+                "region",
+                "departement",
+                "epci",
+            ):
+                oidc_valid = models.ServiceSubscription.objects.filter(
+                    organization=organization,
+                    service__type="proconnect",
+                    is_active=True,
+                    service__config__idp_id=idp_id,
+                ).exists()
+
+            organization_data = {
+                "type": organization.type,
+                "name": organization.name,
+                "oidc_valid": oidc_valid,
+            }
+
+        response_data = {
+            "organization": organization_data,
+            "operator": operator_data,
+            "entitlements": entitlements_data,
+        }
         if metrics_data:
             response_data["metrics"] = metrics_data
         return Response(response_data)

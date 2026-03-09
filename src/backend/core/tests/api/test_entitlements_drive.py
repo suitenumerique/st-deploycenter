@@ -125,6 +125,11 @@ def test_api_entitlements_can_access_without_subscription(
     assert response.status_code == 200
     data = response.json()
     assert data == {
+        "organization": {
+            "type": organization.type,
+            "name": organization.name,
+            "oidc_valid": None,
+        },
         "operator": None,
         "entitlements": {
             "can_access": True,
@@ -151,6 +156,11 @@ def test_api_entitlements_can_access_without_subscription(
     assert response.status_code == 200
     data = response.json()
     assert data == {
+        "organization": {
+            "type": organization.type,
+            "name": organization.name,
+            "oidc_valid": None,
+        },
         "operator": None,
         "entitlements": {
             "can_access": True,

@@ -143,6 +143,11 @@ def test_api_entitlements_mailbox_can_store(
     assert response.status_code == 200
     data = response.json()
     assert data == {
+        "organization": {
+            "type": organization.type,
+            "name": organization.name,
+            "oidc_valid": None,
+        },
         "operator": {
             "id": str(operator.id),
             "name": operator.name,
@@ -213,6 +218,11 @@ def test_api_entitlements_mailbox_can_store(
     assert response.status_code == 200
     data = response.json()
     assert data == {
+        "organization": {
+            "type": organization.type,
+            "name": organization.name,
+            "oidc_valid": None,
+        },
         "operator": {
             "id": str(operator.id),
             "name": operator.name,
@@ -397,6 +407,11 @@ def test_api_entitlements_organization_can_store(
         else mailbox_storage_used
     )
     assert data == {
+        "organization": {
+            "type": organization.type,
+            "name": organization.name,
+            "oidc_valid": None,
+        },
         "operator": {
             "id": str(operator.id),
             "name": operator.name,
@@ -598,6 +613,11 @@ def test_api_entitlements_mailbox_override_can_store(
     assert response.status_code == 200
     data = response.json()
     assert data == {
+        "organization": {
+            "type": organization.type,
+            "name": organization.name,
+            "oidc_valid": None,
+        },
         "operator": {
             "id": str(operator.id),
             "name": operator.name,
@@ -644,6 +664,11 @@ def test_api_entitlements_mailbox_override_can_store(
     assert response.status_code == 200
     data = response.json()
     assert data == {
+        "organization": {
+            "type": organization.type,
+            "name": organization.name,
+            "oidc_valid": None,
+        },
         "operator": {
             "id": str(operator.id),
             "name": operator.name,
@@ -743,6 +768,11 @@ def test_api_entitlements_mailbox_override_can_store(
     assert response.status_code == 200
     data = response.json()
     assert data == {
+        "organization": {
+            "type": organization.type,
+            "name": organization.name,
+            "oidc_valid": None,
+        },
         "operator": {
             "id": str(operator.id),
             "name": operator.name,
@@ -863,6 +893,11 @@ def test_api_entitlements_list_unlimited_storage(
     assert response.status_code == 200
     data = response.json()
     assert data == {
+        "organization": {
+            "type": organization.type,
+            "name": organization.name,
+            "oidc_valid": None,
+        },
         "operator": {
             "id": str(operator.id),
             "name": operator.name,

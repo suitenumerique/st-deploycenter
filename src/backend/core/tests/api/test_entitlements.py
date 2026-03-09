@@ -191,6 +191,11 @@ def test_api_entitlements_list_no_subscription(webhook_server):
     assert response.status_code == 200
     data = response.json()
     assert data == {
+        "organization": {
+            "type": organization.type,
+            "name": organization.name,
+            "oidc_valid": None,
+        },
         "operator": None,
         "entitlements": {
             "can_access": False,
@@ -236,6 +241,7 @@ def test_api_entitlements_list_organization_not_found(webhook_server):
     assert response.status_code == 200
     data = response.json()
     assert data == {
+        "organization": None,
         "operator": None,
         "entitlements": {
             "can_access": False,
@@ -285,6 +291,11 @@ def test_api_entitlements_list_with_inactive_subscription(webhook_server):
     assert response.status_code == 200
     data = response.json()
     assert data == {
+        "organization": {
+            "type": organization.type,
+            "name": organization.name,
+            "oidc_valid": None,
+        },
         "operator": None,
         "entitlements": {
             "can_access": False,
@@ -549,3 +560,249 @@ def test_entitlement_account_type_mismatch():
     assert "type must match" in str(exc_info.value.error_dict["account"][0])
 
     assert models.Entitlement.objects.count() == 0
+
+
+def test_api_entitlements_oidc_valid_true(webhook_server):
+    """Test oidc_valid is True when idp_id matches an active proconnect subscription."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    organization = factories.OrganizationFactory(
+        siret="12345678900001",
+        rpnt=["1.1", "1.2", "2.1", "2.2"],
+        adresse_messagerie="contact@commune.fr",
+        site_internet="https://www.commune.fr",
+    )
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    port = webhook_server.server_address[1]
+    service = factories.ServiceFactory(
+        config={
+            "entitlements_api_key": "test_token",
+            "usage_metrics_endpoint": f"http://localhost:{port}/metrics/usage",
+            "metrics_auth_token": "test_token",
+        },
+    )
+
+    proconnect_service = factories.ServiceFactory(
+        type="proconnect",
+        config={"idp_id": "my-idp"},
+    )
+    factories.ServiceSubscriptionFactory(
+        organization=organization,
+        service=proconnect_service,
+        operator=operator,
+        is_active=True,
+        metadata={"domains": ["commune.fr"]},
+    )
+
+    response = client.get(
+        "/api/v1.0/entitlements/",
+        query_params={
+            "service_id": service.id,
+            "account_type": "user",
+            "account_id": "xyz",
+            "siret": organization.siret,
+            "idp_id": "my-idp",
+        },
+        headers={"X-Service-Auth": "Bearer test_token"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["organization"]["oidc_valid"] is True
+
+
+def test_api_entitlements_oidc_valid_false(webhook_server):
+    """Test oidc_valid is False when idp_id doesn't match any active proconnect subscription."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    organization = factories.OrganizationFactory(
+        siret="12345678900001",
+        rpnt=["1.1", "1.2", "2.1", "2.2"],
+        adresse_messagerie="contact@commune.fr",
+        site_internet="https://www.commune.fr",
+    )
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    port = webhook_server.server_address[1]
+    service = factories.ServiceFactory(
+        config={
+            "entitlements_api_key": "test_token",
+            "usage_metrics_endpoint": f"http://localhost:{port}/metrics/usage",
+            "metrics_auth_token": "test_token",
+        },
+    )
+
+    proconnect_service = factories.ServiceFactory(
+        type="proconnect",
+        config={"idp_id": "my-idp"},
+    )
+    factories.ServiceSubscriptionFactory(
+        organization=organization,
+        service=proconnect_service,
+        operator=operator,
+        is_active=True,
+        metadata={"domains": ["commune.fr"]},
+    )
+
+    response = client.get(
+        "/api/v1.0/entitlements/",
+        query_params={
+            "service_id": service.id,
+            "account_type": "user",
+            "account_id": "xyz",
+            "siret": organization.siret,
+            "idp_id": "wrong-idp",
+        },
+        headers={"X-Service-Auth": "Bearer test_token"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["organization"]["oidc_valid"] is False
+
+
+def test_api_entitlements_oidc_valid_inactive_subscription(webhook_server):
+    """Test oidc_valid is False when proconnect subscription exists but is inactive."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    port = webhook_server.server_address[1]
+    service = factories.ServiceFactory(
+        config={
+            "entitlements_api_key": "test_token",
+            "usage_metrics_endpoint": f"http://localhost:{port}/metrics/usage",
+            "metrics_auth_token": "test_token",
+        },
+    )
+
+    proconnect_service = factories.ServiceFactory(
+        type="proconnect",
+        config={"idp_id": "my-idp"},
+    )
+    factories.ServiceSubscriptionFactory(
+        organization=organization,
+        service=proconnect_service,
+        operator=operator,
+        is_active=False,
+    )
+
+    response = client.get(
+        "/api/v1.0/entitlements/",
+        query_params={
+            "service_id": service.id,
+            "account_type": "user",
+            "account_id": "xyz",
+            "siret": organization.siret,
+            "idp_id": "my-idp",
+        },
+        headers={"X-Service-Auth": "Bearer test_token"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["organization"]["oidc_valid"] is False
+
+
+def test_api_entitlements_oidc_valid_none_without_idp_id(webhook_server):
+    """Test oidc_valid is None when no idp_id is passed."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    port = webhook_server.server_address[1]
+    service = factories.ServiceFactory(
+        config={
+            "entitlements_api_key": "test_token",
+            "usage_metrics_endpoint": f"http://localhost:{port}/metrics/usage",
+            "metrics_auth_token": "test_token",
+        },
+    )
+
+    response = client.get(
+        "/api/v1.0/entitlements/",
+        query_params={
+            "service_id": service.id,
+            "account_type": "user",
+            "account_id": "xyz",
+            "siret": organization.siret,
+        },
+        headers={"X-Service-Auth": "Bearer test_token"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["organization"]["oidc_valid"] is None
+
+
+def test_api_entitlements_oidc_valid_none_for_other_org_type(webhook_server):
+    """Test oidc_valid stays None for organization type 'other' even with idp_id."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    organization = factories.OrganizationFactory(
+        siret="12345678900001",
+        type="other",
+        adresse_messagerie="contact@other.fr",
+        site_internet="https://www.other.fr",
+    )
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    port = webhook_server.server_address[1]
+    service = factories.ServiceFactory(
+        config={
+            "entitlements_api_key": "test_token",
+            "usage_metrics_endpoint": f"http://localhost:{port}/metrics/usage",
+            "metrics_auth_token": "test_token",
+        },
+    )
+
+    proconnect_service = factories.ServiceFactory(
+        type="proconnect",
+        config={"idp_id": "my-idp"},
+    )
+    factories.ServiceSubscriptionFactory(
+        organization=organization,
+        service=proconnect_service,
+        operator=operator,
+        is_active=True,
+        metadata={"domains": ["other.fr"]},
+    )
+
+    response = client.get(
+        "/api/v1.0/entitlements/",
+        query_params={
+            "service_id": service.id,
+            "account_type": "user",
+            "account_id": "xyz",
+            "siret": organization.siret,
+            "idp_id": "my-idp",
+        },
+        headers={"X-Service-Auth": "Bearer test_token"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["organization"]["oidc_valid"] is None

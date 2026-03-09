@@ -52,6 +52,11 @@ def test_api_entitlements_meet_can_create_with_active_subscription():
     assert response.status_code == 200
     data = response.json()
     assert data == {
+        "organization": {
+            "type": organization.type,
+            "name": organization.name,
+            "oidc_valid": None,
+        },
         "operator": {
             "id": str(operator.id),
             "name": operator.name,
@@ -98,6 +103,11 @@ def test_api_entitlements_meet_can_create_without_subscription():
     assert response.status_code == 200
     data = response.json()
     assert data == {
+        "organization": {
+            "type": organization.type,
+            "name": organization.name,
+            "oidc_valid": None,
+        },
         "operator": None,
         "entitlements": {
             "can_create": False,
@@ -144,6 +154,11 @@ def test_api_entitlements_meet_can_create_with_inactive_subscription():
     assert response.status_code == 200
     data = response.json()
     assert data == {
+        "organization": {
+            "type": organization.type,
+            "name": organization.name,
+            "oidc_valid": None,
+        },
         "operator": None,
         "entitlements": {
             "can_create": False,
@@ -180,6 +195,7 @@ def test_api_entitlements_meet_can_create_no_organization():
     assert response.status_code == 200
     data = response.json()
     assert data == {
+        "organization": None,
         "operator": None,
         "entitlements": {
             "can_create": False,
