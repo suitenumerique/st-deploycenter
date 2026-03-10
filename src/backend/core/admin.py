@@ -716,14 +716,14 @@ class UserAdmin(auth_admin.UserAdmin):
 class OperatorAdmin(admin.ModelAdmin):
     """Admin class for the Operator model"""
 
-    list_display = ("name", "url", "is_active", "created_at")
+    list_display = ("name", "siret", "url", "is_active", "created_at")
     list_filter = ("is_active", "created_at")
-    search_fields = ("name", "url")
+    search_fields = ("name", "siret", "url")
     ordering = ("name",)
     readonly_fields = ("id", "computed_contribution", "created_at", "updated_at")
 
     fieldsets = (
-        (None, {"fields": ("name", "url", "is_active")}),
+        (None, {"fields": ("name", "siret", "url", "is_active")}),
         (_("Financial Information"), {"fields": ("computed_contribution",)}),
         (_("Configuration"), {"fields": ("config",)}),
         (_("Metadata"), {"fields": ("created_at", "updated_at")}),
