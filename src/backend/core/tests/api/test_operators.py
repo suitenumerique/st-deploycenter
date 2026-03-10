@@ -41,6 +41,7 @@ def test_api_operators_list_authenticated():
         {
             "id": str(operator.id),
             "name": operator.name,
+            "siret": operator.siret,
             "url": operator.url,
             "is_active": operator.is_active,
             "user_role": "admin",
@@ -67,6 +68,7 @@ def test_api_operators_retrieve_authenticated():
     assert results == {
         "id": str(operator.id),
         "name": operator.name,
+        "siret": operator.siret,
         "url": operator.url,
         "is_active": operator.is_active,
         "user_role": "admin",

@@ -196,6 +196,14 @@ class Operator(BaseModel):
         help_text=_("Name of the operator organization"),
     )
 
+    siret = models.CharField(
+        _("SIRET"),
+        max_length=14,
+        blank=True,
+        default="",
+        help_text=_("SIRET number of the operator organization"),
+    )
+
     url = models.URLField(
         _("homepage"),
         blank=True,

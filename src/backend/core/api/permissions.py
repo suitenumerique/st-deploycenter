@@ -257,4 +257,7 @@ class ServiceAuthenticationPermission(permissions.BasePermission):
         if not secrets.compare_digest(service_api_key, api_key):
             return False
 
+        # Stash the service on the request so the view can reuse it
+        # without a duplicate query.
+        request.service = target_service
         return True

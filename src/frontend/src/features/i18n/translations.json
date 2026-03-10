@@ -15,7 +15,8 @@
       "my_account": "Mon compte",
       "operators": {
         "title": "Opérateurs",
-        "subtitle": "Choisissez l'opérateur afin de pouvoir accéder aux collectivités"
+        "subtitle": "Choisissez l'opérateur afin de pouvoir accéder aux collectivités",
+        "empty": "Vous n'avez accès à aucun opérateur. Si vous pensez qu'il s'agit d'une erreur, veuillez nous contacter."
       },
       "organizations": {
         "title": "Adhérents",

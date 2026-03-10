@@ -47,11 +47,15 @@ export default function Operators() {
 
   return (
     <Container title={t("operators.title")} subtitle={t("operators.subtitle")}>
-      <div className="dc__operators__list">
-        {data?.results.map((operator) => (
-          <OperatorCard key={operator.id} operator={operator} />
-        ))}
-      </div>
+      {data?.count === 0 ? (
+        <p>{t("operators.empty")}</p>
+      ) : (
+        <div className="dc__operators__list">
+          {data?.results.map((operator) => (
+            <OperatorCard key={operator.id} operator={operator} />
+          ))}
+        </div>
+      )}
     </Container>
   );
 }

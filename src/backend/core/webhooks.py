@@ -348,6 +348,8 @@ class WebhookClient:
             # Operator
             "operator_id": subscription.operator.id,
             "operator_name": subscription.operator.name,
+            "operator_url": subscription.operator.url,
+            "operator_siret": subscription.operator.siret,
             # User who performed the action (if available)
             "user_id": str(user.id) if user else "",
             "user_email": user.email if user else "",

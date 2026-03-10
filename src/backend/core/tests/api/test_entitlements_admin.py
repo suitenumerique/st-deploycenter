@@ -59,7 +59,6 @@ def test_api_entitlements_is_admin_false_no_account(
         data,
         {
             "operator": {
-                "id": str(operator.id),
                 "name": operator.name,
             },
             "entitlements": {
@@ -124,7 +123,6 @@ def test_api_entitlements_is_admin_false_no_admin_role(
         data,
         {
             "operator": {
-                "id": str(operator.id),
                 "name": operator.name,
             },
             "entitlements": {
@@ -189,7 +187,6 @@ def test_api_entitlements_is_admin_true_organization_level(
         data,
         {
             "operator": {
-                "id": str(operator.id),
                 "name": operator.name,
             },
             "entitlements": {
@@ -256,7 +253,6 @@ def test_api_entitlements_is_admin_true_service_level(
         data,
         {
             "operator": {
-                "id": str(operator.id),
                 "name": operator.name,
             },
             "entitlements": {

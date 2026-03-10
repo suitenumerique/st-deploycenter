@@ -33,7 +33,7 @@ class EntitlementOperatorSerializer(OperatorSerializer):
         fields = [
             f
             for f in OperatorSerializer.Meta.fields
-            if f not in ("user_role", "is_active")
+            if f not in ("id", "user_role", "is_active")
         ]
 
 
@@ -84,9 +84,8 @@ class EntitlementView(APIView):
 
         organization = models.Organization.objects.filter(siret=siret).first()
 
-        service = models.Service.objects.filter(
-            id=serializer.validated_data["service_id"]
-        ).first()
+        # Reuse the service already fetched by ServiceAuthenticationPermission.
+        service = getattr(request, "service", None)
         if not service:
             raise drf.exceptions.NotFound(
                 "Service not found. Make sure the service exists."
@@ -95,9 +94,11 @@ class EntitlementView(APIView):
         service_subscription = None
         if organization:
             # We should always have one or none service subscription for an organization-service pair.
-            service_subscription = models.ServiceSubscription.objects.filter(
-                organization=organization, service=service
-            ).first()
+            service_subscription = (
+                models.ServiceSubscription.objects.select_related("operator")
+                .filter(organization=organization, service=service)
+                .first()
+            )
 
         # Response building.
         account_type = serializer.validated_data["account_type"]

@@ -149,8 +149,8 @@ def test_api_entitlements_mailbox_can_store(
             "oidc_valid": None,
         },
         "operator": {
-            "id": str(operator.id),
             "name": operator.name,
+            "siret": operator.siret,
             "url": operator.url,
             "config": {},
         },
@@ -224,8 +224,8 @@ def test_api_entitlements_mailbox_can_store(
             "oidc_valid": None,
         },
         "operator": {
-            "id": str(operator.id),
             "name": operator.name,
+            "siret": operator.siret,
             "url": operator.url,
             "config": {},
         },
@@ -413,8 +413,8 @@ def test_api_entitlements_organization_can_store(
             "oidc_valid": None,
         },
         "operator": {
-            "id": str(operator.id),
             "name": operator.name,
+            "siret": operator.siret,
             "url": operator.url,
             "config": {},
         },
@@ -619,8 +619,8 @@ def test_api_entitlements_mailbox_override_can_store(
             "oidc_valid": None,
         },
         "operator": {
-            "id": str(operator.id),
             "name": operator.name,
+            "siret": operator.siret,
             "url": operator.url,
             "config": {},
         },
@@ -670,8 +670,8 @@ def test_api_entitlements_mailbox_override_can_store(
             "oidc_valid": None,
         },
         "operator": {
-            "id": str(operator.id),
             "name": operator.name,
+            "siret": operator.siret,
             "url": operator.url,
             "config": {},
         },
@@ -774,8 +774,8 @@ def test_api_entitlements_mailbox_override_can_store(
             "oidc_valid": None,
         },
         "operator": {
-            "id": str(operator.id),
             "name": operator.name,
+            "siret": operator.siret,
             "url": operator.url,
             "config": {},
         },
@@ -899,8 +899,8 @@ def test_api_entitlements_list_unlimited_storage(
             "oidc_valid": None,
         },
         "operator": {
-            "id": str(operator.id),
             "name": operator.name,
+            "siret": operator.siret,
             "url": operator.url,
             "config": {},
         },

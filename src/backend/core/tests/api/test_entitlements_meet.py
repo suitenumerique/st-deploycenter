@@ -58,8 +58,8 @@ def test_api_entitlements_meet_can_create_with_active_subscription():
             "oidc_valid": None,
         },
         "operator": {
-            "id": str(operator.id),
             "name": operator.name,
+            "siret": operator.siret,
             "url": operator.url,
             "config": {},
         },

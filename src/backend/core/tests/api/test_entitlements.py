@@ -13,6 +13,8 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from django.core.exceptions import ValidationError
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 import pytest
 from rest_framework.test import APIClient
@@ -405,7 +407,6 @@ def test_api_entitlements_list_usage_metrics_endpoint_not_reachable():
         data,
         {
             "operator": {
-                "id": str(operator.id),
                 "name": operator.name,
             },
             "entitlements": {
@@ -472,7 +473,6 @@ def test_api_entitlements_list_usage_metrics_endpoint_error(buggy_service_server
         data,
         {
             "operator": {
-                "id": str(operator.id),
                 "name": operator.name,
             },
             "entitlements": {
@@ -750,10 +750,10 @@ def test_api_entitlements_oidc_valid_none_without_idp_id(webhook_server):
         headers={"X-Service-Auth": "Bearer test_token"},
     )
     assert response.status_code == 200
-    data = response.json()
-    assert data["organization"]["oidc_valid"] is None
+    assert response.json()["organization"]["oidc_valid"] is None
 
 
+# pylint: disable=too-many-locals
 def test_api_entitlements_oidc_valid_none_for_other_org_type(webhook_server):
     """Test oidc_valid stays None for organization type 'other' even with idp_id."""
     user = factories.UserFactory()
@@ -806,3 +806,168 @@ def test_api_entitlements_oidc_valid_none_for_other_org_type(webhook_server):
     assert response.status_code == 200
     data = response.json()
     assert data["organization"]["oidc_valid"] is None
+
+
+def test_api_entitlements_query_count_no_subscription():
+    """Test that the entitlements endpoint uses a bounded number of queries
+    when there is no active subscription (simplest path)."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    organization = factories.OrganizationFactory(siret="12345678900001")
+
+    service = factories.ServiceFactory(
+        config={
+            "entitlements_api_key": "test_token",
+        },
+    )
+
+    # Warm up any caches (content types, sessions, etc.)
+    client.get(
+        "/api/v1.0/entitlements/",
+        query_params={
+            "service_id": service.id,
+            "account_type": "user",
+            "account_id": "xyz",
+            "siret": organization.siret,
+        },
+        headers={"X-Service-Auth": "Bearer test_token"},
+    )
+
+    with CaptureQueriesContext(connection) as ctx:
+        response = client.get(
+            "/api/v1.0/entitlements/",
+            query_params={
+                "service_id": service.id,
+                "account_type": "user",
+                "account_id": "xyz",
+                "siret": organization.siret,
+            },
+            headers={"X-Service-Auth": "Bearer test_token"},
+        )
+
+    assert response.status_code == 200
+    # Expected queries:
+    # 1. Session lookup
+    # 2. Permission: Service lookup by id (reused by view)
+    # 3. Organization lookup by siret
+    # 4. ServiceSubscription lookup (org + service) with select_related(operator)
+    assert len(ctx) <= 4, f"Expected at most 4 queries, got {len(ctx)}:\n" + "\n".join(
+        f"  {i + 1}. {q['sql']}" for i, q in enumerate(ctx)
+    )
+
+
+def test_api_entitlements_query_count_no_subscription_with_idp_id():
+    """Test query count when idp_id is provided (adds oidc_valid check)."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    organization = factories.OrganizationFactory(siret="12345678900001")
+
+    service = factories.ServiceFactory(
+        config={
+            "entitlements_api_key": "test_token",
+        },
+    )
+
+    # Warm up
+    client.get(
+        "/api/v1.0/entitlements/",
+        query_params={
+            "service_id": service.id,
+            "account_type": "user",
+            "account_id": "xyz",
+            "siret": organization.siret,
+            "idp_id": "some-idp",
+        },
+        headers={"X-Service-Auth": "Bearer test_token"},
+    )
+
+    with CaptureQueriesContext(connection) as ctx:
+        response = client.get(
+            "/api/v1.0/entitlements/",
+            query_params={
+                "service_id": service.id,
+                "account_type": "user",
+                "account_id": "xyz",
+                "siret": organization.siret,
+                "idp_id": "some-idp",
+            },
+            headers={"X-Service-Auth": "Bearer test_token"},
+        )
+
+    assert response.status_code == 200
+    # Same as above + 1 oidc_valid EXISTS query
+    assert len(ctx) <= 5, f"Expected at most 5 queries, got {len(ctx)}:\n" + "\n".join(
+        f"  {i + 1}. {q['sql']}" for i, q in enumerate(ctx)
+    )
+
+
+def test_api_entitlements_query_count_with_subscription():
+    """Test query count with an active subscription (full entitlement resolution path,
+    but no metrics endpoint configured to avoid HTTP calls)."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    service = factories.ServiceFactory(
+        config={
+            "entitlements_api_key": "test_token",
+        },
+    )
+    service_subscription = factories.ServiceSubscriptionFactory(
+        organization=organization, service=service, operator=operator
+    )
+    factories.EntitlementFactory(
+        service_subscription=service_subscription,
+        type=models.Entitlement.EntitlementType.DRIVE_STORAGE,
+        config={"max_storage": 1000},
+        account_type="user",
+        account=None,
+    )
+
+    # Warm up
+    client.get(
+        "/api/v1.0/entitlements/",
+        query_params={
+            "service_id": service.id,
+            "account_type": "user",
+            "account_id": "xyz",
+            "siret": organization.siret,
+        },
+        headers={"X-Service-Auth": "Bearer test_token"},
+    )
+
+    with CaptureQueriesContext(connection) as ctx:
+        response = client.get(
+            "/api/v1.0/entitlements/",
+            query_params={
+                "service_id": service.id,
+                "account_type": "user",
+                "account_id": "xyz",
+                "siret": organization.siret,
+            },
+            headers={"X-Service-Auth": "Bearer test_token"},
+        )
+
+    assert response.status_code == 200
+    # Expected queries:
+    # 1. Session lookup
+    # 2. Permission: Service lookup (reused by view)
+    # 3. Organization lookup
+    # 4. ServiceSubscription with select_related(operator)
+    # 5. Entitlements for subscription (with account JOIN)
+    # 6. Metric lookup for entitlement resolution
+    # 7. Admin resolver: Account.find_by_identifiers
+    # 8. Admin resolver: account.service_links check (if account found)
+    assert len(ctx) <= 9, f"Expected at most 9 queries, got {len(ctx)}:\n" + "\n".join(
+        f"  {i + 1}. {q['sql']}" for i, q in enumerate(ctx)
+    )

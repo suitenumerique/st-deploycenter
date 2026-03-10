@@ -253,7 +253,6 @@ def test_api_entitlements_user_can_upload(
         data,
         {
             "operator": {
-                "id": str(operator.id),
                 "name": operator.name,
             },
             "entitlements": {
@@ -319,7 +318,6 @@ def test_api_entitlements_user_can_upload(
         data,
         {
             "operator": {
-                "id": str(operator.id),
                 "name": operator.name,
             },
             "entitlements": {
@@ -437,7 +435,6 @@ def test_api_entitlements_user_override_can_upload(
         data,
         {
             "operator": {
-                "id": str(operator.id),
                 "name": operator.name,
             },
             "entitlements": {
@@ -480,7 +477,6 @@ def test_api_entitlements_user_override_can_upload(
         data,
         {
             "operator": {
-                "id": str(operator.id),
                 "name": operator.name,
             },
             "entitlements": {
@@ -542,7 +538,6 @@ def test_api_entitlements_user_override_can_upload(
         data,
         {
             "operator": {
-                "id": str(operator.id),
                 "name": operator.name,
             },
             "entitlements": {
@@ -652,7 +647,6 @@ def test_api_entitlements_list_unlimited_storage(
         data,
         {
             "operator": {
-                "id": str(operator.id),
                 "name": operator.name,
             },
             "entitlements": {
