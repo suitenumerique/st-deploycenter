@@ -14,11 +14,11 @@ class DriveServiceHandler(ServiceHandler):
         {
             "type": Entitlement.EntitlementType.DRIVE_STORAGE,
             "account_type": "user",
-            "config": {"max_storage": 1000 * 1000 * 1000 * 10},  # 10GB
+            "config": {"max_storage": 1000 * 1000 * 1000 * 5},  # 5GB
         },
         {
             "type": Entitlement.EntitlementType.DRIVE_STORAGE,
             "account_type": "organization",
-            "config": {"max_storage": 1000 * 1000 * 1000 * 50},  # 50GB
+            "config": {"max_storage": 1000 * 1000 * 1000 * 10},  # 10GB
         },
     ]

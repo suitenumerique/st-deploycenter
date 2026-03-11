@@ -19,6 +19,6 @@ class MessagesServiceHandler(ServiceHandler):
         {
             "type": Entitlement.EntitlementType.MESSAGES_STORAGE,
             "account_type": "organization",
-            "config": {"max_storage": 1000 * 1000 * 1000 * 50},  # 50GB
+            "config": {"max_storage": 1000 * 1000 * 1000 * 10},  # 10GB
         },
     ]

@@ -57,7 +57,7 @@ def test_subscription_entitlements_default():
         account_type="organization",
         account=None,
     )
-    assert entitlement_organization.config["max_storage"] == 1000 * 1000 * 1000 * 50
+    assert entitlement_organization.config["max_storage"] == 1000 * 1000 * 1000 * 10
 
 
 @responses.activate

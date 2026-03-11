@@ -47,7 +47,7 @@ def test_subscription_entitlements_default():
         account_type="user",
         account=None,
     )
-    assert entitlement_user.config["max_storage"] == 1000 * 1000 * 1000 * 10
+    assert entitlement_user.config["max_storage"] == 1000 * 1000 * 1000 * 5
 
     entitlement_organization = models.Entitlement.objects.get(
         service_subscription__organization=organization,
@@ -57,7 +57,7 @@ def test_subscription_entitlements_default():
         account_type="organization",
         account=None,
     )
-    assert entitlement_organization.config["max_storage"] == 1000 * 1000 * 1000 * 50
+    assert entitlement_organization.config["max_storage"] == 1000 * 1000 * 1000 * 10
 
 
 @pytest.mark.django_db()
