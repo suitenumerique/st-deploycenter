@@ -17,6 +17,7 @@ from core import models
 from core.api import permissions, serializers
 from core.api.filters import AccountFilter
 from core.authentication import ExternalManagementApiKeyAuthentication
+from core.signals import set_request_user
 
 
 class OrganizationAccountsViewSet(
@@ -69,6 +70,7 @@ class OrganizationAccountsViewSet(
         its roles are updated instead of creating a duplicate.
         Returns 201 on creation, 200 on update.
         """
+        set_request_user(request.user)
         organization_id = self.kwargs["organization_id"]
         try:
             organization = models.Organization.objects.get(id=organization_id)
@@ -135,6 +137,16 @@ class AccountViewSet(
         AccountPermission,
     ]
 
+    def perform_update(self, serializer):
+        """Set request user context before saving account updates."""
+        set_request_user(self.request.user)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        """Set request user context before deleting an account."""
+        set_request_user(self.request.user)
+        instance.delete()
+
     @action(detail=True, methods=["patch"], url_path="services/(?P<service_id>[^/.]+)")
     @transaction.atomic
     def service_link_update(self, request, *args, **kwargs):
@@ -144,6 +156,7 @@ class AccountViewSet(
         - List (legacy): {"roles": ["admin", "editor"]} → each role gets empty scope
         - Dict (new): {"roles": {"admin": {"scope": {"domains": ["x.fr"]}}}}
         """
+        set_request_user(request.user)
         account = self.get_object()
         service = get_object_or_404(models.Service, id=kwargs["service_id"])
 

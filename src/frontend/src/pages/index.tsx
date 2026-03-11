@@ -10,7 +10,11 @@ import {
 } from "@gouvfr-lasuite/ui-kit";
 import { useTranslation } from "react-i18next";
 import banner from "@/assets/home/banner.svg";
-import { Toaster } from "@/features/ui/components/toaster/Toaster";
+import {
+  addToast,
+  Toaster,
+  ToasterItem,
+} from "@/features/ui/components/toaster/Toaster";
 import { LeftPanelMobile } from "@/features/layouts/components/left-panel/LeftPanelMobile";
 import { HeaderRight } from "@/features/layouts/components/header/Header";
 import { useThemeCustomization } from "@/hooks/useThemeCustomization";
@@ -23,6 +27,19 @@ export default function Home() {
   const { t } = useTranslation();
   const router = useRouter();
   const footerCustommization = useThemeCustomization("footer");
+
+  useEffect(() => {
+    const reason = router.query.reason as string | undefined;
+    if (reason === "forbidden" || reason === "unauthorized") {
+      addToast(
+        <ToasterItem type="error">
+          <span>{t(`home.access_denied.${reason}`)}</span>
+        </ToasterItem>
+      );
+      // Clean up the URL without triggering a re-render
+      router.replace("/", undefined, { shallow: true });
+    }
+  }, [router.query.reason]);
 
   useEffect(() => {
     if (user) {

@@ -56,7 +56,7 @@ export const fetchAPI = async (
 
   const redirectOn40x = options?.redirectOn40x ?? true;
   if (response.status === 401 && redirectOn40x) {
-    redirect("/401");
+    redirect("/?reason=unauthorized");
     // So that the app can handle the error and not show a toast by verifying the error code.
     throw new APIError(response.status);
   }
@@ -65,7 +65,7 @@ export const fetchAPI = async (
     // We don't want to save the attempted url when having a 403 error because
     // it would be a redirect loop and it means we know that the user is not
     // allowed to access the page.
-    redirect("/403", false);
+    redirect("/?reason=forbidden", false);
     // So that the app can handle the error and not show a toast by verifying the error code.
     throw new APIError(response.status);
   }

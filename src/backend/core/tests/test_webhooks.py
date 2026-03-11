@@ -870,6 +870,59 @@ class TestWebhookIntegration:
         )
         assert request["body"]["deleted_subscription"]["service"] == service_name
 
+    def test_subscription_webhook_respects_event_type_filter(
+        self, webhook_server, sample_organization
+    ):
+        """Test that subscription webhooks respect the event_types filter."""
+        port = webhook_server.server_address[1]
+
+        service = Service.objects.create(
+            name="Test Service",
+            instance_name="test-instance",
+            type="test_service",
+            url="https://example.com",
+            config={
+                "webhooks": [
+                    {
+                        "url": f"http://localhost:{port}/webhook",
+                        "method": "POST",
+                        "event_types": ["subscription.deleted"],
+                        "body": {"event_type": {"$val": "event_type"}},
+                    }
+                ]
+            },
+        )
+
+        operator = OperatorFactory.create()
+
+        # Create subscription - should NOT trigger webhook (event_types only allows deleted)
+        time.sleep(0.1)
+        MockWebhookServer.requests_received.clear()
+
+        subscription = ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service,
+            operator=operator,
+        )
+
+        time.sleep(0.1)
+        assert len(webhook_server.RequestHandlerClass.requests_received) == 0
+
+        # Update subscription - should NOT trigger webhook
+        subscription.metadata = {"key": "value"}
+        subscription.save()
+
+        time.sleep(0.1)
+        assert len(webhook_server.RequestHandlerClass.requests_received) == 0
+
+        # Delete subscription - SHOULD trigger webhook
+        subscription.delete()
+
+        time.sleep(0.1)
+        requests = webhook_server.RequestHandlerClass.requests_received
+        assert len(requests) == 1
+        assert requests[0]["body"]["event_type"] == "subscription.deleted"
+
     def test_no_webhooks_configured(self, sample_organization):
         """Test that no webhooks are sent when none are configured."""
         service = Service.objects.create(
@@ -1664,3 +1717,554 @@ class TestFilterValByActiveServiceSubscriptionMetadata:
 
         result = config.render_body(context_data)
         assert result["filtered"] == ["m.com", "a.com", "z.com"]
+
+
+@pytest.mark.django_db
+class TestAccountWebhooks:
+    """Test webhook functionality for account lifecycle events."""
+
+    def test_account_webhook_sent_on_account_save_with_global_role(
+        self, webhook_server, sample_organization, sample_operator
+    ):
+        """Test that account.updated webhook is sent for all active services
+        when an account has a global role."""
+        port = webhook_server.server_address[1]
+
+        service = Service.objects.create(
+            name="Test Service",
+            instance_name="test-instance",
+            type="test_service",
+            url="https://example.com",
+            config={
+                "webhooks": [
+                    {
+                        "url": f"http://localhost:{port}/webhook",
+                        "method": "POST",
+                        "body": {
+                            "event_type": {"$val": "event_type"},
+                            "account_email": {"$val": "account_email"},
+                            "account_roles": {"$val": "account_roles"},
+                            "organization_name": {"$val": "organization_name"},
+                            "service_name": {"$val": "service_name"},
+                        },
+                    }
+                ]
+            },
+        )
+
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service,
+            operator=sample_operator,
+            metadata={},
+        )
+
+        # Clear requests from subscription creation
+        time.sleep(0.1)
+        MockWebhookServer.requests_received.clear()
+
+        # Create account with global role
+        Account.objects.create(
+            email="admin@test.org",
+            organization=sample_organization,
+            roles=["admin"],
+        )
+
+        time.sleep(0.1)
+
+        requests = webhook_server.RequestHandlerClass.requests_received
+        assert len(requests) == 1
+
+        body = requests[0]["body"]
+        assert body["event_type"] == "account.updated"
+        assert body["account_email"] == "admin@test.org"
+        assert body["account_roles"] == ["admin"]
+        assert body["organization_name"] == sample_organization.name
+        assert body["service_name"] == service.name
+
+    def test_account_webhook_sent_to_multiple_services_with_global_role(
+        self, webhook_server, sample_organization, sample_operator
+    ):
+        """Test that account.updated webhook is sent to ALL active services
+        when the account has a global role."""
+        port = webhook_server.server_address[1]
+
+        webhook_config = {
+            "webhooks": [
+                {
+                    "url": f"http://localhost:{port}/webhook",
+                    "method": "POST",
+                    "body": {
+                        "event_type": {"$val": "event_type"},
+                        "service_name": {"$val": "service_name"},
+                        "account_email": {"$val": "account_email"},
+                    },
+                }
+            ]
+        }
+
+        service1 = Service.objects.create(
+            name="Service 1",
+            instance_name="svc-1",
+            type="test1",
+            url="https://svc1.example.com",
+            config=webhook_config,
+        )
+        service2 = Service.objects.create(
+            name="Service 2",
+            instance_name="svc-2",
+            type="test2",
+            url="https://svc2.example.com",
+            config=webhook_config,
+        )
+
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service1,
+            operator=sample_operator,
+        )
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service2,
+            operator=sample_operator,
+        )
+
+        time.sleep(0.1)
+        MockWebhookServer.requests_received.clear()
+
+        Account.objects.create(
+            email="admin@test.org",
+            organization=sample_organization,
+            roles=["admin"],
+        )
+
+        time.sleep(0.1)
+
+        requests = webhook_server.RequestHandlerClass.requests_received
+        assert len(requests) == 2
+
+        service_names = {r["body"]["service_name"] for r in requests}
+        assert service_names == {service1.name, service2.name}
+
+    def test_account_webhook_not_sent_without_role_or_service_link(
+        self, webhook_server, sample_organization, sample_operator
+    ):
+        """Test that no webhook is sent when account has no global role
+        and no service link."""
+        port = webhook_server.server_address[1]
+
+        service = Service.objects.create(
+            name="Test Service",
+            instance_name="test-instance",
+            type="test_service",
+            url="https://example.com",
+            config={
+                "webhooks": [
+                    {
+                        "url": f"http://localhost:{port}/webhook",
+                        "method": "POST",
+                        "body": {"event_type": {"$val": "event_type"}},
+                    }
+                ]
+            },
+        )
+
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service,
+            operator=sample_operator,
+        )
+
+        time.sleep(0.1)
+        MockWebhookServer.requests_received.clear()
+
+        # Account with no roles and no service links
+        Account.objects.create(
+            email="user@test.org",
+            organization=sample_organization,
+            roles=[],
+        )
+
+        time.sleep(0.1)
+
+        requests = webhook_server.RequestHandlerClass.requests_received
+        assert len(requests) == 0
+
+    def test_account_webhook_sent_only_to_linked_service(
+        self, webhook_server, sample_organization, sample_operator
+    ):
+        """Test that without global role, webhook is only sent
+        to services where the account has a service link."""
+        port = webhook_server.server_address[1]
+
+        webhook_config = {
+            "webhooks": [
+                {
+                    "url": f"http://localhost:{port}/webhook",
+                    "method": "POST",
+                    "body": {
+                        "event_type": {"$val": "event_type"},
+                        "service_name": {"$val": "service_name"},
+                    },
+                }
+            ]
+        }
+
+        service1 = Service.objects.create(
+            name="Linked Service",
+            instance_name="linked-svc",
+            type="test1",
+            url="https://linked.example.com",
+            config=webhook_config,
+        )
+        Service.objects.create(
+            name="Unlinked Service",
+            instance_name="unlinked-svc",
+            type="test2",
+            url="https://unlinked.example.com",
+            config=webhook_config,
+        )
+
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service1,
+            operator=sample_operator,
+        )
+
+        time.sleep(0.1)
+        MockWebhookServer.requests_received.clear()
+
+        # Create account without global role but with a service link
+        account = Account.objects.create(
+            email="user@test.org",
+            organization=sample_organization,
+            roles=[],
+        )
+
+        time.sleep(0.1)
+        MockWebhookServer.requests_received.clear()
+
+        # Add a service link -> triggers webhook for linked service only
+        AccountServiceLink.objects.create(
+            account=account,
+            service=service1,
+            role="admin",
+        )
+
+        time.sleep(0.1)
+
+        requests = webhook_server.RequestHandlerClass.requests_received
+        assert len(requests) == 1
+        assert requests[0]["body"]["service_name"] == "Linked Service"
+
+    def test_account_webhook_on_service_link_delete(
+        self, webhook_server, sample_organization, sample_operator
+    ):
+        """Test that webhook is sent when a service link is deleted,
+        even though the link no longer exists."""
+        port = webhook_server.server_address[1]
+
+        service = Service.objects.create(
+            name="Test Service",
+            instance_name="test-instance",
+            type="test_service",
+            url="https://example.com",
+            config={
+                "webhooks": [
+                    {
+                        "url": f"http://localhost:{port}/webhook",
+                        "method": "POST",
+                        "body": {
+                            "event_type": {"$val": "event_type"},
+                            "account_email": {"$val": "account_email"},
+                            "account_service_roles": {"$val": "account_service_roles"},
+                        },
+                    }
+                ]
+            },
+        )
+
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service,
+            operator=sample_operator,
+        )
+
+        account = Account.objects.create(
+            email="user@test.org",
+            organization=sample_organization,
+            roles=[],
+        )
+        link = AccountServiceLink.objects.create(
+            account=account,
+            service=service,
+            role="admin",
+        )
+
+        time.sleep(0.1)
+        MockWebhookServer.requests_received.clear()
+
+        # Delete the service link
+        link.delete()
+
+        time.sleep(0.1)
+
+        requests = webhook_server.RequestHandlerClass.requests_received
+        assert len(requests) == 1
+        body = requests[0]["body"]
+        assert body["event_type"] == "account.updated"
+        assert body["account_email"] == "user@test.org"
+        # The role was deleted, so account_service_roles should be empty
+        assert body["account_service_roles"] == {}
+
+    def test_account_webhook_includes_account_context(
+        self, webhook_server, sample_organization, sample_operator
+    ):
+        """Test that account webhooks include all account context vars."""
+        port = webhook_server.server_address[1]
+
+        service = Service.objects.create(
+            name="Test Service",
+            instance_name="test-instance",
+            type="test_service",
+            url="https://example.com",
+            config={
+                "webhooks": [
+                    {
+                        "url": f"http://localhost:{port}/webhook",
+                        "method": "POST",
+                        "body": {
+                            "event_type": {"$val": "event_type"},
+                            "account_id": {"$val": "account_id"},
+                            "account_email": {"$val": "account_email"},
+                            "account_external_id": {"$val": "account_external_id"},
+                            "account_type": {"$val": "account_type"},
+                            "account_roles": {"$val": "account_roles"},
+                            "account_service_roles": {"$val": "account_service_roles"},
+                            # Also verify subscription/org/service data is present
+                            "subscription_id": {"$val": "subscription_id"},
+                            "organization_name": {"$val": "organization_name"},
+                            "service_name": {"$val": "service_name"},
+                            "operator_name": {"$val": "operator_name"},
+                            "organization_roles": {"$val": "organization_roles"},
+                            "service_roles": {"$val": "service_roles"},
+                        },
+                    }
+                ]
+            },
+        )
+
+        subscription = ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service,
+            operator=sample_operator,
+            metadata={"domains": ["test.org"]},
+        )
+
+        time.sleep(0.1)
+        MockWebhookServer.requests_received.clear()
+
+        account = Account.objects.create(
+            email="admin@test.org",
+            external_id="ext-123",
+            type="user",
+            organization=sample_organization,
+            roles=["admin"],
+        )
+
+        # Add a service link
+        AccountServiceLink.objects.create(
+            account=account,
+            service=service,
+            role="editor",
+            scope={"domains": ["test.org"]},
+        )
+
+        time.sleep(0.1)
+
+        # Last request is from the service link save
+        requests = webhook_server.RequestHandlerClass.requests_received
+        assert len(requests) >= 1
+
+        body = requests[-1]["body"]
+        assert body["event_type"] == "account.updated"
+        assert body["account_id"] == str(account.id)
+        assert body["account_email"] == "admin@test.org"
+        assert body["account_external_id"] == "ext-123"
+        assert body["account_type"] == "user"
+        assert body["account_roles"] == ["admin"]
+        assert body["account_service_roles"] == {
+            "editor": {"scope": {"domains": ["test.org"]}}
+        }
+        assert body["subscription_id"] == str(subscription.id)
+        assert body["organization_name"] == sample_organization.name
+        assert body["service_name"] == service.name
+
+    def test_account_webhook_respects_event_type_filter(
+        self, webhook_server, sample_organization, sample_operator
+    ):
+        """Test that account webhooks respect the event_types filter
+        in webhook config."""
+        port = webhook_server.server_address[1]
+
+        service = Service.objects.create(
+            name="Test Service",
+            instance_name="test-instance",
+            type="test_service",
+            url="https://example.com",
+            config={
+                "webhooks": [
+                    {
+                        "url": f"http://localhost:{port}/webhook",
+                        "method": "POST",
+                        "event_types": ["subscription.created", "subscription.updated"],
+                        "body": {"event_type": {"$val": "event_type"}},
+                    }
+                ]
+            },
+        )
+
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service,
+            operator=sample_operator,
+        )
+
+        time.sleep(0.1)
+        MockWebhookServer.requests_received.clear()
+
+        # Account webhook should NOT be sent since event_types
+        # only includes subscription events
+        Account.objects.create(
+            email="admin@test.org",
+            organization=sample_organization,
+            roles=["admin"],
+        )
+
+        time.sleep(0.1)
+
+        requests = webhook_server.RequestHandlerClass.requests_received
+        assert len(requests) == 0
+
+    def test_account_webhook_skips_inactive_subscriptions(
+        self, webhook_server, sample_organization, sample_operator
+    ):
+        """Test that account webhooks are only sent for active subscriptions."""
+        port = webhook_server.server_address[1]
+
+        service = Service.objects.create(
+            name="Test Service",
+            instance_name="test-instance",
+            type="test_service",
+            url="https://example.com",
+            config={
+                "webhooks": [
+                    {
+                        "url": f"http://localhost:{port}/webhook",
+                        "method": "POST",
+                        "body": {"event_type": {"$val": "event_type"}},
+                    }
+                ]
+            },
+        )
+
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service,
+            operator=sample_operator,
+            is_active=False,
+        )
+
+        time.sleep(0.1)
+        MockWebhookServer.requests_received.clear()
+
+        Account.objects.create(
+            email="admin@test.org",
+            organization=sample_organization,
+            roles=["admin"],
+        )
+
+        time.sleep(0.1)
+
+        requests = webhook_server.RequestHandlerClass.requests_received
+        assert len(requests) == 0
+
+    def test_account_webhook_on_account_update(
+        self, webhook_server, sample_organization, sample_operator
+    ):
+        """Test that webhook fires when an existing account is updated."""
+        port = webhook_server.server_address[1]
+
+        service = Service.objects.create(
+            name="Test Service",
+            instance_name="test-instance",
+            type="test_service",
+            url="https://example.com",
+            config={
+                "webhooks": [
+                    {
+                        "url": f"http://localhost:{port}/webhook",
+                        "method": "POST",
+                        "body": {
+                            "event_type": {"$val": "event_type"},
+                            "account_email": {"$val": "account_email"},
+                            "account_roles": {"$val": "account_roles"},
+                        },
+                    }
+                ]
+            },
+        )
+
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service,
+            operator=sample_operator,
+        )
+
+        account = Account.objects.create(
+            email="user@test.org",
+            organization=sample_organization,
+            roles=[],
+        )
+
+        time.sleep(0.1)
+        MockWebhookServer.requests_received.clear()
+
+        # Update account to add a global role
+        account.roles = ["admin"]
+        account.save()
+
+        time.sleep(0.1)
+
+        requests = webhook_server.RequestHandlerClass.requests_received
+        assert len(requests) == 1
+        body = requests[0]["body"]
+        assert body["event_type"] == "account.updated"
+        assert body["account_roles"] == ["admin"]
+
+    def test_account_webhook_no_service_without_webhooks(
+        self, sample_organization, sample_operator
+    ):
+        """Test that no error occurs when services have no webhook config."""
+        service = Service.objects.create(
+            name="Test Service",
+            instance_name="test-instance",
+            type="test_service",
+            url="https://example.com",
+            config={},
+        )
+
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service,
+            operator=sample_operator,
+        )
+
+        # Should not raise
+        account = Account.objects.create(
+            email="admin@test.org",
+            organization=sample_organization,
+            roles=["admin"],
+        )
+
+        assert account.id is not None

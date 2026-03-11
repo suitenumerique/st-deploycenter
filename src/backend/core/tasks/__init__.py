@@ -7,9 +7,11 @@ This package contains all Celery tasks for the core application.
 # Import DPNT tasks
 # Import datagouv tasks
 from .datagouv import (
+    upload_deployment_adherents_dataset,
     upload_deployment_metrics_dataset,
     upload_deployment_operators_dataset,
     upload_deployment_services_dataset,
+    upload_deployment_subscriptions_dataset,
 )
 from .dpnt import import_dpnt_dataset
 
@@ -26,4 +28,6 @@ __all__ = [
     "upload_deployment_services_dataset",
     "upload_deployment_metrics_dataset",
     "upload_deployment_operators_dataset",
+    "upload_deployment_subscriptions_dataset",
+    "upload_deployment_adherents_dataset",
 ]

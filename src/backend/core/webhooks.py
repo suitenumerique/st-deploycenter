@@ -268,29 +268,9 @@ class WebhookClient:
                 logger.error("Invalid webhook configuration: %s", str(e))
                 # Continue with other valid configurations
 
-    def send_webhooks(
-        self,
-        event_type: str,
-        subscription,
-        organization,
-        service,
-        user=None,
-    ) -> List[Dict[str, Any]]:
-        """
-        Send webhook notifications for a subscription event.
-
-        Args:
-            event_type: Type of event (e.g., "subscription.created", "subscription.updated")
-            subscription: ServiceSubscription instance
-            organization: Organization instance
-            service: Service instance
-            user: User instance who performed the action (optional)
-
-        Returns:
-            List of results from each webhook attempt
-        """
-        results = []
-        # Fetch organization-level roles (accounts with global roles)
+    @staticmethod
+    def _build_roles_context(organization, service):
+        """Build organization and service roles context data."""
         organization_roles = [
             {"email": account.email, "roles": account.roles}
             for account in Account.objects.filter(organization=organization).exclude(
@@ -298,8 +278,6 @@ class WebhookClient:
             )
         ]
 
-        # Fetch service-specific roles (accounts linked to this service with roles)
-        # Aggregate by email into dict format
         email_roles = defaultdict(dict)
         for link in (
             AccountServiceLink.objects.filter(
@@ -314,8 +292,12 @@ class WebhookClient:
             {"email": email, "roles": roles} for email, roles in email_roles.items()
         ]
 
-        context_data = {
-            # Internal reference (not a template value)
+        return organization_roles, service_roles
+
+    @staticmethod
+    def _build_base_context(event_type, organization, service, subscription, user):
+        """Build context data shared between subscription and account webhooks."""
+        return {
             "_organization": organization,
             "event_type": event_type,
             "timestamp": timezone.now().isoformat(),
@@ -354,11 +336,101 @@ class WebhookClient:
             "user_id": str(user.id) if user else "",
             "user_email": user.email if user else "",
             "user_name": user.full_name if user else "",
-            # Roles (non-customizable JSON objects)
-            "organization_roles": organization_roles,
-            "service_roles": service_roles,
         }
 
+    def send_webhooks(
+        self,
+        event_type: str,
+        subscription,
+        organization,
+        service,
+        user=None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Send webhook notifications for a subscription event.
+
+        Args:
+            event_type: Type of event (e.g., "subscription.created", "subscription.updated")
+            subscription: ServiceSubscription instance
+            organization: Organization instance
+            service: Service instance
+            user: User instance who performed the action (optional)
+
+        Returns:
+            List of results from each webhook attempt
+        """
+        organization_roles, service_roles = self._build_roles_context(
+            organization, service
+        )
+
+        context_data = self._build_base_context(
+            event_type, organization, service, subscription, user
+        )
+        context_data.update(
+            {
+                "organization_roles": organization_roles,
+                "service_roles": service_roles,
+            }
+        )
+
+        return self._dispatch_webhooks(event_type, context_data)
+
+    def send_account_webhooks(
+        self,
+        event_type: str,
+        account,
+        subscription,
+        organization,
+        service,
+        user=None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Send webhook notifications for an account event.
+
+        Args:
+            event_type: Type of event (e.g., "account.updated")
+            account: Account instance
+            subscription: ServiceSubscription instance
+            organization: Organization instance
+            service: Service instance
+            user: User instance who performed the action (optional)
+
+        Returns:
+            List of results from each webhook attempt
+        """
+        organization_roles, service_roles = self._build_roles_context(
+            organization, service
+        )
+
+        # Build account-specific service roles
+        account_service_roles = {}
+        for link in account.service_links.filter(service=service).exclude(role=""):
+            account_service_roles[link.role] = {"scope": link.scope or {}}
+
+        context_data = self._build_base_context(
+            event_type, organization, service, subscription, user
+        )
+        context_data.update(
+            {
+                "organization_roles": organization_roles,
+                "service_roles": service_roles,
+                # Account data
+                "account_id": str(account.id),
+                "account_email": account.email,
+                "account_external_id": account.external_id,
+                "account_type": account.type,
+                "account_roles": account.roles,
+                "account_service_roles": account_service_roles,
+            }
+        )
+
+        return self._dispatch_webhooks(event_type, context_data)
+
+    def _dispatch_webhooks(
+        self, event_type: str, context_data: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Dispatch webhooks to all configured endpoints for the given event type."""
+        results = []
         for webhook_config in self.webhook_configs:
             try:
                 if (
