@@ -18,6 +18,12 @@ from core.models import (
     Service,
     ServiceSubscription,
 )
+from core.signals import (
+    _mask_email,
+    get_request_user,
+    request_user_context,
+    suppress_account_webhooks,
+)
 from core.webhooks import WebhookClient, WebhookConfig, WebhookError
 
 
@@ -2322,11 +2328,62 @@ class TestAccountWebhooks:
         body = requests[-1]["body"]
         assert body["event_type"] == "account.updated"
 
+    def test_account_webhook_sent_on_delete_with_service_links_only(
+        self, webhook_server, sample_organization, sample_operator
+    ):
+        """Deleting an account that has service links but no global roles
+        must still notify the linked services."""
+        port = webhook_server.server_address[1]
+
+        service = Service.objects.create(
+            name="Test Service",
+            instance_name="test-instance",
+            type="test_service",
+            url="https://example.com",
+            config={
+                "webhooks": [
+                    {
+                        "url": f"http://localhost:{port}/webhook",
+                        "method": "POST",
+                        "body": {
+                            "event_type": {"$val": "event_type"},
+                            "account_email": {"$val": "account_email"},
+                        },
+                    }
+                ]
+            },
+        )
+
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service,
+            operator=sample_operator,
+        )
+
+        account = Account.objects.create(
+            email="user@test.org",
+            organization=sample_organization,
+            roles=[],
+        )
+        AccountServiceLink.objects.create(
+            account=account, service=service, role="editor"
+        )
+
+        time.sleep(0.1)
+        MockWebhookServer.requests_received.clear()
+
+        account.delete()
+
+        time.sleep(0.1)
+
+        requests = webhook_server.RequestHandlerClass.requests_received
+        assert len(requests) >= 1
+        assert any(r["body"]["account_email"] == "user@test.org" for r in requests)
+
     def test_suppress_account_webhooks_prevents_signals(
         self, webhook_server, sample_organization, sample_operator
     ):
         """Test that suppress_account_webhooks prevents webhook dispatch."""
-        from core.signals import suppress_account_webhooks
 
         port = webhook_server.server_address[1]
 
@@ -2387,24 +2444,20 @@ class TestMaskEmail:
     """Test email masking utility."""
 
     def test_mask_email_normal(self):
-        from core.signals import _mask_email
-
+        """Normal email is masked after first 3 chars."""
         assert _mask_email("user@example.com") == "use***@example.com"
 
     def test_mask_email_short_local(self):
-        from core.signals import _mask_email
-
+        """Short local part keeps only first char."""
         assert _mask_email("ab@example.com") == "a***@example.com"
 
     def test_mask_email_empty(self):
-        from core.signals import _mask_email
-
+        """Empty or None returns '***'."""
         assert _mask_email("") == "***"
         assert _mask_email(None) == "***"
 
     def test_mask_email_no_at(self):
-        from core.signals import _mask_email
-
+        """String without @ returns '***'."""
         assert _mask_email("noemail") == "***"
 
 
@@ -2413,16 +2466,14 @@ class TestRequestUserContext:
     """Test request_user_context cleanup."""
 
     def test_context_resets_after_exit(self):
-        from core.signals import get_request_user, request_user_context
-
+        """User is reset to None after context manager exits."""
         assert get_request_user() is None
         with request_user_context("test_user"):
             assert get_request_user() == "test_user"
         assert get_request_user() is None
 
     def test_context_resets_on_exception(self):
-        from core.signals import get_request_user, request_user_context
-
+        """User is reset even when an exception is raised."""
         assert get_request_user() is None
         try:
             with request_user_context("test_user"):

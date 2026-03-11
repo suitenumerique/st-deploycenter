@@ -177,9 +177,7 @@ class AccountViewSet(
             elif isinstance(raw_roles, dict):
                 for role_name, config in raw_roles.items():
                     if not isinstance(role_name, str):
-                        raise ValidationError(
-                            {"roles": "Role names must be strings."}
-                        )
+                        raise ValidationError({"roles": "Role names must be strings."})
                     if config is not None and not isinstance(config, dict):
                         raise ValidationError(
                             {
