@@ -69,7 +69,7 @@ The frontend computes a **default** mode when no explicit choice has been persis
 - Otherwise -> default is `"manual"`
 
 The service card displays:
-- **"Defaut: Tous"** or **"Defaut: Specifiques"** when using the computed default
+- **"Défaut: Tous"** or **"Défaut: Specifiques"** when using the computed default
 - **"Tous"** or **"Manuels"** when an explicit choice has been saved
 
 When the operator saves a choice in the modal, it's persisted via `PATCH /subscription/` with `{ metadata: { auto_admin: "..." } }`. Existing metadata keys are preserved.
@@ -80,13 +80,13 @@ When the operator saves a choice in the modal, it's persisted via `PATCH /subscr
 - Population: 500 (under threshold)
 - No `auto_admin` in metadata
 - Result: all users are admin (level: `"population"`)
-- Card shows: "Defaut: Tous"
+- Card shows: "Défaut: Tous"
 
 ### Large commune, no explicit choice
 - Population: 10000 (over threshold)
 - No `auto_admin` in metadata
 - Result: only explicit admins/email contacts get admin
-- Card shows: "Defaut: Specifiques"
+- Card shows: "Défaut: Specifiques"
 
 ### Operator forces all-admin on large commune
 - Population: 10000
