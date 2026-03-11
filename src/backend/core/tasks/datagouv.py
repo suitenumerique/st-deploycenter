@@ -314,6 +314,7 @@ def upload_deployment_subscriptions_dataset():
         )
         .filter(organization__type__in=["commune", "epci", "departement", "region"])
         .filter(service__is_active=True)
+        .filter(operator__is_active=True)
         .filter(is_active=True)
     )
 

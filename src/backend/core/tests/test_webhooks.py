@@ -2268,3 +2268,166 @@ class TestAccountWebhooks:
         )
 
         assert account.id is not None
+
+    def test_account_webhook_sent_on_account_delete_with_global_role(
+        self, webhook_server, sample_organization, sample_operator
+    ):
+        """Test that account.updated webhook is sent when an account
+        with global roles is deleted."""
+        port = webhook_server.server_address[1]
+
+        service = Service.objects.create(
+            name="Test Service",
+            instance_name="test-instance",
+            type="test_service",
+            url="https://example.com",
+            config={
+                "webhooks": [
+                    {
+                        "url": f"http://localhost:{port}/webhook",
+                        "method": "POST",
+                        "body": {
+                            "event_type": {"$val": "event_type"},
+                            "account_email": {"$val": "account_email"},
+                            "account_roles": {"$val": "account_roles"},
+                        },
+                    }
+                ]
+            },
+        )
+
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service,
+            operator=sample_operator,
+            metadata={},
+        )
+
+        account = Account.objects.create(
+            email="admin@test.org",
+            organization=sample_organization,
+            roles=["admin"],
+        )
+
+        time.sleep(0.1)
+        MockWebhookServer.requests_received.clear()
+
+        # Delete the account
+        account.delete()
+
+        time.sleep(0.1)
+
+        requests = webhook_server.RequestHandlerClass.requests_received
+        assert len(requests) >= 1
+        body = requests[-1]["body"]
+        assert body["event_type"] == "account.updated"
+
+    def test_suppress_account_webhooks_prevents_signals(
+        self, webhook_server, sample_organization, sample_operator
+    ):
+        """Test that suppress_account_webhooks prevents webhook dispatch."""
+        from core.signals import suppress_account_webhooks
+
+        port = webhook_server.server_address[1]
+
+        service = Service.objects.create(
+            name="Test Service",
+            instance_name="test-instance",
+            type="test_service",
+            url="https://example.com",
+            config={
+                "webhooks": [
+                    {
+                        "url": f"http://localhost:{port}/webhook",
+                        "method": "POST",
+                        "body": {
+                            "event_type": {"$val": "event_type"},
+                        },
+                    }
+                ]
+            },
+        )
+
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service,
+            operator=sample_operator,
+        )
+
+        account = Account.objects.create(
+            email="user@test.org",
+            organization=sample_organization,
+            roles=["admin"],
+        )
+
+        time.sleep(0.1)
+        MockWebhookServer.requests_received.clear()
+
+        # Changes inside suppress block should NOT trigger webhooks
+        with suppress_account_webhooks():
+            account.roles = ["editor"]
+            account.save()
+            AccountServiceLink.objects.create(
+                account=account, service=service, role="viewer"
+            )
+
+        time.sleep(0.1)
+        assert len(webhook_server.RequestHandlerClass.requests_received) == 0
+
+        # Changes outside suppress block should trigger webhooks normally
+        account.roles = ["admin"]
+        account.save()
+
+        time.sleep(0.1)
+        assert len(webhook_server.RequestHandlerClass.requests_received) == 1
+
+
+@pytest.mark.django_db
+class TestMaskEmail:
+    """Test email masking utility."""
+
+    def test_mask_email_normal(self):
+        from core.signals import _mask_email
+
+        assert _mask_email("user@example.com") == "use***@example.com"
+
+    def test_mask_email_short_local(self):
+        from core.signals import _mask_email
+
+        assert _mask_email("ab@example.com") == "a***@example.com"
+
+    def test_mask_email_empty(self):
+        from core.signals import _mask_email
+
+        assert _mask_email("") == "***"
+        assert _mask_email(None) == "***"
+
+    def test_mask_email_no_at(self):
+        from core.signals import _mask_email
+
+        assert _mask_email("noemail") == "***"
+
+
+@pytest.mark.django_db
+class TestRequestUserContext:
+    """Test request_user_context cleanup."""
+
+    def test_context_resets_after_exit(self):
+        from core.signals import get_request_user, request_user_context
+
+        assert get_request_user() is None
+        with request_user_context("test_user"):
+            assert get_request_user() == "test_user"
+        assert get_request_user() is None
+
+    def test_context_resets_on_exception(self):
+        from core.signals import get_request_user, request_user_context
+
+        assert get_request_user() is None
+        try:
+            with request_user_context("test_user"):
+                assert get_request_user() == "test_user"
+                raise ValueError("boom")
+        except ValueError:
+            pass
+        assert get_request_user() is None

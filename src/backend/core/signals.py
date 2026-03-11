@@ -2,6 +2,7 @@
 # pylint: disable=unused-argument
 
 import logging
+from contextlib import contextmanager
 from contextvars import ContextVar
 
 from django.db.models.signals import post_delete, post_save
@@ -15,15 +16,45 @@ logger = logging.getLogger(__name__)
 # Context variable for request user (works in sync and async contexts)
 _request_user: ContextVar = ContextVar("request_user", default=None)
 
+# Context variable to temporarily suppress account webhook signals
+_suppress_account_webhooks: ContextVar = ContextVar(
+    "suppress_account_webhooks", default=False
+)
 
-def set_request_user(user):
-    """Store the current request user in context variable."""
-    _request_user.set(user)
+
+@contextmanager
+def request_user_context(user):
+    """Context manager that sets and auto-resets the request user."""
+    token = _request_user.set(user)
+    try:
+        yield
+    finally:
+        _request_user.reset(token)
+
+
+@contextmanager
+def suppress_account_webhooks():
+    """Temporarily suppress automatic account webhook dispatch from signals."""
+    token = _suppress_account_webhooks.set(True)
+    try:
+        yield
+    finally:
+        _suppress_account_webhooks.reset(token)
 
 
 def get_request_user():
     """Retrieve the current request user from context variable."""
     return _request_user.get()
+
+
+def _mask_email(email):
+    """Mask an email for logging (e.g., 'use***@test.org')."""
+    if not email or "@" not in email:
+        return "***"
+    local, domain = email.split("@", 1)
+    if len(local) > 3:
+        return f"{local[:3]}***@{domain}"
+    return f"{local[0]}***@{domain}"
 
 
 @receiver(post_save, sender=ServiceSubscription)
@@ -126,24 +157,18 @@ def handle_subscription_delete(sender, instance, **kwargs):
         logger.debug("No webhook configurations found for service %s", service.name)
 
 
-def _send_account_webhooks(account, service_ids_override=None):
+def send_account_webhooks(account, service_ids_override=None):
     """
     Send account.updated webhooks to all active services for the account's org.
 
     Triggers for a given service if:
     - The account has a global role (non-empty Account.roles), OR
     - The account has (or had) a service link for that service
-
-    Args:
-        account: Account instance
-        service_ids_override: Optional set of service IDs to always include
-            (used for deleted service links)
     """
     organization = account.organization
     user = get_request_user()
     has_global_role = bool(account.roles)
 
-    # Get service IDs where this account has service links
     linked_service_ids = set(
         AccountServiceLink.objects.filter(account=account)
         .values_list("service_id", flat=True)
@@ -152,7 +177,6 @@ def _send_account_webhooks(account, service_ids_override=None):
     if service_ids_override:
         linked_service_ids = linked_service_ids | service_ids_override
 
-    # Get all active subscriptions for this org
     subscriptions = ServiceSubscription.objects.filter(
         organization=organization, is_active=True
     ).select_related("service", "operator")
@@ -192,10 +216,23 @@ def handle_account_save(sender, instance, created, **kwargs):
     logger.info(
         "Account %s: %s (%s)",
         "created" if created else "updated",
-        instance.email,
+        _mask_email(instance.email),
         instance.organization.name,
     )
-    _send_account_webhooks(instance)
+    if not _suppress_account_webhooks.get():
+        send_account_webhooks(instance)
+
+
+@receiver(post_delete, sender=Account)
+def handle_account_delete(sender, instance, **kwargs):
+    """Send account.updated webhooks when an account is deleted."""
+    logger.info(
+        "Account deleted: %s (%s)",
+        _mask_email(instance.email),
+        instance.organization.name,
+    )
+    if not _suppress_account_webhooks.get():
+        send_account_webhooks(instance)
 
 
 @receiver(post_save, sender=AccountServiceLink)
@@ -203,11 +240,12 @@ def handle_service_link_save(sender, instance, **kwargs):
     """Send account.updated webhooks when a service link is created or modified."""
     logger.info(
         "AccountServiceLink saved: %s -> %s (%s)",
-        instance.account.email,
+        _mask_email(instance.account.email),
         instance.service.name,
         instance.role,
     )
-    _send_account_webhooks(instance.account)
+    if not _suppress_account_webhooks.get():
+        send_account_webhooks(instance.account)
 
 
 @receiver(post_delete, sender=AccountServiceLink)
@@ -215,9 +253,11 @@ def handle_service_link_delete(sender, instance, **kwargs):
     """Send account.updated webhooks when a service link is deleted."""
     logger.info(
         "AccountServiceLink deleted: %s -> %s (%s)",
-        instance.account.email,
+        _mask_email(instance.account.email),
         instance.service.name,
         instance.role,
     )
-    # Include the deleted link's service so the webhook fires even though the link is gone
-    _send_account_webhooks(instance.account, service_ids_override={instance.service_id})
+    if not _suppress_account_webhooks.get():
+        send_account_webhooks(
+            instance.account, service_ids_override={instance.service_id}
+        )
