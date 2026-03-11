@@ -839,7 +839,7 @@ class ServiceAdmin(admin.ModelAdmin):
     change_form_template = "admin/core/service/change_form.html"
     list_display = ("name", "instance_name", "type", "url", "is_active", "created_at")
     actions = ["duplicate_service"]
-    list_filter = ("is_active", "created_at")
+    list_filter = ("type", "is_active", "created_at")
     search_fields = ("name", "type", "description")
     ordering = ("name", "type", "url")
     readonly_fields = ("id", "created_at", "updated_at", "entitlements_api_key_display")
@@ -1277,12 +1277,66 @@ class OperatorServiceConfigAdmin(admin.ModelAdmin):
     )
 
 
+class ServiceTypeFilter(admin.SimpleListFilter):
+    """Filter subscriptions by service type."""
+
+    title = _("service type")
+    parameter_name = "service__type"
+
+    def lookups(self, request, model_admin):
+        types = (
+            models.Service.objects.values_list("type", flat=True)
+            .distinct()
+            .order_by("type")
+        )
+        return [(t, t) for t in types]
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(service__type=self.value())
+        return queryset
+
+
+class OrganizationTypeFilter(admin.SimpleListFilter):
+    """Filter subscriptions by organization type."""
+
+    title = _("organization type")
+    parameter_name = "organization__type"
+
+    def lookups(self, request, model_admin):
+        types = (
+            models.Organization.objects.values_list("type", flat=True)
+            .distinct()
+            .order_by("type")
+        )
+        return [(t, t) for t in types]
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(organization__type=self.value())
+        return queryset
+
+
 @admin.register(models.ServiceSubscription)
 class ServiceSubscriptionAdmin(admin.ModelAdmin):
     """Admin class for the ServiceSubscription model"""
 
-    list_display = ("organization", "operator", "service", "created_at")
-    list_filter = ("operator", "service", "created_at")
+    list_display = (
+        "organization",
+        "organization__type",
+        "operator",
+        "service",
+        "is_active",
+        "created_at",
+    )
+    list_filter = (
+        "operator",
+        "service",
+        ServiceTypeFilter,
+        OrganizationTypeFilter,
+        "is_active",
+        "created_at",
+    )
     search_fields = (
         "organization__name",
         "service__name",
@@ -1459,7 +1513,12 @@ class MetricAdmin(admin.ModelAdmin):
     """Admin class for the Metric model"""
 
     list_display = ("key", "value", "service", "organization", "timestamp")
-    list_filter = ("timestamp", "organization__operator_roles__operator", "service")
+    list_filter = (
+        "key",
+        "timestamp",
+        "organization__operator_roles__operator",
+        "service",
+    )
     search_fields = ("key", "organization__name", "service__name", "service__type")
     ordering = ("-timestamp", "key")
     readonly_fields = ("id", "timestamp")
@@ -1488,8 +1547,12 @@ class AccountAdmin(admin.ModelAdmin):
 
     change_list_template = "admin/core/account/change_list.html"
 
-    list_display = ("id", "external_id", "type", "email", "organization")
-    list_filter = ("type", "organization__operator_roles__operator")
+    list_display = ("id", "external_id", "type", "email", "organization", "roles")
+    list_filter = (
+        "type",
+        "organization__type",
+        "organization__operator_roles__operator",
+    )
     search_fields = ("external_id", "email", "organization__name")
     ordering = ("organization__name", "type", "external_id")
     readonly_fields = ("id", "created_at", "updated_at")
@@ -1686,7 +1749,7 @@ class AccountServiceLinkAdmin(admin.ModelAdmin):
     """Admin class for the AccountServiceLink model"""
 
     list_display = ("id", "account", "service", "role", "scope")
-    list_filter = ("service",)
+    list_filter = ("role", "service", "service__type")
     search_fields = (
         "account__email",
         "account__external_id",
@@ -1702,7 +1765,12 @@ class EntitlementAdmin(admin.ModelAdmin):
     """Admin class for the Entitlement model"""
 
     list_display = ("service_subscription", "type", "account_type", "account")
-    list_filter = ("type", "account_type", "created_at")
+    list_filter = (
+        "type",
+        "account_type",
+        "service_subscription__service",
+        "created_at",
+    )
     search_fields = (
         "service_subscription__organization__name",
         "type",

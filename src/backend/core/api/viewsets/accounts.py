@@ -17,6 +17,11 @@ from core import models
 from core.api import permissions, serializers
 from core.api.filters import AccountFilter
 from core.authentication import ExternalManagementApiKeyAuthentication
+from core.signals import (
+    request_user_context,
+    send_account_webhooks,
+    suppress_account_webhooks,
+)
 
 
 class OrganizationAccountsViewSet(
@@ -69,33 +74,36 @@ class OrganizationAccountsViewSet(
         its roles are updated instead of creating a duplicate.
         Returns 201 on creation, 200 on update.
         """
-        organization_id = self.kwargs["organization_id"]
-        try:
-            organization = models.Organization.objects.get(id=organization_id)
-        except models.Organization.DoesNotExist as err:
-            raise NotFound("Organization not found.") from err
+        with request_user_context(request.user):
+            organization_id = self.kwargs["organization_id"]
+            try:
+                organization = models.Organization.objects.get(id=organization_id)
+            except models.Organization.DoesNotExist as err:
+                raise NotFound("Organization not found.") from err
 
-        existing = models.Account.find_by_identifiers(
-            organization=organization,
-            account_type=request.data.get("type", "user"),
-            external_id=request.data.get("external_id", ""),
-            email=request.data.get("email", ""),
-            reconcile_external_id=True,
-        )
+            existing = models.Account.find_by_identifiers(
+                organization=organization,
+                account_type=request.data.get("type", "user"),
+                external_id=request.data.get("external_id", ""),
+                email=request.data.get("email", ""),
+                reconcile_external_id=True,
+            )
 
-        if existing:
-            serializer = self.get_serializer(existing, data=request.data, partial=True)
+            if existing:
+                serializer = self.get_serializer(
+                    existing, data=request.data, partial=True
+                )
+                serializer.is_valid(raise_exception=True)
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_200_OK)
+
+            serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_200_OK)
-
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save(organization=organization)
-        headers = self.get_success_headers(serializer.data)
-        return Response(
-            serializer.data, status=status.HTTP_201_CREATED, headers=headers
-        )
+            serializer.save(organization=organization)
+            headers = self.get_success_headers(serializer.data)
+            return Response(
+                serializer.data, status=status.HTTP_201_CREATED, headers=headers
+            )
 
 
 class AccountViewSet(
@@ -135,6 +143,16 @@ class AccountViewSet(
         AccountPermission,
     ]
 
+    def perform_update(self, serializer):
+        """Set request user context before saving account updates."""
+        with request_user_context(self.request.user):
+            serializer.save()
+
+    def perform_destroy(self, instance):
+        """Set request user context before deleting an account."""
+        with request_user_context(self.request.user):
+            instance.delete()
+
     @action(detail=True, methods=["patch"], url_path="services/(?P<service_id>[^/.]+)")
     @transaction.atomic
     def service_link_update(self, request, *args, **kwargs):
@@ -144,54 +162,62 @@ class AccountViewSet(
         - List (legacy): {"roles": ["admin", "editor"]} → each role gets empty scope
         - Dict (new): {"roles": {"admin": {"scope": {"domains": ["x.fr"]}}}}
         """
-        account = self.get_object()
-        service = get_object_or_404(models.Service, id=kwargs["service_id"])
+        with request_user_context(request.user):
+            account = self.get_object()
+            service = get_object_or_404(models.Service, id=kwargs["service_id"])
 
-        raw_roles = request.data.get("roles", {})
+            raw_roles = request.data.get("roles", {})
 
-        if isinstance(raw_roles, list):
-            if not all(isinstance(r, str) for r in raw_roles):
-                raise ValidationError({"roles": "List format must contain strings."})
-            desired = {role_name: {"scope": {}} for role_name in raw_roles}
-        elif isinstance(raw_roles, dict):
-            for role_name, config in raw_roles.items():
-                if not isinstance(role_name, str):
-                    raise ValidationError({"roles": "Role names must be strings."})
-                if config is not None and not isinstance(config, dict):
+            if isinstance(raw_roles, list):
+                if not all(isinstance(r, str) for r in raw_roles):
                     raise ValidationError(
-                        {
-                            "roles": f"Role '{role_name}' config must be an object or null."
-                        }
+                        {"roles": "List format must contain strings."}
                     )
-            desired = raw_roles
-        else:
-            raise ValidationError({"roles": "Must be a list or object."})
-
-        # Diff with existing DB rows and create/update/delete
-        existing = {
-            link.role: link for link in account.service_links.filter(service=service)
-        }
-
-        for role_name, config in desired.items():
-            scope = (config or {}).get("scope", {})
-            if role_name in existing:
-                link = existing[role_name]
-                if link.scope != scope:
-                    link.scope = scope
-                    link.save(update_fields=["scope"])
+                desired = {role_name: {"scope": {}} for role_name in raw_roles}
+            elif isinstance(raw_roles, dict):
+                for role_name, config in raw_roles.items():
+                    if not isinstance(role_name, str):
+                        raise ValidationError({"roles": "Role names must be strings."})
+                    if config is not None and not isinstance(config, dict):
+                        raise ValidationError(
+                            {
+                                "roles": f"Role '{role_name}' config must be "
+                                "an object or null."
+                            }
+                        )
+                desired = raw_roles
             else:
-                account.service_links.create(
-                    service=service, role=role_name, scope=scope
-                )
+                raise ValidationError({"roles": "Must be a list or object."})
 
-        # Delete roles no longer present
-        roles_to_delete = set(existing.keys()) - set(desired.keys())
-        if roles_to_delete:
-            account.service_links.filter(
-                service=service, role__in=roles_to_delete
-            ).delete()
+            # Suppress per-link webhook signals; we send one at the end
+            with suppress_account_webhooks():
+                existing = {
+                    link.role: link
+                    for link in account.service_links.filter(service=service)
+                }
 
-        return Response(self._aggregate_service_links(account, service))
+                for role_name, config in desired.items():
+                    scope = (config or {}).get("scope", {})
+                    if role_name in existing:
+                        link = existing[role_name]
+                        if link.scope != scope:
+                            link.scope = scope
+                            link.save(update_fields=["scope"])
+                    else:
+                        account.service_links.create(
+                            service=service, role=role_name, scope=scope
+                        )
+
+                roles_to_delete = set(existing.keys()) - set(desired.keys())
+                if roles_to_delete:
+                    account.service_links.filter(
+                        service=service, role__in=roles_to_delete
+                    ).delete()
+
+            # Single webhook with final state
+            send_account_webhooks(account)
+
+            return Response(self._aggregate_service_links(account, service))
 
     @staticmethod
     def _aggregate_service_links(account, service):

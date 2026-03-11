@@ -12,7 +12,14 @@ from django.conf import settings
 import requests
 from celery import shared_task
 
-from ..models import Metric, Operator, OperatorServiceConfig, Service
+from ..models import (
+    Metric,
+    Operator,
+    OperatorOrganizationRole,
+    OperatorServiceConfig,
+    Service,
+    ServiceSubscription,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +144,8 @@ def upload_deployment_services_dataset():
             "id": service.id,
             "nom": service.name,
             "url": service.url,
+            "type": service.type,
+            "nom_instance": service.instance_name,
             "maturite": service.maturity or "",
             "date_lancement": service.launch_date or "",
             "logo_url": service.get_logo_url() or "",
@@ -171,11 +180,8 @@ def upload_deployment_operators_dataset():
     dataset_id = "68b0a2a1117b75b1b09edc6b"
     resource_id = "902bb360-0b60-46d2-8169-4207a01caed1"
 
-    if not resource_id:
-        raise ValueError("resource_id must be set for operators dataset upload")
-
     # First, get all operators
-    operators = Operator.objects.all().order_by("name")
+    operators = Operator.objects.filter(is_active=True).order_by("name")
 
     # Then, for each operator, get their services with display_priority >= -100
     data = []
@@ -198,6 +204,7 @@ def upload_deployment_operators_dataset():
                 "id": operator.id,
                 "nom": operator.name,
                 "url": operator.url or "",
+                "siret": operator.siret or "",
                 "services": ",".join(str(service_id) for service_id in service_ids),
                 "departements": ",".join(
                     str(departement) for departement in sorted(departements)
@@ -233,4 +240,128 @@ def upload_deployment_operators_dataset():
     return {
         "status": "success",
         "message": f"Uploaded {len(data)} operators to data.gouv.fr",
+    }
+
+
+@shared_task
+def upload_deployment_adherents_dataset():
+    """Upload deployment adherents dataset to data.gouv.fr"""
+
+    dataset_id = "68b0a2a1117b75b1b09edc6b"
+    resource_id = "ffc74be0-fb88-40cf-9048-f53e955eac28"
+
+    roles = (
+        OperatorOrganizationRole.objects.select_related("organization", "operator")
+        .filter(organization__type__in=["commune", "epci", "departement", "region"])
+        .filter(operator__is_active=True)
+    )
+
+    data = [
+        {
+            "operateur_id": role.operator.id,
+            "organisation_siret": role.organization.siret or "",
+            "organisation_type": role.organization.type,
+            "organisation_nom": role.organization.name,
+            "organisation_code_insee": role.organization.code_insee or "",
+            "role": role.role,
+        }
+        for role in roles
+    ]
+
+    if not data:
+        logger.info("No adherents to upload; skipping data.gouv upload")
+        return {
+            "status": "success",
+            "message": "No data to upload",
+        }
+
+    logger.info("Produced %s adherent rows", len(data))
+
+    buffer = io.BytesIO()
+    with gzip.GzipFile(
+        filename="adherents-quotidien.csv", fileobj=buffer, mode="wb", compresslevel=9
+    ) as gz_file:
+        with io.TextIOWrapper(gz_file, encoding="utf-8") as text_file:
+            writer = csv.DictWriter(text_file, fieldnames=data[0].keys(), delimiter=";")
+            writer.writeheader()
+            for row in data:
+                writer.writerow(row)
+
+    buffer.seek(0)
+    _upload_data_to_data_gouv(
+        dataset_id,
+        resource_id,
+        buffer.getvalue(),
+        "adherents-quotidien.csv.gz",
+    )
+
+    return {
+        "status": "success",
+        "message": f"Uploaded {len(data)} adherents to data.gouv.fr",
+    }
+
+
+@shared_task
+def upload_deployment_subscriptions_dataset():
+    """Upload deployment subscriptions dataset to data.gouv.fr"""
+
+    dataset_id = "68b0a2a1117b75b1b09edc6b"
+    resource_id = "873dab81-45a1-463f-a297-54f5d466c325"
+
+    subscriptions = (
+        ServiceSubscription.objects.select_related(
+            "organization", "service", "operator"
+        )
+        .filter(organization__type__in=["commune", "epci", "departement", "region"])
+        .filter(service__is_active=True)
+        .filter(operator__is_active=True)
+        .filter(is_active=True)
+    )
+
+    data = [
+        {
+            "operateur_id": subscription.operator.id,
+            "service_id": subscription.service.id,
+            "organisation_siret": subscription.organization.siret or "",
+            "organisation_type": subscription.organization.type,
+            "organisation_nom": subscription.organization.name,
+            "organisation_code_insee": subscription.organization.code_insee or "",
+            "date_creation": subscription.created_at.strftime("%Y-%m-%d"),
+        }
+        for subscription in subscriptions
+    ]
+
+    if not data:
+        logger.info("No subscriptions to upload; skipping data.gouv upload")
+        return {
+            "status": "success",
+            "message": "No data to upload",
+        }
+
+    logger.info("Produced %s subscription rows", len(data))
+
+    buffer = io.BytesIO()
+    with gzip.GzipFile(
+        filename="souscriptions-quotidien.csv",
+        fileobj=buffer,
+        mode="wb",
+        compresslevel=9,
+    ) as gz_file:
+        with io.TextIOWrapper(gz_file, encoding="utf-8") as text_file:
+            writer = csv.DictWriter(text_file, fieldnames=data[0].keys(), delimiter=";")
+            writer.writeheader()
+            for row in data:
+                writer.writerow(row)
+
+    buffer.seek(0)
+    _upload_data_to_data_gouv(
+        dataset_id,
+        resource_id,
+        buffer.getvalue(),
+        "souscriptions-quotidien.csv.gz",
+    )
+
+    return {
+        "status": "success",
+        "message": f"Uploaded {len(data)} subscriptions to data.gouv.fr",
     }

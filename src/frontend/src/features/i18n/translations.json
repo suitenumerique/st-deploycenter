@@ -8,7 +8,11 @@
       "app_title": "Espace Opérateur",
       "home": {
         "title": "Espace Opérateur",
-        "subtitle": "Activez et gérez simplement les services de tous vos adhérents."
+        "subtitle": "Activez et gérez simplement les services de tous vos adhérents.",
+        "access_denied": {
+          "forbidden": "Vous n'avez pas les droits pour accéder à cette page.",
+          "unauthorized": "Vous devez vous connecter pour accéder à cette page."
+        }
       },
       "login": "Connexion",
       "logout": "Déconnexion",

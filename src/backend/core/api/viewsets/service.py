@@ -16,7 +16,7 @@ from rest_framework.settings import api_settings
 
 from core import models
 from core.authentication import ExternalManagementApiKeyAuthentication
-from core.signals import set_request_user
+from core.signals import request_user_context
 
 from .. import permissions, serializers
 
@@ -194,56 +194,54 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
         Partially update or create the subscription for the operator-organization-service triple.
         Creates the subscription if it doesn't exist (upsert behavior).
         """
-        # Store the user in thread-local storage for webhook context
-        set_request_user(request.user)
+        with request_user_context(request.user):
+            queryset = self.get_queryset()
+            subscription = queryset.first()
 
-        queryset = self.get_queryset()
-        subscription = queryset.first()
+            organization = models.Organization.objects.get(
+                id=self.kwargs["organization_id"]
+            )
+            service = models.Service.objects.get(id=self.kwargs["service_id"])
+            operator = models.Operator.objects.get(id=self.kwargs["operator_id"])
 
-        organization = models.Organization.objects.get(
-            id=self.kwargs["organization_id"]
-        )
-        service = models.Service.objects.get(id=self.kwargs["service_id"])
-        operator = models.Operator.objects.get(id=self.kwargs["operator_id"])
+            # Validate request data
+            serializer = self.get_serializer(
+                subscription, data=request.data, partial=True
+            )
+            serializer.is_valid(raise_exception=True)
 
-        # Validate request data
-        serializer = self.get_serializer(subscription, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
+            if subscription:
+                # Update existing subscription
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_200_OK)
 
-        if subscription:
-            # Update existing subscription
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            # Create new subscription with provided data, using defaults for missing fields
+            is_active = serializer.validated_data.get("is_active", False)
+            metadata = serializer.validated_data.get("metadata", {})
+            subscription = models.ServiceSubscription.objects.create(
+                organization=organization,
+                service=service,
+                operator=operator,
+                is_active=is_active,
+                metadata=metadata,
+            )
 
-        # Create new subscription with provided data, using defaults for missing fields
-        is_active = serializer.validated_data.get("is_active", False)
-        metadata = serializer.validated_data.get("metadata", {})
-        subscription = models.ServiceSubscription.objects.create(
-            organization=organization,
-            service=service,
-            operator=operator,
-            is_active=is_active,
-            metadata=metadata,
-        )
+            # Apply entitlement configs if provided
+            serializer.instance = subscription
+            serializer.apply_entitlement_configs(subscription)
 
-        # Apply entitlement configs if provided
-        serializer.instance = subscription
-        serializer.apply_entitlement_configs(subscription)
-
-        return Response(
-            self.get_serializer(subscription).data, status=status.HTTP_201_CREATED
-        )
+            return Response(
+                self.get_serializer(subscription).data, status=status.HTTP_201_CREATED
+            )
 
     def destroy(self, request, *args, **kwargs):
         """
         Delete the subscription for the operator-organization-service triple.
         """
-        # Store the user in thread-local storage for webhook context
-        set_request_user(request.user)
-
-        subscription = self.get_object()
-        subscription.delete()
-        return Response({}, status=status.HTTP_204_NO_CONTENT)
+        with request_user_context(request.user):
+            subscription = self.get_object()
+            subscription.delete()
+            return Response({}, status=status.HTTP_204_NO_CONTENT)
 
 
 class OrganizationServiceSubscriptionEntitlementViewSet(
