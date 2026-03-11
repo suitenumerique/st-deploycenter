@@ -38,8 +38,8 @@ def test_subscription_entitlements_default():
         organization=organization, service=service, operator=operator
     )
 
-    assert models.Entitlement.objects.count() == 1
-    entitlement = models.Entitlement.objects.get(
+    assert models.Entitlement.objects.count() == 2
+    entitlement_user = models.Entitlement.objects.get(
         service_subscription__organization=organization,
         service_subscription__service=service,
         service_subscription__operator=operator,
@@ -47,7 +47,17 @@ def test_subscription_entitlements_default():
         account_type="user",
         account=None,
     )
-    assert entitlement.config["max_storage"] == 1000 * 1000 * 1000 * 10
+    assert entitlement_user.config["max_storage"] == 1000 * 1000 * 1000 * 10
+
+    entitlement_organization = models.Entitlement.objects.get(
+        service_subscription__organization=organization,
+        service_subscription__service=service,
+        service_subscription__operator=operator,
+        type=models.Entitlement.EntitlementType.DRIVE_STORAGE,
+        account_type="organization",
+        account=None,
+    )
+    assert entitlement_organization.config["max_storage"] == 1000 * 1000 * 1000 * 50
 
 
 @pytest.mark.django_db()
@@ -178,6 +188,8 @@ def test_api_entitlements_user_can_upload(
     account_key, account_key_value, account_key_http_alias
 ):
     """Test the can_upload entitlement for a user entitlement."""
+
+    organization = factories.OrganizationFactory(siret="12345678900001")
     metrics_usage_endpoint = "https://fichiers.suite.anct.gouv.fr/metrics/usage"
     params = {
         "account_type": "user",
@@ -185,7 +197,7 @@ def test_api_entitlements_user_can_upload(
         "limit": 1000,
         "offset": 0,
     }
-    response_mock = responses.add(
+    response_mock_user = responses.add(
         responses.GET,
         metrics_usage_endpoint,
         match=[matchers.query_param_matcher(params)],
@@ -205,35 +217,51 @@ def test_api_entitlements_user_can_upload(
         },
         status=200,
     )
+    params_organization = {
+        "account_type": "organization",
+        "account_id": str(organization.id),
+        "limit": 1000,
+        "offset": 0,
+    }
+    response_mock_organization = responses.add(
+        responses.GET,
+        metrics_usage_endpoint,
+        match=[matchers.query_param_matcher(params_organization)],
+        json={
+            "count": 1,
+            "results": [
+                {
+                    "siret": "12345678900001",
+                    "account": {
+                        "type": "organization",
+                        "id": str(organization.id),
+                    },
+                    "metrics": {"storage_used": 1000},
+                }
+            ],
+        },
+        status=200,
+    )
 
     user = factories.UserFactory()
     client = APIClient()
     client.force_login(user)
 
     operator = factories.OperatorFactory()
-    organization = factories.OrganizationFactory(siret="12345678900001")
     factories.OperatorOrganizationRoleFactory(
         operator=operator, organization=organization
     )
 
     service = factories.ServiceFactory(
+        type="drive",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
             "metrics_auth_token": "test_token",
         },
     )
-    service_subscription = factories.ServiceSubscriptionFactory(
+    factories.ServiceSubscriptionFactory(
         organization=organization, service=service, operator=operator
-    )
-    factories.EntitlementFactory(
-        service_subscription=service_subscription,
-        type=models.Entitlement.EntitlementType.DRIVE_STORAGE,
-        account_type="user",
-        account=None,
-        config={
-            "max_storage": 1000,
-        },
     )
 
     # Test that we can upload to the drive
@@ -264,23 +292,49 @@ def test_api_entitlements_user_can_upload(
     )
 
     # Metrics should be stored in the database
-    metrics = models.Metric.objects.filter(service=service, organization=organization)
-    assert metrics.count() == 1
-    assert metrics.first().value == 500
-    assert metrics.first().key == "storage_used"
-    assert metrics.first().account.type == "user"
-    assert metrics.first().account.external_id == "xyz"
-    assert metrics.first().account.email == "test@example.com"
-    assert metrics.first().organization == organization
+    metrics_user = models.Metric.objects.filter(
+        service=service,
+        organization=organization,
+        account__type="user",
+        account__external_id="xyz",
+    )
+    assert metrics_user.count() == 1
+    assert metrics_user.first().value == 500
+    assert metrics_user.first().key == "storage_used"
+    assert metrics_user.first().account.type == "user"
+    assert metrics_user.first().account.external_id == "xyz"
+    assert metrics_user.first().account.email == "test@example.com"
+    assert metrics_user.first().organization == organization
 
     # Metrics endpoint should have been called
-    assert response_mock.call_count == 1
+    assert response_mock_user.call_count == 1
     assert (
-        response_mock.calls[0].request.headers["Authorization"] == "Bearer test_token"
+        response_mock_user.calls[0].request.headers["Authorization"]
+        == "Bearer test_token"
+    )
+
+    metrics_organization = models.Metric.objects.filter(
+        service=service,
+        organization=organization,
+        account__type="organization",
+        account__external_id=str(organization.id),
+    )
+    assert metrics_organization.count() == 1
+    assert metrics_organization.first().value == 1000
+    assert metrics_organization.first().key == "storage_used"
+    assert metrics_organization.first().account.type == "organization"
+    assert metrics_organization.first().account.external_id == str(organization.id)
+    assert metrics_organization.first().organization == organization
+
+    # Metrics endpoint should have been called
+    assert response_mock_organization.call_count == 1
+    assert (
+        response_mock_organization.calls[0].request.headers["Authorization"]
+        == "Bearer test_token"
     )
 
     # Simulate storage used exceeding the max storage size
-    response_mock = responses.add(
+    responses.add(
         responses.GET,
         metrics_usage_endpoint,
         match=[matchers.query_param_matcher(params)],
@@ -294,7 +348,26 @@ def test_api_entitlements_user_can_upload(
                         "id": "xyz",
                         "email": "test@example.com",
                     },
-                    "metrics": {"storage_used": 1001},
+                    "metrics": {"storage_used": 1000 * 1000 * 1000 * 50 + 1},
+                }
+            ],
+        },
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        metrics_usage_endpoint,
+        match=[matchers.query_param_matcher(params_organization)],
+        json={
+            "count": 1,
+            "results": [
+                {
+                    "siret": "12345678900001",
+                    "account": {
+                        "type": "organization",
+                        "id": str(organization.id),
+                    },
+                    "metrics": {"storage_used": 1000 * 1000 * 1000 * 50 + 1},
                 }
             ],
         },
@@ -328,13 +401,231 @@ def test_api_entitlements_user_can_upload(
     )
 
     # Metrics should be stored in the database
-    metrics = models.Metric.objects.filter(service=service, organization=organization)
-    assert metrics.count() == 1
-    assert metrics.first().value == 1001
-    assert metrics.first().key == "storage_used"
-    assert metrics.first().account.type == "user"
-    assert metrics.first().account.external_id == "xyz"
-    assert metrics.first().organization == organization
+    metrics_user = models.Metric.objects.filter(
+        service=service,
+        organization=organization,
+        account__type="user",
+        account__external_id="xyz",
+    )
+    assert metrics_user.count() == 1
+    assert metrics_user.first().value == 1000 * 1000 * 1000 * 50 + 1
+    assert metrics_user.first().key == "storage_used"
+    assert metrics_user.first().account.type == "user"
+    assert metrics_user.first().account.external_id == "xyz"
+    assert metrics_user.first().organization == organization
+
+    # Metrics should be stored in the database for the organization
+    metrics_organization = models.Metric.objects.filter(
+        service=service,
+        organization=organization,
+        account__type="organization",
+        account__external_id=str(organization.id),
+    )
+    assert metrics_organization.count() == 1
+    assert metrics_organization.first().value == 1000 * 1000 * 1000 * 50 + 1
+    assert metrics_organization.first().key == "storage_used"
+    assert metrics_organization.first().account.type == "organization"
+    assert metrics_organization.first().account.external_id == str(organization.id)
+    assert metrics_organization.first().organization == organization
+
+
+@pytest.mark.django_db()
+@responses.activate
+@pytest.mark.parametrize(
+    "organization_storage_used,user_storage_used,can_upload,resolve_level",
+    [
+        (
+            5000,
+            500,
+            True,
+            "user",
+        ),  # User and organization have free space left
+        (
+            5000,
+            1000 * 1000 * 1000 * 10 + 1,
+            False,
+            "user",
+        ),  # User has no free space left, organization has free space left
+        (
+            1000 * 1000 * 1000 * 50 + 1,
+            500,
+            False,
+            "organization",
+        ),  # User has free space left, organization has no free space left
+        (
+            1000 * 1000 * 1000 * 50 + 1,
+            1000 * 1000 * 1000 * 10 + 1,
+            False,
+            "organization",
+        ),  # User and organization have no free space left
+    ],
+)
+@pytest.mark.parametrize(
+    "account_key,account_key_value,account_key_http_alias",
+    [["external_id", "xyz", "id"], ["email", "test@example.com", "email"]],
+)
+def test_api_entitlements_organization_can_upload(
+    organization_storage_used,
+    user_storage_used,
+    can_upload,
+    resolve_level,
+    account_key,
+    account_key_value,
+    account_key_http_alias,
+):
+    """Test the can_upload entitlement for an organization and user entitlement."""
+
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    organization = factories.OrganizationFactory(siret="12345678900001")
+
+    metrics_usage_endpoint = "https://fichiers.suite.anct.gouv.fr/metrics/usage"
+    params_user = {
+        "account_type": "user",
+        f"account_{account_key_http_alias}": account_key_value,
+        "limit": 1000,
+        "offset": 0,
+    }
+    response_mock_user = responses.add(
+        responses.GET,
+        metrics_usage_endpoint,
+        match=[matchers.query_param_matcher(params_user)],
+        json={
+            "count": 1,
+            "results": [
+                {
+                    "siret": "12345678900001",
+                    "account": {
+                        "type": "user",
+                        "id": "xyz",
+                        "email": "test@example.com",
+                    },
+                    "metrics": {"storage_used": user_storage_used},
+                }
+            ],
+        },
+        status=200,
+    )
+    params_organization = {
+        "account_type": "organization",
+        "account_id": str(organization.id),
+        "limit": 1000,
+        "offset": 0,
+    }
+    response_mock_organization = responses.add(
+        responses.GET,
+        metrics_usage_endpoint,
+        match=[matchers.query_param_matcher(params_organization)],
+        json={
+            "count": 1,
+            "results": [
+                {
+                    "siret": "12345678900001",
+                    "account": {
+                        "type": "organization",
+                        "id": str(organization.id),
+                    },
+                    "metrics": {"storage_used": organization_storage_used},
+                }
+            ],
+        },
+        status=200,
+    )
+
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    service = factories.ServiceFactory(
+        type="drive",
+        config={
+            "entitlements_api_key": "test_token",
+            "usage_metrics_endpoint": metrics_usage_endpoint,
+            "metrics_auth_token": "test_token",
+        },
+    )
+    factories.ServiceSubscriptionFactory(
+        organization=organization, service=service, operator=operator
+    )
+
+    # Test that we can upload to the drive
+    response = client.get(
+        "/api/v1.0/entitlements/",
+        query_params={
+            "service_id": service.id,
+            "account_type": "user",
+            f"account_{account_key_http_alias}": account_key_value,
+            "siret": organization.siret,
+        },
+        headers={"X-Service-Auth": "Bearer test_token"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert_equals_partial(
+        data,
+        {
+            "operator": {
+                "name": operator.name,
+            },
+            "entitlements": {
+                "can_access": True,
+                "can_upload": can_upload,
+                "can_upload_resolve_level": resolve_level,
+            },
+        },
+    )
+
+    # Check the number of created metrics for this subscription.
+    assert (
+        models.Metric.objects.filter(service=service, organization=organization).count()
+        == 2
+    )
+
+    # Metrics should be stored in the database for the user
+    metrics_user = models.Metric.objects.filter(
+        service=service,
+        organization=organization,
+        account__type="user",
+        **{f"account__{account_key}": account_key_value},
+    )
+    assert metrics_user.count() == 1
+    assert metrics_user.first().value == user_storage_used
+    assert metrics_user.first().key == "storage_used"
+    assert metrics_user.first().account.type == "user"
+    assert metrics_user.first().account.external_id == "xyz"
+    assert metrics_user.first().account.email == "test@example.com"
+    assert metrics_user.first().organization == organization
+
+    # Metrics endpoint should have been called
+    assert response_mock_user.call_count == 1
+    assert (
+        response_mock_user.calls[0].request.headers["Authorization"]
+        == "Bearer test_token"
+    )
+
+    # Metrics should be stored in the database for the organization
+    metrics_organization = models.Metric.objects.filter(
+        service=service,
+        organization=organization,
+        account__type="organization",
+        account__external_id=str(organization.id),
+    )
+    assert metrics_organization.count() == 1
+    assert metrics_organization.first().value == organization_storage_used
+    assert metrics_organization.first().key == "storage_used"
+    assert metrics_organization.first().account.type == "organization"
+    assert metrics_organization.first().account.external_id == str(organization.id)
+    assert metrics_organization.first().organization == organization
+
+    # Metrics endpoint should have been called
+    assert response_mock_organization.call_count == 1
+    assert (
+        response_mock_organization.calls[0].request.headers["Authorization"]
+        == "Bearer test_token"
+    )
 
 
 @pytest.mark.django_db()
