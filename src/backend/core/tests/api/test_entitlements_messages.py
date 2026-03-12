@@ -351,7 +351,6 @@ def test_api_entitlements_organization_can_store(
                     "siret": "12345678900001",
                     "account": {
                         "type": "organization",
-                        "id": organization.siret,
                     },
                     "metrics": {"storage_used": organization_storage_used},
                 }
@@ -564,7 +563,6 @@ def test_api_entitlements_mailbox_override_can_store(
                     "siret": "12345678900001",
                     "account": {
                         "type": "organization",
-                        "id": organization.siret,
                     },
                     "metrics": {"storage_used": 800},
                 }

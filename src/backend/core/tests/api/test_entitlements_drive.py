@@ -241,7 +241,6 @@ def test_api_entitlements_user_can_upload(
                     "siret": "12345678900001",
                     "account": {
                         "type": "organization",
-                        "id": organization.siret,
                     },
                     "metrics": {"storage_used": 1000},
                 }
@@ -372,7 +371,6 @@ def test_api_entitlements_user_can_upload(
                     "siret": "12345678900001",
                     "account": {
                         "type": "organization",
-                        "id": organization.siret,
                     },
                     "metrics": {"storage_used": 1000 * 1000 * 1000 * 50 + 1},
                 }
@@ -538,7 +536,6 @@ def test_api_entitlements_organization_can_upload(
                     "siret": "12345678900001",
                     "account": {
                         "type": "organization",
-                        "id": organization.siret,
                     },
                     "metrics": {"storage_used": organization_storage_used},
                 }
