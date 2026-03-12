@@ -487,7 +487,7 @@ def test_api_entitlements_list_usage_metrics_endpoint_error(buggy_service_server
     assert BuggyServiceServer.requests_received[0]["method"] == "GET"
     assert (
         BuggyServiceServer.requests_received[0]["path"]
-        == "/metrics/usage?account_type=user&account_id=xyz&limit=1000&offset=0"
+        == "/metrics/usage?account_type=user&account_id_value=xyz&limit=1000&offset=0"
     )
     assert (
         BuggyServiceServer.requests_received[0]["headers"]["Authorization"]

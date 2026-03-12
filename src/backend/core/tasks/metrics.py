@@ -487,8 +487,10 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
 
     for item in metrics_data:
         try:
-            # Extract organization identifier (any field that's not "metrics")
-            organization_identifiers = {k: v for k, v in item.items() if k != "metrics"}
+            # Extract organization identifier (any field that's not "metrics" or "account")
+            organization_identifiers = {
+                k: v for k, v in item.items() if k not in ("metrics", "account")
+            }
 
             if not organization_identifiers:
                 logger.warning(

@@ -165,7 +165,7 @@ class EntitlementView(APIView):
                     "account_type": account_type,
                 }
                 if account_id:
-                    scrape_filters["account_id"] = account_id
+                    scrape_filters["account_id_value"] = account_id
                 if account_email:
                     scrape_filters["account_email"] = account_email
                 scrape_service_usage_metrics(service, scrape_filters)
@@ -174,7 +174,8 @@ class EntitlementView(APIView):
                     service,
                     {
                         "account_type": "organization",
-                        "account_id": organization.id,
+                        "account_id_key": "siret",
+                        "account_id_value": siret,
                     },
                 )
 

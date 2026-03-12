@@ -62,17 +62,20 @@ def test_subscription_entitlements_default():
 
 @responses.activate
 @pytest.mark.parametrize(
-    "account_key,account_key_value,account_key_http_alias",
-    [["external_id", "xyz", "id"], ["email", "test@example.com", "email"]],
+    "account_key,account_key_value,account_key_http_alias,metrics_param_key",
+    [
+        ["external_id", "xyz", "id", "account_id_value"],
+        ["email", "test@example.com", "email", "account_email"],
+    ],
 )
 def test_api_entitlements_mailbox_can_store(
-    account_key, account_key_value, account_key_http_alias
+    account_key, account_key_value, account_key_http_alias, metrics_param_key
 ):
     """Test the can_store entitlement for a mailbox entitlement."""
     metrics_usage_endpoint = "https://messages.suite.anct.gouv.fr/metrics/usage"
     params = {
         "account_type": "mailbox",
-        f"account_{account_key_http_alias}": account_key_value,
+        metrics_param_key: account_key_value,
         "limit": 1000,
         "offset": 0,
     }
@@ -278,8 +281,11 @@ def test_api_entitlements_mailbox_can_store(
     ],
 )
 @pytest.mark.parametrize(
-    "account_key,account_key_value,account_key_http_alias",
-    [["external_id", "xyz", "id"], ["email", "test@example.com", "email"]],
+    "account_key,account_key_value,account_key_http_alias,metrics_param_key",
+    [
+        ["external_id", "xyz", "id", "account_id_value"],
+        ["email", "test@example.com", "email", "account_email"],
+    ],
 )
 def test_api_entitlements_organization_can_store(
     organization_storage_used,
@@ -289,6 +295,7 @@ def test_api_entitlements_organization_can_store(
     account_key,
     account_key_value,
     account_key_http_alias,
+    metrics_param_key,
 ):
     """Test the can_store entitlement for an organization and mailbox entitlement."""
 
@@ -302,7 +309,7 @@ def test_api_entitlements_organization_can_store(
     metrics_usage_endpoint = "https://messages.suite.anct.gouv.fr/metrics/usage"
     params_mailbox = {
         "account_type": "mailbox",
-        f"account_{account_key_http_alias}": account_key_value,
+        metrics_param_key: account_key_value,
         "limit": 1000,
         "offset": 0,
     }
@@ -328,7 +335,8 @@ def test_api_entitlements_organization_can_store(
     )
     params_organization = {
         "account_type": "organization",
-        "account_id": str(organization.id),
+        "account_id_key": "siret",
+        "account_id_value": organization.siret,
         "limit": 1000,
         "offset": 0,
     }
@@ -343,7 +351,7 @@ def test_api_entitlements_organization_can_store(
                     "siret": "12345678900001",
                     "account": {
                         "type": "organization",
-                        "id": str(organization.id),
+                        "id": organization.siret,
                     },
                     "metrics": {"storage_used": organization_storage_used},
                 }
@@ -463,13 +471,13 @@ def test_api_entitlements_organization_can_store(
         service=service,
         organization=organization,
         account__type="organization",
-        account__external_id=str(organization.id),
+        account__external_id=organization.siret,
     )
     assert metrics_organization.count() == 1
     assert metrics_organization.first().value == organization_storage_used
     assert metrics_organization.first().key == "storage_used"
     assert metrics_organization.first().account.type == "organization"
-    assert metrics_organization.first().account.external_id == str(organization.id)
+    assert metrics_organization.first().account.external_id == organization.siret
     assert metrics_organization.first().organization == organization
 
     # Metrics endpoint should have been called
@@ -489,8 +497,11 @@ def test_api_entitlements_organization_can_store(
     ],
 )
 @pytest.mark.parametrize(
-    "account_key,account_key_value,account_key_http_alias",
-    [["external_id", "xyz", "id"], ["email", "test@example.com", "email"]],
+    "account_key,account_key_value,account_key_http_alias,metrics_param_key",
+    [
+        ["external_id", "xyz", "id", "account_id_value"],
+        ["email", "test@example.com", "email", "account_email"],
+    ],
 )
 def test_api_entitlements_mailbox_override_can_store(
     override_max_storage,
@@ -500,6 +511,7 @@ def test_api_entitlements_mailbox_override_can_store(
     account_key,
     account_key_value,
     account_key_http_alias,
+    metrics_param_key,
 ):
     """Test the can_store entitlement with a mailbox override."""
 
@@ -509,7 +521,7 @@ def test_api_entitlements_mailbox_override_can_store(
     metrics_usage_endpoint = "https://messages.suite.anct.gouv.fr/metrics/usage"
     params = {
         "account_type": "mailbox",
-        f"account_{account_key_http_alias}": account_key_value,
+        metrics_param_key: account_key_value,
         "limit": 1000,
         "offset": 0,
     }
@@ -536,7 +548,8 @@ def test_api_entitlements_mailbox_override_can_store(
 
     params_organization = {
         "account_type": "organization",
-        "account_id": str(organization.id),
+        "account_id_key": "siret",
+        "account_id_value": organization.siret,
         "limit": 1000,
         "offset": 0,
     }
@@ -551,7 +564,7 @@ def test_api_entitlements_mailbox_override_can_store(
                     "siret": "12345678900001",
                     "account": {
                         "type": "organization",
-                        "id": str(organization.id),
+                        "id": organization.siret,
                     },
                     "metrics": {"storage_used": 800},
                 }
@@ -715,13 +728,13 @@ def test_api_entitlements_mailbox_override_can_store(
         service=service,
         organization=organization,
         account__type="organization",
-        account__external_id=str(organization.id),
+        account__external_id=organization.siret,
     )
     assert metrics_organization.count() == 1
     assert metrics_organization.first().value == 800
     assert metrics_organization.first().key == "storage_used"
     assert metrics_organization.first().account.type == "organization"
-    assert metrics_organization.first().account.external_id == str(organization.id)
+    assert metrics_organization.first().account.external_id == organization.siret
     assert metrics_organization.first().organization == organization
 
     # Metrics endpoint should have been called
@@ -731,7 +744,7 @@ def test_api_entitlements_mailbox_override_can_store(
     metrics_usage_endpoint = "https://messages.suite.anct.gouv.fr/metrics/usage"
     params = {
         "account_type": "mailbox",
-        "account_id": "abc",
+        "account_id_value": "abc",
         "limit": 1000,
         "offset": 0,
     }
@@ -807,8 +820,11 @@ def test_api_entitlements_mailbox_override_can_store(
     ],
 )
 @pytest.mark.parametrize(
-    "account_key,account_key_value,account_key_http_alias",
-    [["external_id", "xyz", "id"], ["email", "test@example.com", "email"]],
+    "account_key,account_key_value,account_key_http_alias,metrics_param_key",
+    [
+        ["external_id", "xyz", "id", "account_id_value"],
+        ["email", "test@example.com", "email", "account_email"],
+    ],
 )
 @responses.activate
 def test_api_entitlements_list_unlimited_storage(
@@ -817,6 +833,7 @@ def test_api_entitlements_list_unlimited_storage(
     account_key,
     account_key_value,
     account_key_http_alias,
+    metrics_param_key,
 ):
     """
     Test that when max_storage is 0 or missing, can_upload is always True (unlimited storage).
@@ -824,7 +841,7 @@ def test_api_entitlements_list_unlimited_storage(
     metrics_usage_endpoint = "https://messages.suite.anct.gouv.fr/metrics/usage"
     params = {
         "account_type": "mailbox",
-        f"account_{account_key_http_alias}": account_key_value,
+        metrics_param_key: account_key_value,
         "limit": 1000,
         "offset": 0,
     }

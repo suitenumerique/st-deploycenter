@@ -63,11 +63,14 @@ def test_subscription_entitlements_default():
 @pytest.mark.django_db()
 @responses.activate
 @pytest.mark.parametrize(
-    "account_key,account_key_value,account_key_http_alias",
-    [["external_id", "xyz", "id"], ["email", "test@example.com", "email"]],
+    "account_key,account_key_value,account_key_http_alias,metrics_param_key",
+    [
+        ["external_id", "xyz", "id", "account_id_value"],
+        ["email", "test@example.com", "email", "account_email"],
+    ],
 )
 def test_api_entitlements_can_access_without_subscription(
-    account_key, account_key_value, account_key_http_alias
+    account_key, account_key_value, account_key_http_alias, metrics_param_key
 ):
     """
     Test the can_access entitlement for a user entitlement without a subscription.
@@ -77,7 +80,7 @@ def test_api_entitlements_can_access_without_subscription(
     metrics_usage_endpoint = "https://fichiers.suite.anct.gouv.fr/metrics/usage"
     params = {
         "account_type": "user",
-        f"account_{account_key_http_alias}": account_key_value,
+        metrics_param_key: account_key_value,
         "limit": 1000,
         "offset": 0,
     }
@@ -181,11 +184,14 @@ def test_api_entitlements_can_access_without_subscription(
 @pytest.mark.django_db()
 @responses.activate
 @pytest.mark.parametrize(
-    "account_key,account_key_value,account_key_http_alias",
-    [["external_id", "xyz", "id"], ["email", "test@example.com", "email"]],
+    "account_key,account_key_value,account_key_http_alias,metrics_param_key",
+    [
+        ["external_id", "xyz", "id", "account_id_value"],
+        ["email", "test@example.com", "email", "account_email"],
+    ],
 )
 def test_api_entitlements_user_can_upload(
-    account_key, account_key_value, account_key_http_alias
+    account_key, account_key_value, account_key_http_alias, metrics_param_key
 ):
     """Test the can_upload entitlement for a user entitlement."""
 
@@ -193,7 +199,7 @@ def test_api_entitlements_user_can_upload(
     metrics_usage_endpoint = "https://fichiers.suite.anct.gouv.fr/metrics/usage"
     params = {
         "account_type": "user",
-        f"account_{account_key_http_alias}": account_key_value,
+        metrics_param_key: account_key_value,
         "limit": 1000,
         "offset": 0,
     }
@@ -219,7 +225,8 @@ def test_api_entitlements_user_can_upload(
     )
     params_organization = {
         "account_type": "organization",
-        "account_id": str(organization.id),
+        "account_id_key": "siret",
+        "account_id_value": organization.siret,
         "limit": 1000,
         "offset": 0,
     }
@@ -234,7 +241,7 @@ def test_api_entitlements_user_can_upload(
                     "siret": "12345678900001",
                     "account": {
                         "type": "organization",
-                        "id": str(organization.id),
+                        "id": organization.siret,
                     },
                     "metrics": {"storage_used": 1000},
                 }
@@ -317,13 +324,13 @@ def test_api_entitlements_user_can_upload(
         service=service,
         organization=organization,
         account__type="organization",
-        account__external_id=str(organization.id),
+        account__external_id=organization.siret,
     )
     assert metrics_organization.count() == 1
     assert metrics_organization.first().value == 1000
     assert metrics_organization.first().key == "storage_used"
     assert metrics_organization.first().account.type == "organization"
-    assert metrics_organization.first().account.external_id == str(organization.id)
+    assert metrics_organization.first().account.external_id == organization.siret
     assert metrics_organization.first().organization == organization
 
     # Metrics endpoint should have been called
@@ -365,7 +372,7 @@ def test_api_entitlements_user_can_upload(
                     "siret": "12345678900001",
                     "account": {
                         "type": "organization",
-                        "id": str(organization.id),
+                        "id": organization.siret,
                     },
                     "metrics": {"storage_used": 1000 * 1000 * 1000 * 50 + 1},
                 }
@@ -419,13 +426,13 @@ def test_api_entitlements_user_can_upload(
         service=service,
         organization=organization,
         account__type="organization",
-        account__external_id=str(organization.id),
+        account__external_id=organization.siret,
     )
     assert metrics_organization.count() == 1
     assert metrics_organization.first().value == 1000 * 1000 * 1000 * 50 + 1
     assert metrics_organization.first().key == "storage_used"
     assert metrics_organization.first().account.type == "organization"
-    assert metrics_organization.first().account.external_id == str(organization.id)
+    assert metrics_organization.first().account.external_id == organization.siret
     assert metrics_organization.first().organization == organization
 
 
@@ -461,8 +468,11 @@ def test_api_entitlements_user_can_upload(
     ],
 )
 @pytest.mark.parametrize(
-    "account_key,account_key_value,account_key_http_alias",
-    [["external_id", "xyz", "id"], ["email", "test@example.com", "email"]],
+    "account_key,account_key_value,account_key_http_alias,metrics_param_key",
+    [
+        ["external_id", "xyz", "id", "account_id_value"],
+        ["email", "test@example.com", "email", "account_email"],
+    ],
 )
 def test_api_entitlements_organization_can_upload(
     organization_storage_used,
@@ -472,6 +482,7 @@ def test_api_entitlements_organization_can_upload(
     account_key,
     account_key_value,
     account_key_http_alias,
+    metrics_param_key,
 ):
     """Test the can_upload entitlement for an organization and user entitlement."""
 
@@ -485,7 +496,7 @@ def test_api_entitlements_organization_can_upload(
     metrics_usage_endpoint = "https://fichiers.suite.anct.gouv.fr/metrics/usage"
     params_user = {
         "account_type": "user",
-        f"account_{account_key_http_alias}": account_key_value,
+        metrics_param_key: account_key_value,
         "limit": 1000,
         "offset": 0,
     }
@@ -511,7 +522,8 @@ def test_api_entitlements_organization_can_upload(
     )
     params_organization = {
         "account_type": "organization",
-        "account_id": str(organization.id),
+        "account_id_key": "siret",
+        "account_id_value": organization.siret,
         "limit": 1000,
         "offset": 0,
     }
@@ -526,7 +538,7 @@ def test_api_entitlements_organization_can_upload(
                     "siret": "12345678900001",
                     "account": {
                         "type": "organization",
-                        "id": str(organization.id),
+                        "id": organization.siret,
                     },
                     "metrics": {"storage_used": organization_storage_used},
                 }
@@ -611,13 +623,13 @@ def test_api_entitlements_organization_can_upload(
         service=service,
         organization=organization,
         account__type="organization",
-        account__external_id=str(organization.id),
+        account__external_id=organization.siret,
     )
     assert metrics_organization.count() == 1
     assert metrics_organization.first().value == organization_storage_used
     assert metrics_organization.first().key == "storage_used"
     assert metrics_organization.first().account.type == "organization"
-    assert metrics_organization.first().account.external_id == str(organization.id)
+    assert metrics_organization.first().account.external_id == organization.siret
     assert metrics_organization.first().organization == organization
 
     # Metrics endpoint should have been called
@@ -638,8 +650,11 @@ def test_api_entitlements_organization_can_upload(
     ],
 )
 @pytest.mark.parametrize(
-    "account_key,account_key_value,account_key_http_alias",
-    [["external_id", "xyz", "id"], ["email", "test@example.com", "email"]],
+    "account_key,account_key_value,account_key_http_alias,metrics_param_key",
+    [
+        ["external_id", "xyz", "id", "account_id_value"],
+        ["email", "test@example.com", "email", "account_email"],
+    ],
 )
 def test_api_entitlements_user_override_can_upload(
     override_max_storage,
@@ -649,12 +664,13 @@ def test_api_entitlements_user_override_can_upload(
     account_key,
     account_key_value,
     account_key_http_alias,
+    metrics_param_key,
 ):
     """Test the can_upload entitlement with a user override."""
     metrics_usage_endpoint = "https://fichiers.suite.anct.gouv.fr/metrics/usage"
     params = {
         "account_type": "user",
-        f"account_{account_key_http_alias}": account_key_value,
+        metrics_param_key: account_key_value,
         "limit": 1000,
         "offset": 0,
     }
@@ -792,7 +808,7 @@ def test_api_entitlements_user_override_can_upload(
     assert response_mock.call_count == 2
 
     # Make sure another account is not affected by the override.
-    params = {"account_type": "user", "account_id": "abc", "limit": 1000, "offset": 0}
+    params = {"account_type": "user", "account_id_value": "abc", "limit": 1000, "offset": 0}
     response_mock = responses.add(
         responses.GET,
         metrics_usage_endpoint,
@@ -851,8 +867,11 @@ def test_api_entitlements_user_override_can_upload(
     ],
 )
 @pytest.mark.parametrize(
-    "account_key,account_key_value,account_key_http_alias",
-    [["external_id", "xyz", "id"], ["email", "test@example.com", "email"]],
+    "account_key,account_key_value,account_key_http_alias,metrics_param_key",
+    [
+        ["external_id", "xyz", "id", "account_id_value"],
+        ["email", "test@example.com", "email", "account_email"],
+    ],
 )
 @responses.activate
 def test_api_entitlements_list_unlimited_storage(
@@ -861,6 +880,7 @@ def test_api_entitlements_list_unlimited_storage(
     account_key,
     account_key_value,
     account_key_http_alias,
+    metrics_param_key,
 ):
     """
     Test that when max_storage is 0 or missing, can_upload is always True (unlimited storage).
@@ -868,7 +888,7 @@ def test_api_entitlements_list_unlimited_storage(
     metrics_usage_endpoint = "https://fichiers.suite.anct.gouv.fr/metrics/usage"
     params = {
         "account_type": "user",
-        f"account_{account_key_http_alias}": account_key_value,
+        metrics_param_key: account_key_value,
         "limit": 1000,
         "offset": 0,
     }

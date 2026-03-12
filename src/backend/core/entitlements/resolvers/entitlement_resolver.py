@@ -194,7 +194,7 @@ class EntitlementResolver:
 
         if entitlement.account_type == "organization":
             filters["account__type"] = entitlement.account_type
-            filters["account__external_id"] = context["organization"].id
+            filters["account__external_id"] = context["siret"]
         else:
             filters["account__type"] = entitlement.account_type
             unique_identifier, unique_identifier_value = (
