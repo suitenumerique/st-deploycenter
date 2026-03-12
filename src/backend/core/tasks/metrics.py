@@ -487,8 +487,10 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
 
     for item in metrics_data:
         try:
-            # Extract organization identifier (any field that's not "metrics")
-            organization_identifiers = {k: v for k, v in item.items() if k != "metrics"}
+            # Extract organization identifier (any field that's not "metrics" or "account")
+            organization_identifiers = {
+                k: v for k, v in item.items() if k not in ("metrics", "account")
+            }
 
             if not organization_identifiers:
                 logger.warning(
@@ -518,8 +520,14 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
 
             # logger.info("Organization found: %s", organization)
 
-            # Get or create Account if account data is provided
-            account = _resolve_account(service, organization, item.get("account", {}))
+            # Get or create Account if account data is provided.
+            # For organization-type accounts the upstream service may omit "id"
+            # (e.g. messages PR #589); fall back to the organization's siret so
+            # the Account record is still created with a stable external_id.
+            account_data = dict(item.get("account") or {})
+            if account_data.get("type") == "organization" and not account_data.get("id"):
+                account_data["id"] = organization.siret
+            account = _resolve_account(service, organization, account_data)
 
             # Extract metrics
             metrics = item.get("metrics", {})
