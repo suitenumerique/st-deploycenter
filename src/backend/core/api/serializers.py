@@ -225,7 +225,9 @@ class OrganizationIdentifierSerializer(serializers.Serializer):
                 identifier_type = "insee"
             else:
                 raise serializers.ValidationError(
-                    {"autodetect_id": "Invalid ID format. Must be SIRET, SIREN, or INSEE."}
+                    {
+                        "autodetect_id": "Invalid ID format. Must be SIRET, SIREN, or INSEE."
+                    }
                 )
 
         if identifier_type == "siret":

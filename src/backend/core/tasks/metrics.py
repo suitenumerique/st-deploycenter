@@ -9,7 +9,7 @@ import io
 import json
 import logging
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
 
 from django.db import IntegrityError
@@ -299,6 +299,8 @@ def fetch_metrics_from_csv(service: Service, metrics_csv: str) -> List[Dict[str,
         logger.error("No CSV mapping configured for service %s", service.name)
         return []
 
+    default_values = service.config.get("metrics_csv_default_values", {})
+
     # Get authentication token from service config
     auth_token = service.config.get("metrics_auth_token")
     headers = {}
@@ -322,7 +324,7 @@ def fetch_metrics_from_csv(service: Service, metrics_csv: str) -> List[Dict[str,
         ):  # Start at 2 because header is row 1
             try:
                 # Map CSV columns to expected format using the mapping configuration
-                mapped_row = map_csv_row(row, csv_mapping)
+                mapped_row = map_csv_row(row, csv_mapping, default_values)
                 if mapped_row:
                     all_metrics.append(mapped_row)
                 else:
@@ -343,13 +345,18 @@ def fetch_metrics_from_csv(service: Service, metrics_csv: str) -> List[Dict[str,
         return []
 
 
-def map_csv_row(row: Dict[str, str], csv_mapping: Dict[str, str]) -> Dict[str, Any]:
+def map_csv_row(
+    row: Dict[str, str],
+    csv_mapping: Dict[str, str],
+    default_values: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """
     Map a CSV row to the expected metrics format using the mapping configuration.
 
     Args:
         row: CSV row as dictionary
         csv_mapping: Mapping configuration (csv_column_name => target_field)
+        default_values: Default values for target fields (e.g. {"metrics.tu": 1})
 
     Returns:
         Mapped row in expected format or None if mapping fails
@@ -359,6 +366,13 @@ def map_csv_row(row: Dict[str, str], csv_mapping: Dict[str, str]) -> Dict[str, A
     # Map organization identifiers and metrics
     organization_identifiers = {}
     metrics = {}
+
+    # Apply default values first (CSV values will override)
+    for target_field, value in (default_values or {}).items():
+        if target_field.startswith("metrics."):
+            metrics[target_field[8:]] = value
+        else:
+            organization_identifiers[target_field] = value
 
     for csv_col, target_field in csv_mapping.items():
         if csv_col not in row:
@@ -537,7 +551,9 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
             # (e.g. messages PR #589); fall back to the organization's siret so
             # the Account record is still created with a stable external_id.
             account_data = dict(item.get("account") or {})
-            if account_data.get("type") == "organization" and not account_data.get("id"):
+            if account_data.get("type") == "organization" and not account_data.get(
+                "id"
+            ):
                 account_data["id"] = organization.siret
             account = _resolve_account(service, organization, account_data)
 

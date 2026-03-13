@@ -558,3 +558,41 @@ def test_map_csv_row_with_autodetect_id():
     insee_metric = metrics.get(organization=org_insee)
     assert insee_metric.key == "storage_used"
     assert insee_metric.value == 1000
+
+
+@pytest.mark.django_db
+def test_map_csv_row_with_default_values():
+    """E2E test: map_csv_row with default values injected from config."""
+    organization = factories.OrganizationFactory(siret="12345678901234")
+    service = factories.ServiceFactory(type="csv_service", config={})
+
+    csv_mapping = {
+        "identifiant": "autodetect_id",
+        "stockage": "metrics.storage_used",
+    }
+    default_values = {"metrics.tu": 1}
+
+    # Row with a CSV-mapped metric + a default metric
+    row = {"identifiant": "12345678901234", "stockage": "5000"}
+    mapped = map_csv_row(row, csv_mapping, default_values)
+    assert mapped == {
+        "autodetect_id": "12345678901234",
+        "metrics": {"tu": 1, "storage_used": "5000"},
+    }
+
+    stored = store_service_metrics(service, [mapped])
+    assert stored == 2
+
+    metrics = models.Metric.objects.filter(service=service, organization=organization)
+    assert metrics.count() == 2
+    assert metrics.get(key="storage_used").value == 5000
+    assert metrics.get(key="tu").value == 1
+
+    # CSV value overrides default when both target the same field
+    row2 = {"identifiant": "12345678901234", "stockage": "5000"}
+    csv_mapping2 = {
+        "identifiant": "autodetect_id",
+        "stockage": "metrics.tu",
+    }
+    mapped2 = map_csv_row(row2, csv_mapping2, {"metrics.tu": 1})
+    assert mapped2["metrics"]["tu"] == "5000"

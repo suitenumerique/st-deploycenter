@@ -805,7 +805,12 @@ def test_api_entitlements_user_override_can_upload(
     assert response_mock.call_count == 2
 
     # Make sure another account is not affected by the override.
-    params = {"account_type": "user", "account_id_value": "abc", "limit": 1000, "offset": 0}
+    params = {
+        "account_type": "user",
+        "account_id_value": "abc",
+        "limit": 1000,
+        "offset": 0,
+    }
     response_mock = responses.add(
         responses.GET,
         metrics_usage_endpoint,
