@@ -18,6 +18,7 @@ from core import factories, models
 from core.tasks.metrics import (
     fetch_metrics_from_service,
     fetch_usage_metrics_from_service,
+    map_csv_row,
     store_service_metrics,
 )
 
@@ -508,3 +509,52 @@ def test_metrics_storage_update_existing_account_attributes(
     assert account.type == "user"
     assert account.external_id == "xyz"
     assert account.email == "test@example.com"
+
+
+@pytest.mark.django_db
+def test_map_csv_row_with_autodetect_id():
+    """E2E test: map_csv_row with autodetect_id resolving mixed ID types from a single column."""
+    org_siret = factories.OrganizationFactory(siret="12345678901234")
+    org_siren = factories.OrganizationFactory(siren="987654321")
+    org_insee = factories.OrganizationFactory(code_insee="75056")
+    service = factories.ServiceFactory(type="csv_service", config={})
+
+    csv_mapping = {
+        "identifiant": "autodetect_id",
+        "stockage": "metrics.storage_used",
+    }
+
+    # Simulate a CSV file with mixed identifier types in the same column
+    rows = [
+        {"identifiant": "12345678901234", "stockage": "5000"},  # siret (14 digits)
+        {"identifiant": "987654321", "stockage": "3000"},  # siren (9 digits)
+        {"identifiant": "75056", "stockage": "1000"},  # insee (5 digits)
+        {"identifiant": "1234567", "stockage": "999"},  # unknown (7 digits)
+    ]
+
+    mapped_rows = [map_csv_row(row, csv_mapping) for row in rows]
+
+    # Verify map_csv_row output structure
+    assert mapped_rows[0] == {
+        "autodetect_id": "12345678901234",
+        "metrics": {"storage_used": "5000"},
+    }
+
+    # Store all mapped rows at once (filter out None)
+    stored = store_service_metrics(service, [r for r in mapped_rows if r])
+    assert stored == 3  # 3 valid, 1 unknown length skipped
+
+    metrics = models.Metric.objects.filter(service=service).order_by("-value")
+    assert metrics.count() == 3
+
+    siret_metric = metrics.get(organization=org_siret)
+    assert siret_metric.key == "storage_used"
+    assert siret_metric.value == 5000
+
+    siren_metric = metrics.get(organization=org_siren)
+    assert siren_metric.key == "storage_used"
+    assert siren_metric.value == 3000
+
+    insee_metric = metrics.get(organization=org_insee)
+    assert insee_metric.key == "storage_used"
+    assert insee_metric.value == 1000

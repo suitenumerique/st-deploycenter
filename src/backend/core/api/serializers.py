@@ -216,6 +216,18 @@ class OrganizationIdentifierSerializer(serializers.Serializer):
         # Validate format of the provided identifier
         identifier_type, identifier_value = next(iter(identifiers.items()))
 
+        if identifier_type == "autodetect_id":
+            if len(identifier_value) == 14 and identifier_value.isdigit():
+                identifier_type = "siret"
+            elif len(identifier_value) == 9 and identifier_value.isdigit():
+                identifier_type = "siren"
+            elif len(identifier_value) == 5 and identifier_value.isdigit():
+                identifier_type = "insee"
+            else:
+                raise serializers.ValidationError(
+                    {"autodetect_id": "Invalid ID format. Must be SIRET, SIREN, or INSEE."}
+                )
+
         if identifier_type == "siret":
             if not (len(identifier_value) == 14 and identifier_value.isdigit()):
                 raise serializers.ValidationError(

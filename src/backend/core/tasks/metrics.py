@@ -498,11 +498,23 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
                 )
                 continue
 
-            # Find organization by SIRET or INSEE
+            # Find organization by SIRET, SIREN, or INSEE
             organization = None
             siret = (organization_identifiers.get("siret") or "").replace(" ", "")
             siren = (organization_identifiers.get("siren") or "").replace(" ", "")
             insee = (organization_identifiers.get("insee") or "").replace(" ", "")
+
+            # Autodetect identifier type by length
+            autodetect_id = (
+                organization_identifiers.get("autodetect_id") or ""
+            ).replace(" ", "")
+            if autodetect_id:
+                if len(autodetect_id) == 14 and autodetect_id.isdigit():
+                    siret = autodetect_id
+                elif len(autodetect_id) == 9 and autodetect_id.isdigit():
+                    siren = autodetect_id
+                elif len(autodetect_id) == 5 and autodetect_id.isdigit():
+                    insee = autodetect_id
 
             if siret and siret in organizations_by_siret:
                 organization = organizations_by_siret[siret]
