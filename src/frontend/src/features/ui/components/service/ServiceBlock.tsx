@@ -276,11 +276,13 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
         )}
       </div>
       <div className="dc__service__block__body">
-        {!!props.service.description && (
-          <div className="dc__service__block__description">
-            {props.service.description}
-          </div>
-        )}
+        {!!props.service.description &&
+          !props.content &&
+          Object.keys(props.entitlementsFields).length === 0 && (
+            <div className="dc__service__block__description">
+              {props.service.description}
+            </div>
+          )}
         <div className="dc__service__block__body__content">
           {props.content}
           {Object.keys(props.entitlementsFields).length > 0 && (
