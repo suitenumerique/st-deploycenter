@@ -143,6 +143,7 @@ def upload_deployment_services_dataset():
         {
             "id": service.id,
             "nom": service.name,
+            "description": service.description or "",
             "url": service.url,
             "type": service.type,
             "nom_instance": service.instance_name,
