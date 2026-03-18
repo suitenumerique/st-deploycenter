@@ -801,6 +801,23 @@ class OrganizationServiceSerializer(ServiceSerializer):
 
         return None
 
+    def get_config(self, obj):
+        """Get the effective configuration for the service, with operator overrides."""
+        operator_id = self.context.get("operator_id")
+        config = models.OperatorServiceConfig.get_effective_service_config(
+            obj,
+            models.Operator.objects.filter(id=operator_id).first()
+            if operator_id
+            else None,
+        )
+        whitelist_keys = [
+            "help_center_url",
+            "population_limits",
+            "auto_admin_population_threshold",
+            "idp_id",
+        ]
+        return {key: config[key] for key in whitelist_keys if key in config}
+
     def get_operator_config(self, obj):
         """Return operator configuration for this service."""
 

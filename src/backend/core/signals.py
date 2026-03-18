@@ -82,7 +82,8 @@ def handle_subscription_save(sender, instance, created, **kwargs):
     )
 
     # Send webhooks
-    webhook_configs = service.config.get("webhooks", [])
+    effective_config = instance.get_effective_service_config()
+    webhook_configs = effective_config.get("webhooks", [])
     if webhook_configs:
         client = WebhookClient(webhook_configs)
         # Get the user who performed the action, if available
@@ -130,7 +131,8 @@ def handle_subscription_delete(sender, instance, **kwargs):
     )
 
     # Send webhooks
-    webhook_configs = service.config.get("webhooks", [])
+    effective_config = instance.get_effective_service_config()
+    webhook_configs = effective_config.get("webhooks", [])
     if webhook_configs:
         client = WebhookClient(webhook_configs)
         # Get the user who performed the action, if available
@@ -186,7 +188,8 @@ def send_account_webhooks(account, service_ids_override=None):
         if not has_global_role and service.id not in linked_service_ids:
             continue
 
-        webhook_configs = service.config.get("webhooks", [])
+        effective_config = subscription.get_effective_service_config()
+        webhook_configs = effective_config.get("webhooks", [])
         if not webhook_configs:
             continue
 

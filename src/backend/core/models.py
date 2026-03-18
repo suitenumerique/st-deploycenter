@@ -196,6 +196,14 @@ class Operator(BaseModel):
         help_text=_("Name of the operator organization"),
     )
 
+    name_with_article = models.CharField(
+        _("name with article"),
+        max_length=255,
+        blank=True,
+        default="",
+        help_text=_("French name with article, e.g. 'le Nom', 'l'Opérateur'"),
+    )
+
     siret = models.CharField(
         _("SIRET"),
         max_length=14,
@@ -223,6 +231,25 @@ class Operator(BaseModel):
         blank=True,
         null=True,
         help_text=_("Custom configuration data"),
+    )
+
+    class OperatorStatus(models.TextChoices):
+        """Possible statuses for an operator."""
+
+        INTENTION = "intention", _("Intention")
+        PARTENAIRE = "partenaire", _("Partenaire")
+        PARTENAIRE_AVEC_SERVICES = (
+            "partenaire_avec_services",
+            _("Partenaire avec services"),
+        )
+
+    status = models.CharField(
+        _("status"),
+        max_length=30,
+        choices=OperatorStatus.choices,
+        blank=True,
+        null=True,
+        help_text=_("Current status of the operator"),
     )
 
     class Meta:
@@ -281,6 +308,53 @@ class Operator(BaseModel):
             "population": population_communes,
             "contribution": contribution,
         }
+
+
+class OperatorResource(BaseModel):
+    """
+    A resource (link to a public file) associated with an operator.
+    """
+
+    operator = models.ForeignKey(
+        Operator,
+        on_delete=models.CASCADE,
+        related_name="resources",
+        verbose_name=_("operator"),
+    )
+
+    name = models.CharField(
+        _("name"),
+        max_length=255,
+        help_text=_("Name of the resource"),
+    )
+
+    url = models.URLField(
+        _("URL"),
+        help_text=_("URL of the resource"),
+    )
+
+    class ResourceType(models.TextChoices):
+        """Possible types for an operator resource."""
+
+        DOCUMENT_OFFICIEL = "document_officiel", _("Document officiel")
+        AUTRE = "autre", _("Autre")
+
+    type = models.CharField(
+        _("type"),
+        max_length=100,
+        choices=ResourceType.choices,
+        default=ResourceType.AUTRE,
+        help_text=_("Type of the resource"),
+    )
+
+    class Meta:
+        db_table = "deploycenter_operator_resource"
+        verbose_name = _("operator resource")
+        verbose_name_plural = _("operator resources")
+        ordering = ["operator", "name"]
+
+    def __str__(self):
+        return f"{self.operator} - {self.name}"
 
 
 class UserOperatorRole(BaseModel):
@@ -651,6 +725,12 @@ class OperatorServiceConfig(BaseModel):
             "Whether the subscriptions to this service are managed in the operator's own system"
         ),
     )
+    config_override = models.JSONField(
+        _("configuration override"),
+        default=dict,
+        blank=True,
+        help_text=_("JSON overrides merged on top of the service's base config"),
+    )
 
     class Meta:
         db_table = "deploycenter_operator_service_config"
@@ -665,6 +745,27 @@ class OperatorServiceConfig(BaseModel):
 
     def __str__(self):
         return f"{self.operator.name} - {self.service.name} (priority: {self.display_priority})"
+
+    def get_effective_config(self):
+        """Return the service config with this operator's overrides merged on top."""
+        base = dict(self.service.config or {})
+        base.update(self.config_override or {})
+        return base
+
+    @classmethod
+    def get_effective_service_config(cls, service, operator):
+        """Return the effective config for a service/operator pair.
+
+        If an OperatorServiceConfig exists, merges overrides on top of the
+        service base config.  Otherwise returns the plain service config.
+        """
+        if operator is None:
+            return dict(service.config or {})
+        try:
+            osc = cls.objects.get(service=service, operator=operator)
+        except cls.DoesNotExist:
+            return dict(service.config or {})
+        return osc.get_effective_config()
 
 
 class Service(BaseModel):
@@ -816,7 +917,10 @@ class Service(BaseModel):
                 return (False, "missing_required_services")
 
         # Check population limits
-        population_limits = (self.config or {}).get("population_limits", {})
+        effective_config = OperatorServiceConfig.get_effective_service_config(
+            self, operator
+        )
+        population_limits = effective_config.get("population_limits", {})
         if not population_limits:
             return (True, None)
 
@@ -939,6 +1043,12 @@ class ServiceSubscription(BaseModel):
         if service_handler:
             service_handler.create_default_entitlements(self)
 
+    def get_effective_service_config(self):
+        """Return the service config with operator overrides applied."""
+        return OperatorServiceConfig.get_effective_service_config(
+            self.service, self.operator
+        )
+
     def validate_proconnect_subscription(self):
         """
         When activating a ProConnect subscription, we need to validate
@@ -957,7 +1067,7 @@ class ServiceSubscription(BaseModel):
                 "Mail domain is required for ProConnect subscription."
             )
 
-        service_config = self.service.config or {}
+        service_config = self.get_effective_service_config()
         if not service_config.get("idp_id"):
             raise ValidationError("IDP is required for ProConnect subscription.")
 

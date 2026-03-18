@@ -246,7 +246,8 @@ export const AccountModal = ({
   const renderRoleCheckboxes = (
     roles: string[],
     availableRoles: { value: string; labelKey: string }[],
-    onToggle: (role: string) => void
+    onToggle: (role: string) => void,
+    disabledRoles: string[] = []
   ) => {
     return (
       <div className="dc__accounts__modal__roles__checkboxes">
@@ -256,6 +257,7 @@ export const AccountModal = ({
             label={t(roleDef.labelKey)}
             checked={roles.includes(roleDef.value)}
             onChange={() => onToggle(roleDef.value)}
+            disabled={disabledRoles.includes(roleDef.value)}
           />
         ))}
       </div>
@@ -315,7 +317,7 @@ export const AccountModal = ({
           {service.name}
         </h5>
         {renderRoleCheckboxes(Object.keys(currentRoles), serviceRoles, (role) =>
-          toggleServiceRole(service.id, role)
+          toggleServiceRole(service.id, role), globalRoles
         )}
         {showDomainScope && renderDomainScope(service)}
       </div>
@@ -419,6 +421,9 @@ export const AccountModal = ({
               <h5 className="dc__accounts__modal__roles__group__title">
                 {t("accounts.roles.global_modal_title")}
               </h5>
+              <p className="dc__accounts__modal__roles__group__description">
+                {t("accounts.roles.global_modal_description")}
+              </p>
               {renderRoleCheckboxes(globalRoles, GLOBAL_ROLES, toggleGlobalRole)}
             </div>
 

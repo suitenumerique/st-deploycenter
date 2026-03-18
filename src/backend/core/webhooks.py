@@ -148,6 +148,14 @@ class WebhookConfig:
                     template_obj["$filter_val_by_active_servicesubscription_metadata"],
                     context_data,
                 )
+            if (
+                "$exclude_val_by_active_servicesubscription_metadata" in template_obj
+                and len(template_obj) == 1
+            ):
+                return self._exclude_val_by_active_servicesubscription_metadata(
+                    template_obj["$exclude_val_by_active_servicesubscription_metadata"],
+                    context_data,
+                )
 
             # Regular dict - render each key-value pair
             return {
@@ -220,13 +228,7 @@ class WebhookConfig:
 
         # Get the source list from context
         source_value = context_data.get(context_key)
-        if source_value is None:
-            return []
-        if isinstance(source_value, str):
-            source_list = [v for v in source_value.split(",") if v]
-        elif isinstance(source_value, list):
-            source_list = source_value
-        else:
+        if not isinstance(source_value, list):
             return []
 
         # Look up the active subscription for this org + service
@@ -246,7 +248,62 @@ class WebhookConfig:
 
         # Filter: keep only source values that are in allowed_values
         allowed_set = set(allowed_values)
-        return [v for v in source_list if v in allowed_set]
+        return [v for v in source_value if v in allowed_set]
+
+    def _exclude_val_by_active_servicesubscription_metadata(
+        self, args: list, context_data: Dict[str, Any]
+    ) -> list:
+        """
+        Exclude values from a context value list that appear in an active
+        ServiceSubscription's metadata.
+
+        Same args format as _filter_val_by_active_servicesubscription_metadata:
+        [context_key, service_id, metadata_field]
+
+        Returns the difference: only values from context_key that are NOT in
+        the subscription's metadata[metadata_field].
+        Returns the full source list if no active subscription is found.
+        Returns [] if args are invalid or source is missing.
+        """
+        if not isinstance(args, list) or len(args) != 3:
+            logger.warning(
+                "$exclude_val_by_active_servicesubscription_metadata requires "
+                "[context_key, service_id, metadata_field], got: %s",
+                args,
+            )
+            return []
+
+        context_key, service_id, metadata_field = args
+        organization = context_data.get("_organization")
+        if not organization:
+            logger.warning(
+                "$exclude_val_by_active_servicesubscription_metadata: no organization in context"
+            )
+            return []
+
+        # Get the source list from context
+        source_value = context_data.get(context_key)
+        if not isinstance(source_value, list):
+            return []
+
+        # Look up the active subscription for this org + service
+        try:
+            subscription = ServiceSubscription.objects.get(
+                organization=organization,
+                service_id=service_id,
+                is_active=True,
+            )
+        except ServiceSubscription.DoesNotExist:
+            return source_value
+
+        # Get the excluded values from subscription metadata
+        excluded_values = subscription.metadata.get(metadata_field) or []
+        if not isinstance(excluded_values, list):
+            return source_value
+
+        # Exclude: keep only source values that are NOT in excluded_values
+        excluded_set = set(excluded_values)
+        return [v for v in source_value if v not in excluded_set]
 
 
 class WebhookClient:

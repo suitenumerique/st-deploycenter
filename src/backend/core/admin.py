@@ -551,6 +551,17 @@ class OperatorUsersInline(admin.TabularInline):
     verbose_name_plural = _("user roles")
 
 
+class OperatorResourcesInline(admin.TabularInline):
+    """Inline admin for resources associated with an operator."""
+
+    model = models.OperatorResource
+    extra = 0
+    readonly_fields = ("id", "created_at", "updated_at")
+    fields = ("name", "url", "type", "created_at", "updated_at")
+    verbose_name = _("resource")
+    verbose_name_plural = _("resources")
+
+
 class OrganizationServicesInline(admin.TabularInline):
     """Inline admin for service subscriptions in an organization."""
 
@@ -712,24 +723,87 @@ class UserAdmin(auth_admin.UserAdmin):
         return super().changelist_view(request, extra_context)
 
 
+class OperatorAdminForm(forms.ModelForm):
+    """Custom form for Operator admin with a dedicated departements field."""
+
+    departements = forms.CharField(
+        label=_("Départements"),
+        required=False,
+        widget=forms.Textarea(attrs={"cols": 40, "rows": 5}),
+        help_text=_("One département code per line (e.g. 01, 2A, 974)."),
+    )
+
+    class Meta:
+        model = models.Operator
+        fields = [
+            "name",
+            "name_with_article",
+            "siret",
+            "url",
+            "status",
+            "is_active",
+            "config",
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            config = self.instance.config or {}
+            deps = config.get("departements", [])
+            self.fields["departements"].initial = "\n".join(str(d) for d in deps)
+
+    def clean_departements(self):
+        """Parse and validate the departements textarea input."""
+        raw = self.cleaned_data.get("departements", "")
+        if not raw.strip():
+            return []
+        return [line.strip() for line in raw.splitlines() if line.strip()]
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        config = instance.config or {}
+        deps = self.cleaned_data.get("departements", [])
+        if deps:
+            config["departements"] = deps
+        else:
+            config.pop("departements", None)
+        instance.config = config
+        if commit:
+            instance.save()
+        return instance
+
+
 @admin.register(models.Operator)
 class OperatorAdmin(admin.ModelAdmin):
     """Admin class for the Operator model"""
 
-    list_display = ("name", "siret", "url", "is_active", "created_at")
-    list_filter = ("is_active", "created_at")
+    form = OperatorAdminForm
+    list_display = ("name", "siret", "url", "status", "is_active", "created_at")
+    list_filter = ("is_active", "status", "created_at")
     search_fields = ("name", "siret", "url")
     ordering = ("name",)
     readonly_fields = ("id", "computed_contribution", "created_at", "updated_at")
 
     fieldsets = (
-        (None, {"fields": ("name", "siret", "url", "is_active")}),
+        (
+            None,
+            {
+                "fields": (
+                    "name",
+                    "name_with_article",
+                    "siret",
+                    "url",
+                    "status",
+                    "is_active",
+                )
+            },
+        ),
         (_("Financial Information"), {"fields": ("computed_contribution",)}),
-        (_("Configuration"), {"fields": ("config",)}),
+        (_("Configuration"), {"fields": ("departements", "config")}),
         (_("Metadata"), {"fields": ("created_at", "updated_at")}),
     )
     autocomplete_fields = ["users"]
-    inlines = [OperatorUsersInline]
+    inlines = [OperatorUsersInline, OperatorResourcesInline]
 
     def computed_contribution(self, obj):
         """Display the computed financial contribution of the operator."""
@@ -1270,6 +1344,7 @@ class OperatorServiceConfigAdmin(admin.ModelAdmin):
                     "service",
                     "display_priority",
                     "externally_managed",
+                    "config_override",
                 )
             },
         ),

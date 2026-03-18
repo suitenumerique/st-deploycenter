@@ -61,14 +61,12 @@ class ExtendedAdminEntitlementResolver(AdminEntitlementResolver):
 
         # 3. Fallback: organization population is under the threshold
         # All members of the organization are considered admins.
-        service = context.get("service")
-        auto_admin_population_threshold = (
-            (service.config or {}).get(
+        auto_admin_population_threshold = DEFAULT_POPULATION_THRESHOLD
+        if service_subscription:
+            effective_config = service_subscription.get_effective_service_config()
+            auto_admin_population_threshold = effective_config.get(
                 "auto_admin_population_threshold", DEFAULT_POPULATION_THRESHOLD
             )
-            if service
-            else DEFAULT_POPULATION_THRESHOLD
-        )
         if (
             organization.population is not None
             and organization.population < auto_admin_population_threshold

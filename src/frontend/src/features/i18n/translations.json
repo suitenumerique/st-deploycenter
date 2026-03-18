@@ -222,6 +222,7 @@
         "roles": {
           "global_title": "Global",
           "global_modal_title": "Rôles globaux",
+          "global_modal_description": "Ces rôles s'appliquent à tous les services activés, présents et futurs.",
           "admin": "Admin",
           "member": "Membre",
           "service_types": {

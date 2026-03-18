@@ -658,8 +658,8 @@ def test_api_organization_service_can_activate_if_required_services_are_activate
     assert content["can_activate"] is True
 
 
-def test_api_services_exposed_config():
-    """Test that the exposed config is the expected one."""
+def test_api_services_exposed_config_only_whitelisted_keys():
+    """Only whitelisted keys are exposed; secrets and internal keys are stripped."""
     user = factories.UserFactory()
     client = APIClient()
     client.force_login(user)
@@ -673,25 +673,127 @@ def test_api_services_exposed_config():
     )
 
     service = factories.ServiceFactory(
-        config={"help_center_url": "https://www.service.fr", "secret_key": "secret_key"}
+        config={
+            # Whitelisted keys
+            "help_center_url": "https://help.example.fr",
+            "population_limits": {"commune": 3500, "epci": 15000},
+            "auto_admin_population_threshold": 5000,
+            "idp_id": "my-idp",
+            # Non-whitelisted keys (must NOT appear)
+            "secret_key": "secret",
+            "metrics_auth_token": "tok_secret",
+            "webhooks": [{"url": "https://internal.hook"}],
+            "entitlements_api_key": "eak_secret",
+        }
     )
     factories.OperatorServiceConfigFactory(operator=operator, service=service)
 
-    # List route.
+    expected_config = {
+        "help_center_url": "https://help.example.fr",
+        "population_limits": {"commune": 3500, "epci": 15000},
+        "auto_admin_population_threshold": 5000,
+        "idp_id": "my-idp",
+    }
+
+    # List route
     response = client.get(
         f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/"
     )
     assert response.status_code == 200
-    keys = list(response.json()["results"][0]["config"].keys())
-    assert keys == ["help_center_url"]
+    config = response.json()["results"][0]["config"]
+    assert config == expected_config
 
-    # Retrieve route.
+    # Retrieve route
     response = client.get(
         f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/"
     )
     assert response.status_code == 200
-    keys = list(response.json()["config"].keys())
-    assert keys == ["help_center_url"]
+    config = response.json()["config"]
+    assert config == expected_config
+
+
+def test_api_services_exposed_config_with_operator_override():
+    """config_override merges into whitelisted output but is not itself exposed."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    service = factories.ServiceFactory(
+        config={
+            "help_center_url": "https://base.example.fr",
+            "population_limits": {"commune": 3500, "epci": 15000},
+            "idp_id": "base-idp",
+            "metrics_auth_token": "base_secret",
+        }
+    )
+    factories.OperatorServiceConfigFactory(
+        operator=operator,
+        service=service,
+        config_override={
+            # Override a whitelisted key
+            "help_center_url": "https://override.example.fr",
+            # Override a non-whitelisted key (must NOT appear)
+            "metrics_auth_token": "override_secret",
+            # Add a new whitelisted key via override
+            "auto_admin_population_threshold": 9999,
+            # Add a new non-whitelisted key (must NOT appear)
+            "webhooks": [{"url": "https://sneaky.hook"}],
+        },
+    )
+
+    expected_config = {
+        "help_center_url": "https://override.example.fr",
+        "population_limits": {"commune": 3500, "epci": 15000},
+        "idp_id": "base-idp",
+        "auto_admin_population_threshold": 9999,
+    }
+
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/"
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    # Whitelisted keys reflect the override
+    assert data["config"] == expected_config
+
+    # config_override is not exposed anywhere in the response
+    assert "config_override" not in data
+    assert "config_override" not in (data.get("operator_config") or {})
+
+
+def test_api_services_exposed_config_empty():
+    """When service has no whitelisted keys, config is an empty dict."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    service = factories.ServiceFactory(
+        config={"metrics_auth_token": "secret", "webhooks": []}
+    )
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/"
+    )
+    assert response.status_code == 200
+    assert response.json()["config"] == {}
 
 
 @pytest.mark.parametrize(

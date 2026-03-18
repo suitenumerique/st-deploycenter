@@ -142,6 +142,7 @@ class OperatorServiceConfigFactory(factory.django.DjangoModelFactory):
     operator = factory.SubFactory(OperatorFactory)
     service = factory.SubFactory(ServiceFactory)
     display_priority = factory.Faker("random_int", min=1, max=100)
+    config_override = factory.LazyFunction(dict)
 
 
 class ServiceSubscriptionFactory(factory.django.DjangoModelFactory):

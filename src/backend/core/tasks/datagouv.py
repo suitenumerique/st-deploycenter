@@ -203,8 +203,10 @@ def upload_deployment_operators_dataset():
             {
                 "id": operator.id,
                 "nom": operator.name,
+                "nom_avec_article": operator.name_with_article or "",
                 "url": operator.url or "",
                 "siret": operator.siret or "",
+                "statut": operator.status or "",
                 "services": ",".join(str(service_id) for service_id in service_ids),
                 "departements": ",".join(
                     str(departement) for departement in sorted(departements)

@@ -1462,45 +1462,6 @@ class TestFilterValByActiveServiceSubscriptionMetadata:
         result = config.render_body(context_data)
         assert result["filtered_domains"] == ["example.com", "test.org"]
 
-    def test_filters_comma_separated_string(self, sample_organization, sample_operator):
-        """Filter a comma-separated string value."""
-        service_b = Service.objects.create(
-            name="Service B",
-            instance_name="service-b-str",
-            type="b",
-            url="https://b.example.com",
-        )
-        ServiceSubscription.objects.create(
-            organization=sample_organization,
-            service=service_b,
-            operator=sample_operator,
-            metadata={"domains": ["example.com"]},
-            is_active=True,
-        )
-
-        config = WebhookConfig(
-            {
-                "url": "https://example.com/webhook",
-                "body": {
-                    "filtered": {
-                        "$filter_val_by_active_servicesubscription_metadata": [
-                            "subscription_domains",
-                            service_b.id,
-                            "domains",
-                        ]
-                    }
-                },
-            }
-        )
-
-        context_data = {
-            "_organization": sample_organization,
-            "subscription_domains": "example.com,other.com,test.org",
-        }
-
-        result = config.render_body(context_data)
-        assert result["filtered"] == ["example.com"]
-
     def test_returns_empty_when_no_active_subscription(
         self, sample_organization, sample_operator
     ):
@@ -1723,6 +1684,274 @@ class TestFilterValByActiveServiceSubscriptionMetadata:
 
         result = config.render_body(context_data)
         assert result["filtered"] == ["m.com", "a.com", "z.com"]
+
+
+@pytest.mark.django_db
+class TestExcludeValByActiveServiceSubscriptionMetadata:
+    """Test $exclude_val_by_active_servicesubscription_metadata operator."""
+
+    def test_excludes_list_by_active_subscription_metadata(
+        self, sample_organization, sample_operator
+    ):
+        """Exclude values that appear in another service's active subscription metadata."""
+        service_b = Service.objects.create(
+            name="Service B",
+            instance_name="service-b-excl",
+            type="b",
+            url="https://b.example.com",
+        )
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service_b,
+            operator=sample_operator,
+            metadata={"domains": ["example.com", "test.org"]},
+            is_active=True,
+        )
+
+        config = WebhookConfig(
+            {
+                "url": "https://example.com/webhook",
+                "body": {
+                    "excluded_domains": {
+                        "$exclude_val_by_active_servicesubscription_metadata": [
+                            "subscription_domains",
+                            service_b.id,
+                            "domains",
+                        ]
+                    }
+                },
+            }
+        )
+
+        context_data = {
+            "_organization": sample_organization,
+            "subscription_domains": ["example.com", "other.com", "test.org"],
+        }
+
+        result = config.render_body(context_data)
+        assert result["excluded_domains"] == ["other.com"]
+
+    def test_returns_full_list_when_no_active_subscription(
+        self, sample_organization, sample_operator
+    ):
+        """Return full source list when the target service has no active subscription."""
+        service_b = Service.objects.create(
+            name="Service B",
+            instance_name="service-b-excl-inact",
+            type="b",
+            url="https://b.example.com",
+        )
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service_b,
+            operator=sample_operator,
+            metadata={"domains": ["example.com"]},
+            is_active=False,
+        )
+
+        config = WebhookConfig(
+            {
+                "url": "https://example.com/webhook",
+                "body": {
+                    "excluded": {
+                        "$exclude_val_by_active_servicesubscription_metadata": [
+                            "subscription_domains",
+                            service_b.id,
+                            "domains",
+                        ]
+                    }
+                },
+            }
+        )
+
+        context_data = {
+            "_organization": sample_organization,
+            "subscription_domains": ["example.com", "other.com"],
+        }
+
+        result = config.render_body(context_data)
+        assert result["excluded"] == ["example.com", "other.com"]
+
+    def test_returns_full_list_when_no_subscription_exists(self, sample_organization):
+        """Return full source list when the target service has no subscription at all."""
+        config = WebhookConfig(
+            {
+                "url": "https://example.com/webhook",
+                "body": {
+                    "excluded": {
+                        "$exclude_val_by_active_servicesubscription_metadata": [
+                            "subscription_domains",
+                            99999,
+                            "domains",
+                        ]
+                    }
+                },
+            }
+        )
+
+        context_data = {
+            "_organization": sample_organization,
+            "subscription_domains": ["example.com"],
+        }
+
+        result = config.render_body(context_data)
+        assert result["excluded"] == ["example.com"]
+
+    def test_returns_full_list_when_metadata_field_missing(
+        self, sample_organization, sample_operator
+    ):
+        """Return full source list when the metadata field doesn't exist."""
+        service_b = Service.objects.create(
+            name="Service B",
+            instance_name="service-b-excl-nometa",
+            type="b",
+            url="https://b.example.com",
+        )
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service_b,
+            operator=sample_operator,
+            metadata={},
+            is_active=True,
+        )
+
+        config = WebhookConfig(
+            {
+                "url": "https://example.com/webhook",
+                "body": {
+                    "excluded": {
+                        "$exclude_val_by_active_servicesubscription_metadata": [
+                            "subscription_domains",
+                            service_b.id,
+                            "domains",
+                        ]
+                    }
+                },
+            }
+        )
+
+        context_data = {
+            "_organization": sample_organization,
+            "subscription_domains": ["example.com"],
+        }
+
+        result = config.render_body(context_data)
+        assert result["excluded"] == ["example.com"]
+
+    def test_returns_empty_when_source_value_missing(
+        self, sample_organization, sample_operator
+    ):
+        """Return [] when the source context key doesn't exist."""
+        service_b = Service.objects.create(
+            name="Service B",
+            instance_name="service-b-excl-nosrc",
+            type="b",
+            url="https://b.example.com",
+        )
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service_b,
+            operator=sample_operator,
+            metadata={"domains": ["example.com"]},
+            is_active=True,
+        )
+
+        config = WebhookConfig(
+            {
+                "url": "https://example.com/webhook",
+                "body": {
+                    "excluded": {
+                        "$exclude_val_by_active_servicesubscription_metadata": [
+                            "nonexistent_key",
+                            service_b.id,
+                            "domains",
+                        ]
+                    }
+                },
+            }
+        )
+
+        context_data = {
+            "_organization": sample_organization,
+        }
+
+        result = config.render_body(context_data)
+        assert result["excluded"] == []
+
+    def test_returns_empty_for_invalid_args(self):
+        """Return [] when args are invalid."""
+        config = WebhookConfig(
+            {
+                "url": "https://example.com/webhook",
+                "body": {
+                    "excluded": {
+                        "$exclude_val_by_active_servicesubscription_metadata": "invalid"
+                    }
+                },
+            }
+        )
+
+        result = config.render_body({"_organization": None})
+        assert result["excluded"] == []
+
+    def test_returns_empty_when_no_organization(self):
+        """Return [] when no organization in context."""
+        config = WebhookConfig(
+            {
+                "url": "https://example.com/webhook",
+                "body": {
+                    "excluded": {
+                        "$exclude_val_by_active_servicesubscription_metadata": [
+                            "subscription_domains",
+                            1,
+                            "domains",
+                        ]
+                    }
+                },
+            }
+        )
+
+        result = config.render_body({})
+        assert result["excluded"] == []
+
+    def test_preserves_order_of_source_list(self, sample_organization, sample_operator):
+        """Excluded results preserve the order of the source list."""
+        service_b = Service.objects.create(
+            name="Service B",
+            instance_name="service-b-excl-order",
+            type="b",
+            url="https://b.example.com",
+        )
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service_b,
+            operator=sample_operator,
+            metadata={"domains": ["a.com", "z.com"]},
+            is_active=True,
+        )
+
+        config = WebhookConfig(
+            {
+                "url": "https://example.com/webhook",
+                "body": {
+                    "excluded": {
+                        "$exclude_val_by_active_servicesubscription_metadata": [
+                            "my_domains",
+                            service_b.id,
+                            "domains",
+                        ]
+                    }
+                },
+            }
+        )
+
+        context_data = {
+            "_organization": sample_organization,
+            "my_domains": ["m.com", "x.com", "a.com", "z.com"],
+        }
+
+        result = config.render_body(context_data)
+        assert result["excluded"] == ["m.com", "x.com"]
 
 
 @pytest.mark.django_db

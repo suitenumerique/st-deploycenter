@@ -332,6 +332,12 @@ db-reset-full: build ## flush database, including schema
 	$(MANAGE_DB) migrate
 .PHONY: db-reset-full
 
+db-demo-data: ## Insert demo data (operator, organization, services, user role)
+	@echo "$(BOLD)Inserting demo data$(RESET)"
+	@$(MANAGE_DB) demo_data
+.PHONY: db-demo-data
+
+
 env.d/development/%.local:
 	@echo "# Local development overrides for $(notdir $*)" > $@
 	@echo "# Add your local-specific environment variables below:" >> $@
