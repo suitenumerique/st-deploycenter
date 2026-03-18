@@ -1685,6 +1685,45 @@ class TestFilterValByActiveServiceSubscriptionMetadata:
         result = config.render_body(context_data)
         assert result["filtered"] == ["m.com", "a.com", "z.com"]
 
+    def test_filters_comma_separated_string(self, sample_organization, sample_operator):
+        """Filter a comma-separated string value by subscription metadata."""
+        service_b = Service.objects.create(
+            name="Service B",
+            instance_name="service-b-csv",
+            type="b",
+            url="https://b.example.com",
+        )
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service_b,
+            operator=sample_operator,
+            metadata={"domains": ["example.com", "test.org"]},
+            is_active=True,
+        )
+
+        config = WebhookConfig(
+            {
+                "url": "https://example.com/webhook",
+                "body": {
+                    "filtered_domains": {
+                        "$filter_val_by_active_servicesubscription_metadata": [
+                            "subscription_domains",
+                            service_b.id,
+                            "domains",
+                        ]
+                    }
+                },
+            }
+        )
+
+        context_data = {
+            "_organization": sample_organization,
+            "subscription_domains": "example.com,other.com,test.org",
+        }
+
+        result = config.render_body(context_data)
+        assert result["filtered_domains"] == ["example.com", "test.org"]
+
 
 @pytest.mark.django_db
 class TestExcludeValByActiveServiceSubscriptionMetadata:
@@ -1952,6 +1991,47 @@ class TestExcludeValByActiveServiceSubscriptionMetadata:
 
         result = config.render_body(context_data)
         assert result["excluded"] == ["m.com", "x.com"]
+
+    def test_excludes_comma_separated_string(
+        self, sample_organization, sample_operator
+    ):
+        """Exclude values from a comma-separated string by subscription metadata."""
+        service_b = Service.objects.create(
+            name="Service B",
+            instance_name="service-b-excl-csv",
+            type="b",
+            url="https://b.example.com",
+        )
+        ServiceSubscription.objects.create(
+            organization=sample_organization,
+            service=service_b,
+            operator=sample_operator,
+            metadata={"domains": ["example.com", "test.org"]},
+            is_active=True,
+        )
+
+        config = WebhookConfig(
+            {
+                "url": "https://example.com/webhook",
+                "body": {
+                    "excluded_domains": {
+                        "$exclude_val_by_active_servicesubscription_metadata": [
+                            "subscription_domains",
+                            service_b.id,
+                            "domains",
+                        ]
+                    }
+                },
+            }
+        )
+
+        context_data = {
+            "_organization": sample_organization,
+            "subscription_domains": "example.com,other.com,test.org",
+        }
+
+        result = config.render_body(context_data)
+        assert result["excluded_domains"] == ["other.com"]
 
 
 @pytest.mark.django_db

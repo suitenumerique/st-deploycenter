@@ -228,6 +228,8 @@ class WebhookConfig:
 
         # Get the source list from context
         source_value = context_data.get(context_key)
+        if isinstance(source_value, str):
+            source_value = [v.strip() for v in source_value.split(",") if v.strip()]
         if not isinstance(source_value, list):
             return []
 
@@ -283,6 +285,8 @@ class WebhookConfig:
 
         # Get the source list from context
         source_value = context_data.get(context_key)
+        if isinstance(source_value, str):
+            source_value = [v.strip() for v in source_value.split(",") if v.strip()]
         if not isinstance(source_value, list):
             return []
 
