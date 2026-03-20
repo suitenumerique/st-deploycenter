@@ -193,7 +193,7 @@ def upload_deployment_operators_dataset():
                 operator=operator, display_priority__gte=-100
             )
             .values_list("service_id", flat=True)
-            .order_by("service_id")
+            .order_by("-display_priority")
         )
 
         departements = (
