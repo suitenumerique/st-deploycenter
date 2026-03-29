@@ -183,6 +183,7 @@
         }
       },
       "accounts": {
+        "operator_admins_have_admin_role": "Les administrateurs de l'opérateur ont un rôle d'administrateur sur tous les services activés",
         "search": "Rechercher un compte",
         "empty": "Aucun compte trouvé",
         "add": "Ajouter",

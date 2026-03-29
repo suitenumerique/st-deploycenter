@@ -431,6 +431,10 @@ class Base(Configuration):
         None, environ_name="DATA_GOUV_API_KEY", environ_prefix=None
     )
 
+    METRICS_API_KEY = values.Value(
+        None, environ_name="METRICS_API_KEY", environ_prefix=None
+    )
+
     API_PUBLIC_URL = values.Value(
         None, environ_name="API_PUBLIC_URL", environ_prefix=None
     )

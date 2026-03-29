@@ -1,4 +1,5 @@
 import {
+  Checkbox,
   DataGrid,
   Input,
   Select,
@@ -12,9 +13,11 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useRouter } from "next/router";
 import {
+  useOrganization,
   useOrganizationAccounts,
   useOrganizationServices,
   useMutationDeleteAccount,
+  useMutationUpdateOperatorOrganizationRole,
 } from "@/hooks/useQueries";
 import { sortModelToOrdering, Account } from "@/features/api/Repository";
 import { GLOBAL_ROLES, getServiceRoles } from "@/features/accounts/roles";
@@ -33,6 +36,8 @@ export const AccountsTab = ({
   const router = useRouter();
   const modals = useModals();
   const deleteAccount = useMutationDeleteAccount();
+  const updateOperatorRole = useMutationUpdateOperatorOrganizationRole();
+  const { data: organization } = useOrganization(operatorId, organizationId);
 
   const roleFilter = (router.query.role as string) || "";
   const typeFilter = (router.query.type as string) || "";
@@ -132,6 +137,19 @@ export const AccountsTab = ({
 
   return (
     <div className="dc__accounts">
+      <div className="dc__accounts__operator-admin-setting">
+        <Checkbox
+          label={t("accounts.operator_admins_have_admin_role")}
+          checked={organization?.operator_admins_have_admin_role === true}
+          onChange={(e) =>
+            updateOperatorRole.mutate({
+              operatorId,
+              organizationId,
+              data: { operator_admins_have_admin_role: e.target.checked },
+            })
+          }
+        />
+      </div>
       <div className="dc__accounts__toolbar">
         <Input
           icon={<Icon name="search" />}

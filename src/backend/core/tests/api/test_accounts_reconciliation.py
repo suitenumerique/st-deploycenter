@@ -182,3 +182,33 @@ def test_constraint_allows_multiple_blank_email(org):
         organization=org, external_id="ext-2", email="", type="user"
     )
     assert models.Account.objects.filter(organization=org).count() == 2
+
+
+# --- Email domain normalization ---
+
+
+def test_email_domain_lowercased_on_save(org):
+    """Email domain is lowercased on save, local part is preserved."""
+    account = models.Account.objects.create(
+        organization=org, external_id="ext-norm", email="Alice@EXAMPLE.COM", type="user"
+    )
+    assert account.email == "Alice@example.com"
+
+
+def test_email_domain_lowercased_on_update(org):
+    """Email domain is lowercased when updating an existing account."""
+    account = factories.AccountFactory(
+        organization=org, external_id="ext-up", email="bob@test.com", type="user"
+    )
+    account.email = "Bob@TEST.COM"
+    account.save()
+    account.refresh_from_db()
+    assert account.email == "Bob@test.com"
+
+
+def test_empty_email_unchanged(org):
+    """Empty email stays empty."""
+    account = models.Account.objects.create(
+        organization=org, external_id="ext-empty", email="", type="user"
+    )
+    assert account.email == ""

@@ -310,7 +310,7 @@ class BulkSiretImportForm(forms.ModelForm):
 
     class Meta:
         model = models.OperatorOrganizationRole
-        fields = ["operator", "role"]
+        fields = ["operator", "role", "operator_admins_have_admin_role"]
         widgets = {
             "operator": forms.Select(attrs={"class": "form-control"}),
             "role": forms.Select(attrs={"class": "form-control"}),
@@ -1073,6 +1073,10 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
 
     fieldsets = (
         (None, {"fields": ("operator", "organization", "role")}),
+        (
+            _("Options"),
+            {"fields": ("operator_admins_have_admin_role",)},
+        ),
         (_("Metadata"), {"fields": ("created_at", "updated_at")}),
     )
 
@@ -1101,7 +1105,16 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
             == "core_operatororganizationrole_bulk_import"
         ):
             return (
-                (None, {"fields": ("operator", "role")}),
+                (
+                    None,
+                    {
+                        "fields": (
+                            "operator",
+                            "role",
+                            "operator_admins_have_admin_role",
+                        )
+                    },
+                ),
                 (
                     _("SIRET Import"),
                     {"fields": ("siret_list", "expand_epci_to_communes")},
@@ -1140,7 +1153,13 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
         return custom_urls + urls
 
     def _process_bulk_import(
-        self, siret_list, operator, role, expand_epci, sync_types=None
+        self,
+        siret_list,
+        operator,
+        role,
+        expand_epci,
+        sync_types=None,
+        operator_admins_have_admin_role=False,
     ):
         """Process the bulk import of codes using shared resolution logic.
 
@@ -1182,6 +1201,7 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
                             operator=operator,
                             organization=organization,
                             role=role,
+                            operator_admins_have_admin_role=operator_admins_have_admin_role,
                         )
                         created_count += 1
 
@@ -1264,7 +1284,14 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
                         sync_types.append(org_type)
 
                 results = self._process_bulk_import(
-                    siret_list, operator, role, expand_epci, sync_types=sync_types
+                    siret_list,
+                    operator,
+                    role,
+                    expand_epci,
+                    sync_types=sync_types,
+                    operator_admins_have_admin_role=form.cleaned_data.get(
+                        "operator_admins_have_admin_role", False
+                    ),
                 )
                 return self._handle_import_results(
                     request, results, operator, role, siret_list

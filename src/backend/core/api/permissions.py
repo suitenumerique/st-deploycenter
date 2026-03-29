@@ -3,6 +3,7 @@
 import logging
 import secrets
 
+from django.conf import settings
 from django.core import exceptions
 
 from rest_framework import permissions
@@ -261,3 +262,23 @@ class ServiceAuthenticationPermission(permissions.BasePermission):
         # without a duplicate query.
         request.service = target_service
         return True
+
+
+class MetricsApiKeyPermission(permissions.BasePermission):
+    """Allows access only to requests bearing a valid metrics API key
+    via the standard Authorization header."""
+
+    def has_permission(self, request, view):
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            return False
+
+        parts = auth_header.split(" ", 1)
+        if len(parts) != 2 or parts[0] != "Bearer":
+            return False
+
+        expected = settings.METRICS_API_KEY
+        if not expected:
+            return False
+
+        return secrets.compare_digest(expected, parts[1])

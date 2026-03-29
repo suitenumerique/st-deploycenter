@@ -109,6 +109,7 @@ def test_api_entitlements_meet_can_create_without_subscription():
             "oidc_valid": None,
         },
         "operator": None,
+        "potentialOperators": [],
         "entitlements": {
             "can_create": False,
             "can_create_reason": MeetAccessEntitlementResolver.Reason.NOT_ACTIVATED,
@@ -160,6 +161,7 @@ def test_api_entitlements_meet_can_create_with_inactive_subscription():
             "oidc_valid": None,
         },
         "operator": None,
+        "potentialOperators": [],
         "entitlements": {
             "can_create": False,
             "can_create_reason": MeetAccessEntitlementResolver.Reason.NOT_ACTIVATED,

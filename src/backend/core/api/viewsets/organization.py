@@ -5,6 +5,9 @@ API endpoints for Organization model.
 from django.db.models import Prefetch
 
 from rest_framework import filters, viewsets
+from rest_framework import serializers as drf_serializers
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from rest_framework.settings import api_settings
 
 from core import models
@@ -113,3 +116,31 @@ class OperatorOrganizationViewSet(viewsets.ReadOnlyModelViewSet):
                 order_by=["match_priority", "name"],
             )
         return queryset
+
+    @action(detail=True, methods=["patch"], url_path="operator-role")
+    def operator_role(self, request, *args, **kwargs):
+        """Update the OperatorOrganizationRole settings for this org+operator."""
+        organization = self.get_object()
+        operator_id = self.kwargs["operator_id"]
+
+        role = models.OperatorOrganizationRole.objects.filter(
+            operator_id=operator_id, organization=organization
+        ).first()
+        if not role:
+            return Response(
+                {"detail": "No operator role found for this organization."},
+                status=404,
+            )
+
+        if "operator_admins_have_admin_role" in request.data:
+            value = request.data["operator_admins_have_admin_role"]
+            if not isinstance(value, bool):
+                raise drf_serializers.ValidationError(
+                    {"operator_admins_have_admin_role": "Must be a boolean."}
+                )
+            role.operator_admins_have_admin_role = value
+            role.save(update_fields=["operator_admins_have_admin_role", "updated_at"])
+
+        return Response(
+            {"operator_admins_have_admin_role": role.operator_admins_have_admin_role}
+        )
