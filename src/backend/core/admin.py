@@ -1056,15 +1056,21 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
         "organization",
         "organization_population",
         "role",
+        "operator_admins_have_admin_role",
         "created_at",
     )
     list_filter = (
         "role",
+        "operator_admins_have_admin_role",
         OperatorFilter,
         "organization__type",
         "created_at",
         AboveContributionThresholdFilter,
     )
+    actions = [
+        "enable_operator_admins_have_admin_role",
+        "disable_operator_admins_have_admin_role",
+    ]
     search_fields = ("operator__name", "organization__name")
     ordering = ("operator__name", "organization__name")
     readonly_fields = ("id", "created_at", "updated_at")
@@ -1088,6 +1094,18 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
 
     organization_population.short_description = _("Population")
     organization_population.admin_order_field = "organization__population"
+
+    @admin.action(description=_("Set admin role for operator admins"))
+    def enable_operator_admins_have_admin_role(self, request, queryset):
+        """Enable operator_admins_have_admin_role on selected roles."""
+        updated = queryset.update(operator_admins_have_admin_role=True)
+        self.message_user(request, _("%d role(s) updated.") % updated)
+
+    @admin.action(description=_("Unset admin role for operator admins"))
+    def disable_operator_admins_have_admin_role(self, request, queryset):
+        """Disable operator_admins_have_admin_role on selected roles."""
+        updated = queryset.update(operator_admins_have_admin_role=False)
+        self.message_user(request, _("%d role(s) updated.") % updated)
 
     def get_form(self, request, obj=None, change=False, **kwargs):
         """Return the form class for the admin view."""
