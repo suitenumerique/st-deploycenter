@@ -107,9 +107,8 @@ class MessagesAdminEntitlementResolver(AdminEntitlementResolver):
                 .distinct()
             )
             for org_id in operator_admin_org_ids:
-                # Only upgrade; never downgrade an already-unrestricted entry
-                if org_id not in admin_org_domains:
-                    admin_org_domains[org_id] = None
+                # Operator admin passthrough always grants unrestricted access
+                admin_org_domains[org_id] = None
 
         if not admin_org_domains:
             return {"can_admin_maildomains": []}

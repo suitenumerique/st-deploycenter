@@ -765,13 +765,22 @@ class OrganizationSerializer(serializers.ModelSerializer):
 
         # Expose the operator_admins_have_admin_role flag from the
         # OperatorOrganizationRole for the current operator context.
-        view = self.context.get("view")
-        operator_id = getattr(view, "kwargs", {}).get("operator_id")
-        if operator_id:
-            role = instance.operator_roles.filter(operator_id=operator_id).first()
+        # Uses prefetched_operator_roles when available (set by viewset)
+        # to avoid N+1 queries on list endpoints.
+        prefetched = getattr(instance, "prefetched_operator_roles", None)
+        if prefetched is not None:
+            role = prefetched[0] if prefetched else None
             data["operator_admins_have_admin_role"] = (
                 role.operator_admins_have_admin_role if role else False
             )
+        else:
+            view = self.context.get("view")
+            operator_id = getattr(view, "kwargs", {}).get("operator_id")
+            if operator_id:
+                role = instance.operator_roles.filter(operator_id=operator_id).first()
+                data["operator_admins_have_admin_role"] = (
+                    role.operator_admins_have_admin_role if role else False
+                )
 
         return data
 

@@ -1232,10 +1232,16 @@ class Account(BaseModel):
 
     def save(self, *args, **kwargs):
         """Normalize the email domain to lowercase before saving."""
-        if self.email and "@" in self.email:
-            local, domain = self.email.rsplit("@", 1)
-            self.email = f"{local}@{domain.lower()}"
+        self.email = self.normalize_email(self.email)
         super().save(*args, **kwargs)
+
+    @staticmethod
+    def normalize_email(email):
+        """Lowercase the domain part of an email address."""
+        if email and "@" in email:
+            local, domain = email.rsplit("@", 1)
+            return f"{local}@{domain.lower()}"
+        return email
 
     @classmethod
     def find_by_identifiers(
@@ -1251,6 +1257,7 @@ class Account(BaseModel):
         If reconcile_external_id=True and found by email, backfills external_id
         (only for trusted sources).
         """
+        email = cls.normalize_email(email)
         account = None
         found_by = None
         filters = {"type": account_type, "organization": organization}

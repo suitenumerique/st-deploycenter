@@ -2,6 +2,7 @@
 Entitlements API viewsets.
 """
 
+from django.conf import settings
 from django.db.models import BooleanField, Case, Exists, OuterRef, Q, Value, When
 
 import rest_framework as drf
@@ -109,8 +110,9 @@ def _find_potential_operators(organization, service):
     result = []
     for osc in oscs:
         op_data = EntitlementOperatorSerializer(osc.operator).data
+        base_url = settings.SUITE_TERRITORIALE_BASE_URL.rstrip("/")
         op_data["signupUrl"] = (
-            f"https://suiteterritoriale.anct.gouv.fr/bienvenue/"
+            f"{base_url}/bienvenue/"
             f"{organization.siret}/contact"
             f"?operator={osc.operator.id}&services={service.id}"
         )

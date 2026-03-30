@@ -33,6 +33,7 @@ class SubscriptionsByServiceTypeView(APIView):
                 service_subscriptions__is_active=True,
                 siret__isnull=False,
             )
+            .exclude(siret="")
             .values_list("siret", flat=True)
             .distinct()
         )

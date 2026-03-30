@@ -1061,7 +1061,6 @@ def test_api_entitlements_potential_operators_dept_fallback_commune():
     assert data["operator"] is None
     assert len(data["potentialOperators"]) == 1
     assert data["potentialOperators"][0]["name"] == operator.name
-    assert data["potentialOperators"][0]["name"] == operator.name
     assert "signupUrl" in data["potentialOperators"][0]
 
 

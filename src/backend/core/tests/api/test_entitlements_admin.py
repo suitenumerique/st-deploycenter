@@ -265,10 +265,10 @@ def test_api_entitlements_is_admin_true_service_level(
 # --- Operator admin passthrough (base resolver) ---
 
 
-def _make_service(**extra_config):
+def _make_service(**kwargs):
     config = {"entitlements_api_key": "test_token"}
-    config.update(extra_config)
-    return factories.ServiceFactory(config=config)
+    config.update(kwargs.pop("config", {}))
+    return factories.ServiceFactory(config=config, **kwargs)
 
 
 def _entitlements_by_email(client, service, siret, account_email):

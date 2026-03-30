@@ -1192,9 +1192,23 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
         with transaction.atomic():
             for orgs in org_groups:
                 for organization in orgs:
-                    if models.OperatorOrganizationRole.objects.filter(
+                    existing = models.OperatorOrganizationRole.objects.filter(
                         operator=operator, organization=organization
-                    ).exists():
+                    ).first()
+                    if existing:
+                        if (
+                            existing.operator_admins_have_admin_role
+                            != operator_admins_have_admin_role
+                        ):
+                            existing.operator_admins_have_admin_role = (
+                                operator_admins_have_admin_role
+                            )
+                            existing.save(
+                                update_fields=[
+                                    "operator_admins_have_admin_role",
+                                    "updated_at",
+                                ]
+                            )
                         already_exists_count += 1
                     else:
                         models.OperatorOrganizationRole.objects.create(
