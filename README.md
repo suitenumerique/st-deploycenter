@@ -84,6 +84,7 @@ $ make stop
 
 # Start all containers, without full bootstrap
 $ make start
+$ make restart
 
 # View all available commands
 $ make help
