@@ -106,7 +106,7 @@ def _find_potential_operators(organization, service):
             has_dept_match=has_dept_match,
         )
         .filter(Q(has_org_role=True) | Q(has_dept_match=True))
-        .order_by("-has_org_role", "-display_priority")
+        .order_by("-has_org_role", "-display_priority", "operator__name")
     )
 
     result = []
