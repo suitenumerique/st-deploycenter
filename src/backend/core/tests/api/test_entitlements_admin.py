@@ -34,6 +34,7 @@ def test_api_entitlements_is_admin_false_no_account(
     )
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
         },
@@ -90,6 +91,7 @@ def test_api_entitlements_is_admin_false_no_admin_role(
     )
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
         },
@@ -153,6 +155,7 @@ def test_api_entitlements_is_admin_true_organization_level(
     )
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
         },
@@ -217,6 +220,7 @@ def test_api_entitlements_is_admin_true_service_level(
     )
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
         },
@@ -268,6 +272,7 @@ def test_api_entitlements_is_admin_true_service_level(
 def _make_service(**kwargs):
     config = {"entitlements_api_key": "test_token"}
     config.update(kwargs.pop("config", {}))
+    kwargs.setdefault("type", "test_service")
     return factories.ServiceFactory(config=config, **kwargs)
 
 

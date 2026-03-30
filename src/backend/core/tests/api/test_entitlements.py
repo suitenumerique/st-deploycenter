@@ -172,6 +172,7 @@ def test_api_entitlements_list_no_subscription(webhook_server):
     metrics_usage_endpoint = f"http://localhost:{port}/metrics/usage"
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
@@ -229,6 +230,7 @@ def test_api_entitlements_list_organization_not_found(webhook_server):
     metrics_usage_endpoint = f"http://localhost:{port}/metrics/usage"
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
@@ -275,6 +277,7 @@ def test_api_entitlements_list_with_inactive_subscription(webhook_server):
     metrics_usage_endpoint = f"http://localhost:{port}/metrics/usage"
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
@@ -326,12 +329,14 @@ def test_api_entitlements_list_service_token_mismatch(webhook_server):  # pylint
     )
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
         },
     )
 
     factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token2",
         },
@@ -374,6 +379,7 @@ def test_api_entitlements_list_usage_metrics_endpoint_not_reachable():
     metrics_usage_endpoint = f"http://localhost:{not_used_port}/metrics/usage"
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
@@ -441,6 +447,7 @@ def test_api_entitlements_list_usage_metrics_endpoint_error(buggy_service_server
     metrics_usage_endpoint = f"http://localhost:{port}/metrics/usage"
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
@@ -585,6 +592,7 @@ def test_api_entitlements_oidc_valid_true(webhook_server):
 
     port = webhook_server.server_address[1]
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": f"http://localhost:{port}/metrics/usage",
@@ -639,6 +647,7 @@ def test_api_entitlements_oidc_valid_false(webhook_server):
 
     port = webhook_server.server_address[1]
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": f"http://localhost:{port}/metrics/usage",
@@ -688,6 +697,7 @@ def test_api_entitlements_oidc_valid_inactive_subscription(webhook_server):
 
     port = webhook_server.server_address[1]
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": f"http://localhost:{port}/metrics/usage",
@@ -736,6 +746,7 @@ def test_api_entitlements_oidc_valid_none_without_idp_id(webhook_server):
 
     port = webhook_server.server_address[1]
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": f"http://localhost:{port}/metrics/usage",
@@ -777,6 +788,7 @@ def test_api_entitlements_oidc_valid_none_for_other_org_type(webhook_server):
 
     port = webhook_server.server_address[1]
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": f"http://localhost:{port}/metrics/usage",
@@ -822,6 +834,7 @@ def test_api_entitlements_query_count_no_subscription():
     organization = factories.OrganizationFactory(siret="12345678900001")
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
         },
@@ -872,6 +885,7 @@ def test_api_entitlements_query_count_no_subscription_with_idp_id():
     organization = factories.OrganizationFactory(siret="12345678900001")
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
         },
@@ -924,6 +938,7 @@ def test_api_entitlements_query_count_with_subscription():
     )
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
         },
@@ -999,6 +1014,7 @@ def _make_service(**kwargs):
     """Helper to create a service with entitlements_api_key."""
     config = {"entitlements_api_key": "test_token"}
     config.update(kwargs.pop("config", {}))
+    kwargs.setdefault("type", "test_service")
     return factories.ServiceFactory(config=config, **kwargs)
 
 
