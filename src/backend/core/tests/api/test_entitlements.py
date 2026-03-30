@@ -1289,3 +1289,79 @@ def test_api_entitlements_no_potential_operators_with_active_subscription(
     assert data["operator"] is not None
     assert data["operator"]["name"] == operator.name
     assert "potentialOperators" not in data
+
+
+def test_api_entitlements_potential_operators_filtered_by_population_limit():
+    """Operator excluded from potentialOperators when population limit blocks activation."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator_ok = factories.OperatorFactory(name="OK Operator")
+    operator_blocked = factories.OperatorFactory(name="Blocked Operator")
+
+    # Commune with population 50000
+    organization = factories.OrganizationFactory(
+        siret="12345678900001",
+        type="commune",
+        population=50000,
+        epci_population=200000,
+    )
+    service = _make_service()
+
+    # operator_ok: no population limits → can activate
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator_ok, organization=organization
+    )
+    factories.OperatorServiceConfigFactory(
+        operator=operator_ok, service=service, display_priority=10
+    )
+
+    # operator_blocked: population limit of 10000 for communes → blocks this org
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator_blocked, organization=organization
+    )
+    factories.OperatorServiceConfigFactory(
+        operator=operator_blocked,
+        service=service,
+        display_priority=20,
+        config_override={"population_limits": {"commune": 10000, "epci": 10000}},
+    )
+
+    response = _make_entitlements_request(client, service, organization.siret)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert len(data["potentialOperators"]) == 1
+    assert data["potentialOperators"][0]["name"] == "OK Operator"
+
+
+def test_api_entitlements_potential_operators_population_limit_allows():
+    """Operator included when org population is under the limit."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    organization = factories.OrganizationFactory(
+        siret="12345678900001",
+        type="commune",
+        population=5000,
+    )
+    service = _make_service()
+
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    factories.OperatorServiceConfigFactory(
+        operator=operator,
+        service=service,
+        config_override={"population_limits": {"commune": 10000}},
+    )
+
+    response = _make_entitlements_request(client, service, organization.siret)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert len(data["potentialOperators"]) == 1
+    assert data["potentialOperators"][0]["name"] == operator.name

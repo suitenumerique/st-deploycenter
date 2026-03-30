@@ -97,7 +97,9 @@ def _find_potential_operators(organization, service):
         has_dept_match = Value(False, output_field=BooleanField())
 
     oscs = (
-        models.OperatorServiceConfig.objects.filter(service=service)
+        models.OperatorServiceConfig.objects.filter(
+            service=service, operator__is_active=True
+        )
         .select_related("operator")
         .annotate(
             has_org_role=has_org_role,
@@ -108,9 +110,12 @@ def _find_potential_operators(organization, service):
     )
 
     result = []
+    base_url = settings.SUITE_TERRITORIALE_BASE_URL.rstrip("/")
     for osc in oscs:
+        can_activate, _reason = service.can_activate(organization, osc.operator)
+        if not can_activate:
+            continue
         op_data = EntitlementOperatorSerializer(osc.operator).data
-        base_url = settings.SUITE_TERRITORIALE_BASE_URL.rstrip("/")
         op_data["signupUrl"] = (
             f"{base_url}/bienvenue/"
             f"{organization.siret}/contact"

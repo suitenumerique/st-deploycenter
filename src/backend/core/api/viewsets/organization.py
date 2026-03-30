@@ -44,7 +44,7 @@ class OperatorOrganizationViewSet(viewsets.ReadOnlyModelViewSet):
         operator_id = self.kwargs["operator_id"]
         subscriptions_queryset = models.ServiceSubscription.objects.filter(
             operator=operator_id
-        )
+        ).select_related("service", "operator")
         operator_roles_queryset = models.OperatorOrganizationRole.objects.filter(
             operator_id=operator_id
         )
