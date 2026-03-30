@@ -144,6 +144,7 @@ def test_api_entitlements_can_access_without_subscription(
             "oidc_valid": None,
         },
         "operator": None,
+        "potentialOperators": [],
         "entitlements": {
             "can_access": True,
         },
@@ -175,6 +176,7 @@ def test_api_entitlements_can_access_without_subscription(
             "oidc_valid": None,
         },
         "operator": None,
+        "potentialOperators": [],
         "entitlements": {
             "can_access": True,
         },

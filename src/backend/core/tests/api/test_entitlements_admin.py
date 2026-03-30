@@ -34,6 +34,7 @@ def test_api_entitlements_is_admin_false_no_account(
     )
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
         },
@@ -64,7 +65,6 @@ def test_api_entitlements_is_admin_false_no_account(
             "entitlements": {
                 "can_access": True,
                 "is_admin": False,
-                "is_admin_reason": "no_account",
             },
         },
     )
@@ -91,6 +91,7 @@ def test_api_entitlements_is_admin_false_no_admin_role(
     )
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
         },
@@ -128,7 +129,6 @@ def test_api_entitlements_is_admin_false_no_admin_role(
             "entitlements": {
                 "can_access": True,
                 "is_admin": False,
-                "is_admin_reason": "no_admin_role",
             },
         },
     )
@@ -155,6 +155,7 @@ def test_api_entitlements_is_admin_true_organization_level(
     )
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
         },
@@ -219,6 +220,7 @@ def test_api_entitlements_is_admin_true_service_level(
     )
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
         },
@@ -259,6 +261,178 @@ def test_api_entitlements_is_admin_true_service_level(
                 "can_access": True,
                 "is_admin": True,
                 "is_admin_resolve_level": "service",
+            },
+        },
+    )
+
+
+# --- Operator admin passthrough (base resolver) ---
+
+
+def _make_service(**kwargs):
+    config = {"entitlements_api_key": "test_token"}
+    config.update(kwargs.pop("config", {}))
+    kwargs.setdefault("type", "test_service")
+    return factories.ServiceFactory(config=config, **kwargs)
+
+
+def _entitlements_by_email(client, service, siret, account_email):
+    return client.get(
+        "/api/v1.0/entitlements/",
+        query_params={
+            "service_id": service.id,
+            "account_type": "user",
+            "account_email": account_email,
+            "siret": siret,
+        },
+        headers={"X-Service-Auth": "Bearer test_token"},
+    )
+
+
+def test_operator_admin_passthrough_is_admin_true():
+    """Operator admin gets is_admin=True with resolve_level=operator."""
+    user = factories.UserFactory(email="admin@operator.fr")
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator,
+        organization=organization,
+        operator_admins_have_admin_role=True,
+    )
+
+    service = _make_service()
+    factories.ServiceSubscriptionFactory(
+        organization=organization, service=service, operator=operator
+    )
+
+    response = _entitlements_by_email(
+        client, service, organization.siret, "admin@operator.fr"
+    )
+    assert response.status_code == 200
+    assert_equals_partial(
+        response.json(),
+        {
+            "entitlements": {
+                "can_access": True,
+                "is_admin": True,
+                "is_admin_resolve_level": "operator",
+            },
+        },
+    )
+
+
+def test_operator_admin_passthrough_flag_off_is_admin_false():
+    """Flag off → operator admin does not get is_admin."""
+    user = factories.UserFactory(email="admin@operator.fr")
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    service = _make_service()
+    factories.ServiceSubscriptionFactory(
+        organization=organization, service=service, operator=operator
+    )
+
+    response = _entitlements_by_email(
+        client, service, organization.siret, "admin@operator.fr"
+    )
+    assert response.status_code == 200
+    assert_equals_partial(
+        response.json(),
+        {
+            "entitlements": {
+                "is_admin": False,
+            },
+        },
+    )
+
+
+def test_operator_admin_passthrough_works_for_extended_admin():
+    """Operator admin passthrough works for ADC/ESD services (ExtendedAdminEntitlementResolver)."""
+    user = factories.UserFactory(email="admin@operator.fr")
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory(
+        siret="12345678900001", population=50000
+    )
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator,
+        organization=organization,
+        operator_admins_have_admin_role=True,
+    )
+
+    service = _make_service(type="adc")
+    factories.ServiceSubscriptionFactory(
+        organization=organization,
+        service=service,
+        operator=operator,
+        metadata={"auto_admin": "manual"},
+    )
+
+    response = _entitlements_by_email(
+        client, service, organization.siret, "admin@operator.fr"
+    )
+    assert response.status_code == 200
+    assert_equals_partial(
+        response.json(),
+        {
+            "entitlements": {
+                "can_access": True,
+                "is_admin": True,
+                "is_admin_resolve_level": "operator",
+            },
+        },
+    )
+
+
+def test_operator_admin_passthrough_no_account_still_works():
+    """Operator admin gets is_admin even when no Account exists for the email."""
+    user = factories.UserFactory(email="admin@operator.fr")
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator,
+        organization=organization,
+        operator_admins_have_admin_role=True,
+    )
+
+    service = _make_service()
+    factories.ServiceSubscriptionFactory(
+        organization=organization, service=service, operator=operator
+    )
+
+    # No Account created for admin@operator.fr
+    response = _entitlements_by_email(
+        client, service, organization.siret, "admin@operator.fr"
+    )
+    assert response.status_code == 200
+    assert_equals_partial(
+        response.json(),
+        {
+            "entitlements": {
+                "is_admin": True,
+                "is_admin_resolve_level": "operator",
             },
         },
     )

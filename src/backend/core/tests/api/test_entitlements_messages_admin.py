@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """
 Test can_admin_maildomains entitlement for Messages service.
 """
@@ -738,3 +739,412 @@ def test_api_entitlements_messages_can_admin_maildomains_all_scope_domains_remov
             },
         },
     )
+
+
+# --- Operator admin passthrough tests ---
+
+
+def _make_messages_service():
+    """Helper: create a messages service with auth key."""
+    return factories.ServiceFactory(
+        type="messages",
+        config={"entitlements_api_key": "test_token"},
+    )
+
+
+def _entitlements_request(client, service, siret, account_email=None, account_id=None):
+    """Helper: call the entitlements endpoint."""
+    params = {
+        "service_id": service.id,
+        "account_type": "user",
+        "siret": siret,
+    }
+    if account_email:
+        params["account_email"] = account_email
+    if account_id:
+        params["account_id"] = account_id
+    return client.get(
+        "/api/v1.0/entitlements/",
+        query_params=params,
+        headers={"X-Service-Auth": "Bearer test_token"},
+    )
+
+
+def test_operator_admin_passthrough_flag_on():
+    """Operator admin gets all domains when flag is on the OperatorOrganizationRole."""
+    user = factories.UserFactory(email="admin@operator.fr")
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator,
+        organization=organization,
+        operator_admins_have_admin_role=True,
+    )
+
+    service = _make_messages_service()
+    factories.ServiceSubscriptionFactory(
+        organization=organization,
+        service=service,
+        operator=operator,
+        metadata={"domains": ["commune.fr", "mairie.fr"]},
+    )
+
+    response = _entitlements_request(
+        client, service, organization.siret, account_email="admin@operator.fr"
+    )
+    assert response.status_code == 200
+    domains = response.json()["entitlements"]["can_admin_maildomains"]
+    assert sorted(domains) == ["commune.fr", "mairie.fr"]
+
+
+def test_operator_admin_passthrough_flag_off():
+    """Operator admin gets nothing when flag is off (default)."""
+    user = factories.UserFactory(email="admin@operator.fr")
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    service = _make_messages_service()
+    factories.ServiceSubscriptionFactory(
+        organization=organization,
+        service=service,
+        operator=operator,
+        metadata={"domains": ["commune.fr"]},
+    )
+
+    response = _entitlements_request(
+        client, service, organization.siret, account_email="admin@operator.fr"
+    )
+    assert response.status_code == 200
+    assert response.json()["entitlements"]["can_admin_maildomains"] == []
+
+
+def test_operator_admin_passthrough_wrong_operator():
+    """User is admin of operator A, org role with flag belongs to operator B → no access."""
+    user = factories.UserFactory(email="admin@operator.fr")
+    client = APIClient()
+    client.force_login(user)
+
+    operator_a = factories.OperatorFactory()
+    operator_b = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator_a)
+
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator_b,
+        organization=organization,
+        operator_admins_have_admin_role=True,
+    )
+
+    service = _make_messages_service()
+    factories.ServiceSubscriptionFactory(
+        organization=organization,
+        service=service,
+        operator=operator_b,
+        metadata={"domains": ["commune.fr"]},
+    )
+
+    response = _entitlements_request(
+        client, service, organization.siret, account_email="admin@operator.fr"
+    )
+    assert response.status_code == 200
+    assert response.json()["entitlements"]["can_admin_maildomains"] == []
+
+
+def test_operator_admin_passthrough_not_operator_admin():
+    """User has no UserOperatorRole → no access even with flag on."""
+    user = factories.UserFactory(email="random@user.fr")
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator,
+        organization=organization,
+        operator_admins_have_admin_role=True,
+    )
+
+    service = _make_messages_service()
+    factories.ServiceSubscriptionFactory(
+        organization=organization,
+        service=service,
+        operator=operator,
+        metadata={"domains": ["commune.fr"]},
+    )
+
+    response = _entitlements_request(
+        client, service, organization.siret, account_email="random@user.fr"
+    )
+    assert response.status_code == 200
+    assert response.json()["entitlements"]["can_admin_maildomains"] == []
+
+
+def test_operator_admin_passthrough_only_with_email():
+    """Operator admin lookup requires account_email; account_id alone is not enough."""
+    user = factories.UserFactory(email="admin@operator.fr")
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator,
+        organization=organization,
+        operator_admins_have_admin_role=True,
+    )
+
+    service = _make_messages_service()
+    factories.ServiceSubscriptionFactory(
+        organization=organization,
+        service=service,
+        operator=operator,
+        metadata={"domains": ["commune.fr"]},
+    )
+
+    response = _entitlements_request(
+        client, service, organization.siret, account_id="some-external-id"
+    )
+    assert response.status_code == 200
+    assert response.json()["entitlements"]["can_admin_maildomains"] == []
+
+
+def test_operator_admin_passthrough_inactive_subscription():
+    """Inactive subscription → admin resolver doesn't run, no can_admin_maildomains."""
+    user = factories.UserFactory(email="admin@operator.fr")
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator,
+        organization=organization,
+        operator_admins_have_admin_role=True,
+    )
+
+    service = _make_messages_service()
+    factories.ServiceSubscriptionFactory(
+        organization=organization,
+        service=service,
+        operator=operator,
+        is_active=False,
+        metadata={"domains": ["commune.fr"]},
+    )
+
+    response = _entitlements_request(
+        client, service, organization.siret, account_email="admin@operator.fr"
+    )
+    assert response.status_code == 200
+    assert "can_admin_maildomains" not in response.json()["entitlements"]
+
+
+def test_operator_admin_passthrough_multiple_orgs():
+    """Operator admin gets domains from all orgs where flag is on."""
+    user = factories.UserFactory(email="admin@operator.fr")
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    org_a = factories.OrganizationFactory(siret="12345678900001")
+    org_b = factories.OrganizationFactory(siret="22345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=org_a, operator_admins_have_admin_role=True
+    )
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=org_b, operator_admins_have_admin_role=True
+    )
+
+    service = _make_messages_service()
+    factories.ServiceSubscriptionFactory(
+        organization=org_a,
+        service=service,
+        operator=operator,
+        metadata={"domains": ["a.fr"]},
+    )
+    factories.ServiceSubscriptionFactory(
+        organization=org_b,
+        service=service,
+        operator=operator,
+        metadata={"domains": ["b.fr"]},
+    )
+
+    response = _entitlements_request(
+        client, service, org_a.siret, account_email="admin@operator.fr"
+    )
+    assert response.status_code == 200
+    domains = response.json()["entitlements"]["can_admin_maildomains"]
+    assert sorted(domains) == ["a.fr", "b.fr"]
+
+
+def test_operator_admin_passthrough_mixed_flags():
+    """Only orgs with flag=true grant access."""
+    user = factories.UserFactory(email="admin@operator.fr")
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    org_on = factories.OrganizationFactory(siret="12345678900001")
+    org_off = factories.OrganizationFactory(siret="22345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=org_on, operator_admins_have_admin_role=True
+    )
+    factories.OperatorOrganizationRoleFactory(operator=operator, organization=org_off)
+
+    service = _make_messages_service()
+    factories.ServiceSubscriptionFactory(
+        organization=org_on,
+        service=service,
+        operator=operator,
+        metadata={"domains": ["on.fr"]},
+    )
+    factories.ServiceSubscriptionFactory(
+        organization=org_off,
+        service=service,
+        operator=operator,
+        metadata={"domains": ["off.fr"]},
+    )
+
+    response = _entitlements_request(
+        client, service, org_on.siret, account_email="admin@operator.fr"
+    )
+    assert response.status_code == 200
+    assert response.json()["entitlements"]["can_admin_maildomains"] == ["on.fr"]
+
+
+def test_operator_admin_passthrough_requires_active_service_subscription():
+    """Flag on OperatorOrganizationRole but no subscription for the queried service → no access."""
+    user = factories.UserFactory(email="admin@operator.fr")
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator,
+        organization=organization,
+        operator_admins_have_admin_role=True,
+    )
+
+    queried_service = _make_messages_service()
+    other_service = factories.ServiceFactory(
+        type="messages",
+        config={"entitlements_api_key": "other_token"},
+    )
+
+    # Subscription only for other_service, not queried_service
+    factories.ServiceSubscriptionFactory(
+        organization=organization,
+        service=other_service,
+        operator=operator,
+        metadata={"domains": ["other.fr"]},
+    )
+
+    response = _entitlements_request(
+        client, queried_service, organization.siret, account_email="admin@operator.fr"
+    )
+    assert response.status_code == 200
+    assert "can_admin_maildomains" not in response.json()["entitlements"]
+
+
+def test_operator_admin_passthrough_combined_with_account_admin():
+    """Operator admin passthrough merges with regular account-level admin."""
+    user = factories.UserFactory(email="admin@operator.fr")
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    org_a = factories.OrganizationFactory(siret="12345678900001")
+    org_b = factories.OrganizationFactory(siret="22345678900001")
+    factories.OperatorOrganizationRoleFactory(operator=operator, organization=org_a)
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=org_b, operator_admins_have_admin_role=True
+    )
+
+    service = _make_messages_service()
+
+    # org_a: regular org-level admin
+    factories.ServiceSubscriptionFactory(
+        organization=org_a,
+        service=service,
+        operator=operator,
+        metadata={"domains": ["a.fr"]},
+    )
+    factories.AccountFactory(
+        organization=org_a,
+        type="user",
+        external_id="",
+        email="admin@operator.fr",
+        roles=["admin"],
+    )
+
+    # org_b: operator admin passthrough
+    factories.ServiceSubscriptionFactory(
+        organization=org_b,
+        service=service,
+        operator=operator,
+        metadata={"domains": ["b.fr"]},
+    )
+
+    response = _entitlements_request(
+        client, service, org_a.siret, account_email="admin@operator.fr"
+    )
+    assert response.status_code == 200
+    domains = response.json()["entitlements"]["can_admin_maildomains"]
+    assert sorted(domains) == ["a.fr", "b.fr"]
+
+
+def test_operator_admin_passthrough_email_must_match_exactly():
+    """Email match is exact — different casing in User.email won't match."""
+    user = factories.UserFactory(email="Admin@Operator.FR")
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator,
+        organization=organization,
+        operator_admins_have_admin_role=True,
+    )
+
+    service = _make_messages_service()
+    factories.ServiceSubscriptionFactory(
+        organization=organization,
+        service=service,
+        operator=operator,
+        metadata={"domains": ["commune.fr"]},
+    )
+
+    response = _entitlements_request(
+        client, service, organization.siret, account_email="admin@operator.fr"
+    )
+    assert response.status_code == 200
+    assert response.json()["entitlements"]["can_admin_maildomains"] == []

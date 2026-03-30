@@ -13,6 +13,7 @@ from django.db.models import JSONField
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import path, reverse
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from . import models
@@ -310,7 +311,7 @@ class BulkSiretImportForm(forms.ModelForm):
 
     class Meta:
         model = models.OperatorOrganizationRole
-        fields = ["operator", "role"]
+        fields = ["operator", "role", "operator_admins_have_admin_role"]
         widgets = {
             "operator": forms.Select(attrs={"class": "form-control"}),
             "role": forms.Select(attrs={"class": "form-control"}),
@@ -1056,15 +1057,21 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
         "organization",
         "organization_population",
         "role",
+        "operator_admins_have_admin_role",
         "created_at",
     )
     list_filter = (
         "role",
+        "operator_admins_have_admin_role",
         OperatorFilter,
         "organization__type",
         "created_at",
         AboveContributionThresholdFilter,
     )
+    actions = [
+        "enable_operator_admins_have_admin_role",
+        "disable_operator_admins_have_admin_role",
+    ]
     search_fields = ("operator__name", "organization__name")
     ordering = ("operator__name", "organization__name")
     readonly_fields = ("id", "created_at", "updated_at")
@@ -1073,6 +1080,10 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
 
     fieldsets = (
         (None, {"fields": ("operator", "organization", "role")}),
+        (
+            _("Options"),
+            {"fields": ("operator_admins_have_admin_role",)},
+        ),
         (_("Metadata"), {"fields": ("created_at", "updated_at")}),
     )
 
@@ -1084,6 +1095,22 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
 
     organization_population.short_description = _("Population")
     organization_population.admin_order_field = "organization__population"
+
+    @admin.action(description=_("Set admin role for operator admins"))
+    def enable_operator_admins_have_admin_role(self, request, queryset):
+        """Enable operator_admins_have_admin_role on selected roles."""
+        updated = queryset.update(
+            operator_admins_have_admin_role=True, updated_at=timezone.now()
+        )
+        self.message_user(request, _("%d role(s) updated.") % updated)
+
+    @admin.action(description=_("Unset admin role for operator admins"))
+    def disable_operator_admins_have_admin_role(self, request, queryset):
+        """Disable operator_admins_have_admin_role on selected roles."""
+        updated = queryset.update(
+            operator_admins_have_admin_role=False, updated_at=timezone.now()
+        )
+        self.message_user(request, _("%d role(s) updated.") % updated)
 
     def get_form(self, request, obj=None, change=False, **kwargs):
         """Return the form class for the admin view."""
@@ -1101,7 +1128,16 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
             == "core_operatororganizationrole_bulk_import"
         ):
             return (
-                (None, {"fields": ("operator", "role")}),
+                (
+                    None,
+                    {
+                        "fields": (
+                            "operator",
+                            "role",
+                            "operator_admins_have_admin_role",
+                        )
+                    },
+                ),
                 (
                     _("SIRET Import"),
                     {"fields": ("siret_list", "expand_epci_to_communes")},
@@ -1140,7 +1176,13 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
         return custom_urls + urls
 
     def _process_bulk_import(
-        self, siret_list, operator, role, expand_epci, sync_types=None
+        self,
+        siret_list,
+        operator,
+        role,
+        expand_epci,
+        sync_types=None,
+        operator_admins_have_admin_role=False,
     ):
         """Process the bulk import of codes using shared resolution logic.
 
@@ -1173,17 +1215,20 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
         with transaction.atomic():
             for orgs in org_groups:
                 for organization in orgs:
-                    if models.OperatorOrganizationRole.objects.filter(
-                        operator=operator, organization=organization
-                    ).exists():
-                        already_exists_count += 1
-                    else:
-                        models.OperatorOrganizationRole.objects.create(
+                    _obj, created = (
+                        models.OperatorOrganizationRole.objects.update_or_create(
                             operator=operator,
                             organization=organization,
-                            role=role,
+                            defaults={
+                                "role": role,
+                                "operator_admins_have_admin_role": operator_admins_have_admin_role,
+                            },
                         )
+                    )
+                    if created:
                         created_count += 1
+                    else:
+                        already_exists_count += 1
 
             # Sync: delete roles not in import for selected types
             for org_type in sync_types:
@@ -1264,7 +1309,14 @@ class OperatorOrganizationRoleAdmin(admin.ModelAdmin):
                         sync_types.append(org_type)
 
                 results = self._process_bulk_import(
-                    siret_list, operator, role, expand_epci, sync_types=sync_types
+                    siret_list,
+                    operator,
+                    role,
+                    expand_epci,
+                    sync_types=sync_types,
+                    operator_admins_have_admin_role=form.cleaned_data.get(
+                        "operator_admins_have_admin_role", False
+                    ),
                 )
                 return self._handle_import_results(
                     request, results, operator, role, siret_list

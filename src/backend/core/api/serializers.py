@@ -762,6 +762,26 @@ class OrganizationSerializer(serializers.ModelSerializer):
         mail_domain, mail_domain_status = instance.get_mail_domain_status()
         data["mail_domain"] = mail_domain
         data["mail_domain_status"] = mail_domain_status
+
+        # Expose the operator_admins_have_admin_role flag from the
+        # OperatorOrganizationRole for the current operator context.
+        # Uses prefetched_operator_roles when available (set by viewset)
+        # to avoid N+1 queries on list endpoints.
+        prefetched = getattr(instance, "prefetched_operator_roles", None)
+        if prefetched is not None:
+            role = prefetched[0] if prefetched else None
+            data["operator_admins_have_admin_role"] = (
+                role.operator_admins_have_admin_role if role else False
+            )
+        else:
+            view = self.context.get("view")
+            operator_id = getattr(view, "kwargs", {}).get("operator_id")
+            if operator_id:
+                role = instance.operator_roles.filter(operator_id=operator_id).first()
+                data["operator_admins_have_admin_role"] = (
+                    role.operator_admins_have_admin_role if role else False
+                )
+
         return data
 
 

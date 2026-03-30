@@ -682,6 +682,15 @@ class OperatorOrganizationRole(BaseModel):
         help_text=_("Role of the operator in the organization"),
     )
 
+    operator_admins_have_admin_role = models.BooleanField(
+        _("operator admins have admin role"),
+        default=False,
+        help_text=_(
+            "When enabled, users with an operator-level admin role "
+            "are treated as service admins for this organization."
+        ),
+    )
+
     class Meta:
         db_table = "deploycenter_operator_organization_role"
         verbose_name = _("operator organization role")
@@ -1221,6 +1230,19 @@ class Account(BaseModel):
     def __str__(self):
         return f"{self.id} (external_id: {self.external_id}) - {self.type} - {self.email} - {self.organization.name}"
 
+    def save(self, *args, **kwargs):
+        """Normalize the email domain to lowercase before saving."""
+        self.email = self.normalize_email(self.email)
+        super().save(*args, **kwargs)
+
+    @staticmethod
+    def normalize_email(email):
+        """Lowercase the domain part of an email address."""
+        if email and "@" in email:
+            local, domain = email.rsplit("@", 1)
+            return f"{local}@{domain.lower()}"
+        return email
+
     @classmethod
     def find_by_identifiers(
         cls,
@@ -1235,6 +1257,7 @@ class Account(BaseModel):
         If reconcile_external_id=True and found by email, backfills external_id
         (only for trusted sources).
         """
+        email = cls.normalize_email(email)
         account = None
         found_by = None
         filters = {"type": account_type, "organization": organization}

@@ -14,6 +14,7 @@ import {
   updateAccountServiceLink,
   Account,
   getOperatorServices,
+  updateOperatorOrganizationRole,
 } from "@/features/api/Repository";
 import { getOrganization } from "@/features/api/Repository";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -327,6 +328,31 @@ export const useMessagesAdminCount = (
       };
     },
     enabled: !!operatorId && !!organizationId && !!serviceId,
+  });
+};
+
+export const useMutationUpdateOperatorOrganizationRole = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      operatorId,
+      organizationId,
+      data,
+    }: {
+      operatorId: string;
+      organizationId: string;
+      data: { operator_admins_have_admin_role: boolean };
+    }) => updateOperatorOrganizationRole(operatorId, organizationId, data),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: [
+          "operators",
+          variables.operatorId,
+          "organizations",
+          variables.organizationId,
+        ],
+      });
+    },
   });
 };
 

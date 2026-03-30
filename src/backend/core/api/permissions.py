@@ -3,6 +3,7 @@
 import logging
 import secrets
 
+from django.conf import settings
 from django.core import exceptions
 
 from rest_framework import permissions
@@ -260,4 +261,37 @@ class ServiceAuthenticationPermission(permissions.BasePermission):
         # Stash the service on the request so the view can reuse it
         # without a duplicate query.
         request.service = target_service
+        return True
+
+
+class MetricsApiKeyPermission(permissions.BasePermission):
+    """Allows access only to requests bearing a valid metrics API key
+    via the standard Authorization header."""
+
+    def has_permission(self, request, view):
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            logger.warning(
+                "Metrics auth denied: missing Authorization header (%s)", request.path
+            )
+            return False
+
+        parts = auth_header.split(" ", 1)
+        if len(parts) != 2 or parts[0] != "Bearer":
+            logger.warning(
+                "Metrics auth denied: malformed Authorization header (%s)", request.path
+            )
+            return False
+
+        expected = settings.METRICS_API_KEY
+        if not expected:
+            logger.warning(
+                "Metrics auth denied: METRICS_API_KEY not configured (%s)", request.path
+            )
+            return False
+
+        if not secrets.compare_digest(expected, parts[1]):
+            logger.warning("Metrics auth denied: invalid token (%s)", request.path)
+            return False
+
         return True

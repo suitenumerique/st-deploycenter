@@ -383,6 +383,14 @@
 .dc__accounts {
   padding: 0 32px;
 
+  &__operator-admin-setting {
+    background: var(--c--theme--colors--greyscale-100);
+    border: 1px solid var(--c--theme--colors--greyscale-200);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-top: 1rem;
+  }
+
   &__ellipsis {
     overflow: hidden;
     text-overflow: ellipsis;

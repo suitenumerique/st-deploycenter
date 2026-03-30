@@ -47,6 +47,7 @@ export type Organization = {
   adresse_messagerie: string | null;
   site_internet: string | null;
   telephone: string | null;
+  operator_admins_have_admin_role?: boolean;
 };
 
 export type ServiceSubscription = {
@@ -214,6 +215,18 @@ export const getOrganization = async (
   );
   const data = (await response.json()) as Organization;
   return data;
+};
+
+export const updateOperatorOrganizationRole = async (
+  operatorId: string,
+  organizationId: string,
+  data: { operator_admins_have_admin_role: boolean }
+): Promise<{ operator_admins_have_admin_role: boolean }> => {
+  const response = await fetchAPI(
+    `operators/${operatorId}/organizations/${organizationId}/operator-role/`,
+    { method: "PATCH", body: JSON.stringify(data) }
+  );
+  return (await response.json()) as { operator_admins_have_admin_role: boolean };
 };
 
 export const getOrganizationServices = async (

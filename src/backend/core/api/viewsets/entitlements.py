@@ -2,7 +2,8 @@
 Entitlements API viewsets.
 """
 
-from django.db.models import Q
+from django.conf import settings
+from django.db.models import BooleanField, Case, Exists, OuterRef, Q, Value, When
 
 import rest_framework as drf
 from rest_framework import serializers
@@ -66,6 +67,65 @@ class EntitlementViewSerializer(serializers.Serializer):
         return attrs
 
 
+def _find_potential_operators(organization, service):
+    """Find potential operators for an organization+service pair.
+
+    Returns a list of dicts with serialized operator data, signupUrl, and match flags.
+    Uses a single query combining two strategies:
+    1. Operator has an OperatorOrganizationRole with this organization
+    2. Operator's config.departements contains the organization's departement_code_insee
+       (not applicable for regions)
+    """
+    has_org_role = Exists(
+        models.OperatorOrganizationRole.objects.filter(
+            operator=OuterRef("operator"),
+            organization=organization,
+        )
+    )
+
+    dept_code = organization.departement_code_insee
+    if organization.type != "region" and dept_code:
+        has_dept_match = Case(
+            When(
+                operator__config__departements__contains=[dept_code],
+                then=Value(True),
+            ),
+            default=Value(False),
+            output_field=BooleanField(),
+        )
+    else:
+        has_dept_match = Value(False, output_field=BooleanField())
+
+    oscs = (
+        models.OperatorServiceConfig.objects.filter(
+            service=service, operator__is_active=True
+        )
+        .select_related("operator")
+        .annotate(
+            has_org_role=has_org_role,
+            has_dept_match=has_dept_match,
+        )
+        .filter(Q(has_org_role=True) | Q(has_dept_match=True))
+        .order_by("-has_org_role", "-display_priority", "operator__name")
+    )
+
+    result = []
+    base_url = settings.SUITE_TERRITORIALE_BASE_URL.rstrip("/")
+    for osc in oscs:
+        can_activate, _reason = service.can_activate(organization, osc.operator)
+        if not can_activate:
+            continue
+        op_data = EntitlementOperatorSerializer(osc.operator).data
+        op_data["signupUrl"] = (
+            f"{base_url}/bienvenue/"
+            f"{organization.siret}/contact"
+            f"?operator={osc.operator.id}&services={service.id}"
+        )
+        result.append(op_data)
+
+    return result
+
+
 class EntitlementView(APIView):
     """
     Entitlement view.
@@ -106,6 +166,7 @@ class EntitlementView(APIView):
         account_email = serializer.validated_data.get("account_email")
 
         operator_data = None
+        potential_operators_data = None
         entitlement_context = {
             "account_type": account_type,
             "account_id": account_id,
@@ -192,6 +253,8 @@ class EntitlementView(APIView):
                 **entitlements_data,
                 **get_admin_entitlement_resolver(service).resolve(entitlement_context),
             }
+        elif organization:
+            potential_operators_data = _find_potential_operators(organization, service)
 
         # Separate metric fields from entitlements.
         metrics_data = {}
@@ -227,6 +290,8 @@ class EntitlementView(APIView):
             "operator": operator_data,
             "entitlements": entitlements_data,
         }
+        if potential_operators_data is not None:
+            response_data["potentialOperators"] = potential_operators_data
         if metrics_data:
             response_data["metrics"] = metrics_data
         return Response(response_data)

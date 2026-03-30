@@ -2,15 +2,22 @@
 API endpoints for Organization model.
 """
 
+import logging
+
 from django.db.models import Prefetch
 
 from rest_framework import filters, viewsets
+from rest_framework import serializers as drf_serializers
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from rest_framework.settings import api_settings
 
 from core import models
 from core.authentication import ExternalManagementApiKeyAuthentication
 
 from .. import permissions, serializers
+
+logger = logging.getLogger(__name__)
 
 
 class OperatorOrganizationViewSet(viewsets.ReadOnlyModelViewSet):
@@ -34,14 +41,23 @@ class OperatorOrganizationViewSet(viewsets.ReadOnlyModelViewSet):
     ordering_fields = ["name", "departement_code_insee", "epci_libelle"]
 
     def get_queryset(self):
+        operator_id = self.kwargs["operator_id"]
         subscriptions_queryset = models.ServiceSubscription.objects.filter(
-            operator=self.kwargs["operator_id"]
+            operator=operator_id
+        ).select_related("service", "operator")
+        operator_roles_queryset = models.OperatorOrganizationRole.objects.filter(
+            operator_id=operator_id
         )
 
         queryset = (
-            models.Organization.objects.filter(operators__id=self.kwargs["operator_id"])
+            models.Organization.objects.filter(operators__id=operator_id)
             .prefetch_related(
-                Prefetch("service_subscriptions", queryset=subscriptions_queryset)
+                Prefetch("service_subscriptions", queryset=subscriptions_queryset),
+                Prefetch(
+                    "operator_roles",
+                    queryset=operator_roles_queryset,
+                    to_attr="prefetched_operator_roles",
+                ),
             )
             .all()
         )
@@ -113,3 +129,45 @@ class OperatorOrganizationViewSet(viewsets.ReadOnlyModelViewSet):
                 order_by=["match_priority", "name"],
             )
         return queryset
+
+    @action(detail=True, methods=["patch"], url_path="operator-role")
+    def operator_role(self, request, *args, **kwargs):
+        """Update the OperatorOrganizationRole settings for this org+operator."""
+        organization = self.get_object()
+        operator_id = self.kwargs["operator_id"]
+
+        role = models.OperatorOrganizationRole.objects.filter(
+            operator_id=operator_id, organization=organization
+        ).first()
+        if not role:
+            logger.warning(
+                "operator_role: no role found for org=%s operator=%s",
+                organization.pk,
+                operator_id,
+            )
+            return Response(
+                {"detail": "No operator role found for this organization."},
+                status=404,
+            )
+
+        if "operator_admins_have_admin_role" in request.data:
+            value = request.data["operator_admins_have_admin_role"]
+            if not isinstance(value, bool):
+                raise drf_serializers.ValidationError(
+                    {"operator_admins_have_admin_role": "Must be a boolean."}
+                )
+            previous = role.operator_admins_have_admin_role
+            role.operator_admins_have_admin_role = value
+            role.save(update_fields=["operator_admins_have_admin_role", "updated_at"])
+            logger.info(
+                "operator_role: toggled operator_admins_have_admin_role "
+                "%s→%s for org=%s operator=%s",
+                previous,
+                value,
+                organization.pk,
+                operator_id,
+            )
+
+        return Response(
+            {"operator_admins_have_admin_role": role.operator_admins_have_admin_role}
+        )

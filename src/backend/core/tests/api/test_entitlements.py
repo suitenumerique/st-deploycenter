@@ -1,4 +1,4 @@
-# pylint: disable=invalid-name
+# pylint: disable=invalid-name,too-many-lines
 """
 Test users API endpoints in the deploycenter core app.
 
@@ -172,14 +172,15 @@ def test_api_entitlements_list_no_subscription(webhook_server):
     metrics_usage_endpoint = f"http://localhost:{port}/metrics/usage"
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
             "metrics_auth_token": "test_token",
         },
     )
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
 
-    # Test that we can upload to the drive
     response = client.get(
         "/api/v1.0/entitlements/",
         query_params={
@@ -192,18 +193,25 @@ def test_api_entitlements_list_no_subscription(webhook_server):
     )
     assert response.status_code == 200
     data = response.json()
-    assert data == {
-        "organization": {
-            "type": organization.type,
-            "name": organization.name,
-            "oidc_valid": None,
-        },
-        "operator": None,
-        "entitlements": {
-            "can_access": False,
-            "can_access_reason": AccessEntitlementResolver.Reason.NOT_ACTIVATED,
-        },
+    assert data["organization"] == {
+        "type": organization.type,
+        "name": organization.name,
+        "oidc_valid": None,
     }
+    assert data["operator"] is None
+    assert data["entitlements"] == {
+        "can_access": False,
+        "can_access_reason": AccessEntitlementResolver.Reason.NOT_ACTIVATED,
+    }
+    assert len(data["potentialOperators"]) == 1
+    assert data["potentialOperators"][0]["name"] == operator.name
+
+    expected_url = (
+        f"https://suiteterritoriale.anct.gouv.fr/bienvenue/"
+        f"{organization.siret}/contact"
+        f"?operator={operator.id}&services={service.id}"
+    )
+    assert data["potentialOperators"][0]["signupUrl"] == expected_url
 
 
 def test_api_entitlements_list_organization_not_found(webhook_server):
@@ -222,6 +230,7 @@ def test_api_entitlements_list_organization_not_found(webhook_server):
     metrics_usage_endpoint = f"http://localhost:{port}/metrics/usage"
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
@@ -268,18 +277,19 @@ def test_api_entitlements_list_with_inactive_subscription(webhook_server):
     metrics_usage_endpoint = f"http://localhost:{port}/metrics/usage"
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
             "metrics_auth_token": "test_token",
         },
     )
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
 
     factories.ServiceSubscriptionFactory(
         organization=organization, service=service, operator=operator, is_active=False
     )
 
-    # Test that we can upload to the drive
     response = client.get(
         "/api/v1.0/entitlements/",
         query_params={
@@ -292,18 +302,15 @@ def test_api_entitlements_list_with_inactive_subscription(webhook_server):
     )
     assert response.status_code == 200
     data = response.json()
-    assert data == {
-        "organization": {
-            "type": organization.type,
-            "name": organization.name,
-            "oidc_valid": None,
-        },
-        "operator": None,
-        "entitlements": {
-            "can_access": False,
-            "can_access_reason": AccessEntitlementResolver.Reason.NOT_ACTIVATED,
-        },
+    assert data["operator"] is None
+    assert data["entitlements"] == {
+        "can_access": False,
+        "can_access_reason": AccessEntitlementResolver.Reason.NOT_ACTIVATED,
     }
+    assert len(data["potentialOperators"]) == 1
+    assert data["potentialOperators"][0]["name"] == operator.name
+
+    assert "signupUrl" in data["potentialOperators"][0]
 
 
 def test_api_entitlements_list_service_token_mismatch(webhook_server):  # pylint: disable=unused-argument
@@ -322,12 +329,14 @@ def test_api_entitlements_list_service_token_mismatch(webhook_server):  # pylint
     )
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
         },
     )
 
     factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token2",
         },
@@ -370,6 +379,7 @@ def test_api_entitlements_list_usage_metrics_endpoint_not_reachable():
     metrics_usage_endpoint = f"http://localhost:{not_used_port}/metrics/usage"
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
@@ -437,6 +447,7 @@ def test_api_entitlements_list_usage_metrics_endpoint_error(buggy_service_server
     metrics_usage_endpoint = f"http://localhost:{port}/metrics/usage"
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
@@ -581,6 +592,7 @@ def test_api_entitlements_oidc_valid_true(webhook_server):
 
     port = webhook_server.server_address[1]
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": f"http://localhost:{port}/metrics/usage",
@@ -635,6 +647,7 @@ def test_api_entitlements_oidc_valid_false(webhook_server):
 
     port = webhook_server.server_address[1]
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": f"http://localhost:{port}/metrics/usage",
@@ -684,6 +697,7 @@ def test_api_entitlements_oidc_valid_inactive_subscription(webhook_server):
 
     port = webhook_server.server_address[1]
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": f"http://localhost:{port}/metrics/usage",
@@ -732,6 +746,7 @@ def test_api_entitlements_oidc_valid_none_without_idp_id(webhook_server):
 
     port = webhook_server.server_address[1]
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": f"http://localhost:{port}/metrics/usage",
@@ -773,6 +788,7 @@ def test_api_entitlements_oidc_valid_none_for_other_org_type(webhook_server):
 
     port = webhook_server.server_address[1]
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": f"http://localhost:{port}/metrics/usage",
@@ -818,6 +834,7 @@ def test_api_entitlements_query_count_no_subscription():
     organization = factories.OrganizationFactory(siret="12345678900001")
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
         },
@@ -853,7 +870,8 @@ def test_api_entitlements_query_count_no_subscription():
     # 2. Permission: Service lookup by id (reused by view)
     # 3. Organization lookup by siret
     # 4. ServiceSubscription lookup (org + service) with select_related(operator)
-    assert len(ctx) <= 4, f"Expected at most 4 queries, got {len(ctx)}:\n" + "\n".join(
+    # 5. Potential operators lookup (OperatorServiceConfig with annotations)
+    assert len(ctx) <= 5, f"Expected at most 5 queries, got {len(ctx)}:\n" + "\n".join(
         f"  {i + 1}. {q['sql']}" for i, q in enumerate(ctx)
     )
 
@@ -867,6 +885,7 @@ def test_api_entitlements_query_count_no_subscription_with_idp_id():
     organization = factories.OrganizationFactory(siret="12345678900001")
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
         },
@@ -900,7 +919,7 @@ def test_api_entitlements_query_count_no_subscription_with_idp_id():
 
     assert response.status_code == 200
     # Same as above + 1 oidc_valid EXISTS query
-    assert len(ctx) <= 5, f"Expected at most 5 queries, got {len(ctx)}:\n" + "\n".join(
+    assert len(ctx) <= 6, f"Expected at most 6 queries, got {len(ctx)}:\n" + "\n".join(
         f"  {i + 1}. {q['sql']}" for i, q in enumerate(ctx)
     )
 
@@ -919,6 +938,7 @@ def test_api_entitlements_query_count_with_subscription():
     )
 
     service = factories.ServiceFactory(
+        type="test_service",
         config={
             "entitlements_api_key": "test_token",
         },
@@ -971,3 +991,393 @@ def test_api_entitlements_query_count_with_subscription():
     assert len(ctx) <= 9, f"Expected at most 9 queries, got {len(ctx)}:\n" + "\n".join(
         f"  {i + 1}. {q['sql']}" for i, q in enumerate(ctx)
     )
+
+
+# --- potentialOperators tests ---
+
+
+def _make_entitlements_request(client, service, siret):
+    """Helper to make an entitlements API request."""
+    return client.get(
+        "/api/v1.0/entitlements/",
+        query_params={
+            "service_id": service.id,
+            "account_type": "user",
+            "account_id": "xyz",
+            "siret": siret,
+        },
+        headers={"X-Service-Auth": "Bearer test_token"},
+    )
+
+
+def _make_service(**kwargs):
+    """Helper to create a service with entitlements_api_key."""
+    config = {"entitlements_api_key": "test_token"}
+    config.update(kwargs.pop("config", {}))
+    kwargs.setdefault("type", "test_service")
+    return factories.ServiceFactory(config=config, **kwargs)
+
+
+def test_api_entitlements_potential_operators_via_org_role():
+    """Operator found via OperatorOrganizationRole + OperatorServiceConfig."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    service = _make_service()
+
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    factories.OperatorServiceConfigFactory(
+        operator=operator, service=service, display_priority=10
+    )
+
+    response = _make_entitlements_request(client, service, organization.siret)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["operator"] is None
+    assert len(data["potentialOperators"]) == 1
+
+    pot_op = data["potentialOperators"][0]
+    assert pot_op["name"] == operator.name
+    assert pot_op["siret"] == operator.siret
+    assert pot_op["url"] == operator.url
+    assert "hasOrganizationRole" not in pot_op
+    assert "hasDepartementMatch" not in pot_op
+    assert pot_op["signupUrl"] == (
+        f"https://suiteterritoriale.anct.gouv.fr/bienvenue/"
+        f"{organization.siret}/contact"
+        f"?operator={operator.id}&services={service.id}"
+    )
+
+
+def test_api_entitlements_potential_operators_dept_fallback_commune():
+    """Operator found via departement match for commune (no org role)."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory(config={"departements": ["75"]})
+    organization = factories.OrganizationFactory(
+        siret="12345678900001",
+        type="commune",
+        departement_code_insee="75",
+    )
+    service = _make_service()
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    response = _make_entitlements_request(client, service, organization.siret)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["operator"] is None
+    assert len(data["potentialOperators"]) == 1
+    assert data["potentialOperators"][0]["name"] == operator.name
+    assert "signupUrl" in data["potentialOperators"][0]
+
+
+def test_api_entitlements_potential_operators_dept_fallback_epci():
+    """Operator found via departement match for EPCI."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory(config={"departements": ["33"]})
+    organization = factories.OrganizationFactory(
+        siret="12345678900001",
+        type="epci",
+        departement_code_insee="33",
+    )
+    service = _make_service()
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    response = _make_entitlements_request(client, service, organization.siret)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert len(data["potentialOperators"]) == 1
+    assert len(data["potentialOperators"]) == 1
+
+
+def test_api_entitlements_potential_operators_dept_fallback_departement():
+    """Operator found via departement match for departement-type org."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory(config={"departements": ["2A"]})
+    organization = factories.OrganizationFactory(
+        siret="12345678900001",
+        type="departement",
+        departement_code_insee="2A",
+    )
+    service = _make_service()
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    response = _make_entitlements_request(client, service, organization.siret)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert len(data["potentialOperators"]) == 1
+    assert len(data["potentialOperators"]) == 1
+
+
+def test_api_entitlements_potential_operators_no_fallback_region():
+    """Departement fallback does NOT apply for regions."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory(config={"departements": ["75"]})
+    organization = factories.OrganizationFactory(
+        siret="12345678900001",
+        type="region",
+        departement_code_insee="75",
+    )
+    service = _make_service()
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    response = _make_entitlements_request(client, service, organization.siret)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["potentialOperators"] == []
+
+
+def test_api_entitlements_potential_operators_empty_no_service_config():
+    """OperatorOrganizationRole exists but no OperatorServiceConfig → empty list."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    service = _make_service()
+
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    # No OperatorServiceConfig created
+
+    response = _make_entitlements_request(client, service, organization.siret)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["potentialOperators"] == []
+
+
+def test_api_entitlements_potential_operators_empty_no_match():
+    """No org role and no departement match → empty list."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory(config={"departements": ["75"]})
+    organization = factories.OrganizationFactory(
+        siret="12345678900001",
+        departement_code_insee="33",
+    )
+    service = _make_service()
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    response = _make_entitlements_request(client, service, organization.siret)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["potentialOperators"] == []
+
+
+def test_api_entitlements_potential_operators_ordered_by_priority():
+    """Multiple operators via org role, ordered by display_priority DESC."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator_low = factories.OperatorFactory(name="Low Priority Op")
+    operator_high = factories.OperatorFactory(name="High Priority Op")
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    service = _make_service()
+
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator_low, organization=organization
+    )
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator_high, organization=organization
+    )
+    factories.OperatorServiceConfigFactory(
+        operator=operator_low, service=service, display_priority=5
+    )
+    factories.OperatorServiceConfigFactory(
+        operator=operator_high, service=service, display_priority=20
+    )
+
+    response = _make_entitlements_request(client, service, organization.siret)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert len(data["potentialOperators"]) == 2
+    assert data["potentialOperators"][0]["name"] == "High Priority Op"
+    assert data["potentialOperators"][1]["name"] == "Low Priority Op"
+
+
+def test_api_entitlements_potential_operators_combined():
+    """One operator via org role, another via departement fallback.
+
+    Org role operator should come first regardless of display_priority.
+    """
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator_role = factories.OperatorFactory(name="Role Operator")
+    operator_dept = factories.OperatorFactory(
+        name="Dept Operator",
+        config={"departements": ["75"]},
+    )
+    organization = factories.OrganizationFactory(
+        siret="12345678900001",
+        type="commune",
+        departement_code_insee="75",
+    )
+    service = _make_service()
+
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator_role, organization=organization
+    )
+    factories.OperatorServiceConfigFactory(
+        operator=operator_role, service=service, display_priority=1
+    )
+    factories.OperatorServiceConfigFactory(
+        operator=operator_dept, service=service, display_priority=100
+    )
+
+    response = _make_entitlements_request(client, service, organization.siret)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert len(data["potentialOperators"]) == 2
+    # Org role operator comes first even with lower display_priority
+    assert data["potentialOperators"][0]["name"] == "Role Operator"
+    assert data["potentialOperators"][1]["name"] == "Dept Operator"
+
+
+def test_api_entitlements_no_potential_operators_with_active_subscription(
+    webhook_server,
+):
+    """Active subscription → potentialOperators key absent, operator set."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    port = webhook_server.server_address[1]
+    service = _make_service(
+        config={
+            "usage_metrics_endpoint": f"http://localhost:{port}/metrics/usage",
+            "metrics_auth_token": "test_token",
+        },
+    )
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+    service_subscription = factories.ServiceSubscriptionFactory(
+        organization=organization, service=service, operator=operator
+    )
+    factories.EntitlementFactory(
+        service_subscription=service_subscription,
+        type=models.Entitlement.EntitlementType.DRIVE_STORAGE,
+        config={"max_storage": 1000},
+        account_type="user",
+        account=None,
+    )
+
+    response = _make_entitlements_request(client, service, organization.siret)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["operator"] is not None
+    assert data["operator"]["name"] == operator.name
+    assert "potentialOperators" not in data
+
+
+def test_api_entitlements_potential_operators_filtered_by_population_limit():
+    """Operator excluded from potentialOperators when population limit blocks activation."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator_ok = factories.OperatorFactory(name="OK Operator")
+    operator_blocked = factories.OperatorFactory(name="Blocked Operator")
+
+    # Commune with population 50000
+    organization = factories.OrganizationFactory(
+        siret="12345678900001",
+        type="commune",
+        population=50000,
+        epci_population=200000,
+    )
+    service = _make_service()
+
+    # operator_ok: no population limits → can activate
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator_ok, organization=organization
+    )
+    factories.OperatorServiceConfigFactory(
+        operator=operator_ok, service=service, display_priority=10
+    )
+
+    # operator_blocked: population limit of 10000 for communes → blocks this org
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator_blocked, organization=organization
+    )
+    factories.OperatorServiceConfigFactory(
+        operator=operator_blocked,
+        service=service,
+        display_priority=20,
+        config_override={"population_limits": {"commune": 10000, "epci": 10000}},
+    )
+
+    response = _make_entitlements_request(client, service, organization.siret)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert len(data["potentialOperators"]) == 1
+    assert data["potentialOperators"][0]["name"] == "OK Operator"
+
+
+def test_api_entitlements_potential_operators_population_limit_allows():
+    """Operator included when org population is under the limit."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    organization = factories.OrganizationFactory(
+        siret="12345678900001",
+        type="commune",
+        population=5000,
+    )
+    service = _make_service()
+
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    factories.OperatorServiceConfigFactory(
+        operator=operator,
+        service=service,
+        config_override={"population_limits": {"commune": 10000}},
+    )
+
+    response = _make_entitlements_request(client, service, organization.siret)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert len(data["potentialOperators"]) == 1
+    assert data["potentialOperators"][0]["name"] == operator.name
