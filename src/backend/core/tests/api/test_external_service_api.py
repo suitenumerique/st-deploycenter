@@ -15,7 +15,7 @@ def _setup_service_with_key(service_type="test_service"):
     api_key = "test-service-api-key-12345"
     operator = factories.OperatorFactory()
     service = factories.ServiceFactory(type=service_type)
-    service.config = {"external_management_api_key": api_key}
+    service.external_management_api_key = api_key
     service.save()
     factories.OperatorServiceConfigFactory(operator=operator, service=service)
     organization = factories.OrganizationFactory()
@@ -72,7 +72,7 @@ def test_service_api_key_unconfigured_operator():
     """Test that a service key is rejected for an operator without OperatorServiceConfig."""
     api_key = "test-service-api-key-99999"
     service = factories.ServiceFactory(type="test_service")
-    service.config = {"external_management_api_key": api_key}
+    service.external_management_api_key = api_key
     service.save()
 
     # Create operator WITHOUT OperatorServiceConfig for this service
@@ -314,7 +314,7 @@ def test_operator_key_still_works():
     """Test that operator external management key still works after adding service key support."""
     operator = factories.OperatorFactory()
     api_key = "test-operator-api-key-12345"
-    operator.config = {"external_management_api_key": api_key}
+    operator.external_management_api_key = api_key
     operator.save()
 
     organization = factories.OrganizationFactory()
@@ -335,12 +335,12 @@ def test_both_keys_coexist():
     """Test that operator and service keys can coexist."""
     operator = factories.OperatorFactory()
     op_key = "test-operator-api-key-coexist"
-    operator.config = {"external_management_api_key": op_key}
+    operator.external_management_api_key = op_key
     operator.save()
 
     service = factories.ServiceFactory(type="test_service")
     svc_key = "test-service-api-key-coexist"
-    service.config = {"external_management_api_key": svc_key}
+    service.external_management_api_key = svc_key
     service.save()
 
     factories.OperatorServiceConfigFactory(operator=operator, service=service)

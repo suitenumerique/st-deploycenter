@@ -233,6 +233,15 @@ class Operator(BaseModel):
         help_text=_("Custom configuration data"),
     )
 
+    external_management_api_key = models.CharField(
+        _("external management API key"),
+        max_length=64,
+        blank=True,
+        null=True,
+        unique=True,
+        help_text=_("API key for external management of this operator's resources"),
+    )
+
     class OperatorStatus(models.TextChoices):
         """Possible statuses for an operator."""
 
@@ -851,6 +860,15 @@ class Service(BaseModel):
         help_text=_(
             "Base configuration data for metrics scraping and service operation"
         ),
+    )
+
+    external_management_api_key = models.CharField(
+        _("external management API key"),
+        max_length=64,
+        blank=True,
+        null=True,
+        unique=True,
+        help_text=_("API key for external management via this service"),
     )
 
     is_active = models.BooleanField(

@@ -63,7 +63,7 @@ class ServerToServerAuthentication(BaseAuthentication):
 class ExternalManagementApiKeyAuthentication(BaseAuthentication):
     """
     Base authentication class for external management API requests.
-    Looks up an external_management_api_key in the config of a model instance.
+    Looks up an external_management_api_key field on a model instance.
     Subclasses set `model` and `realm`.
     """
 
@@ -85,9 +85,7 @@ class ExternalManagementApiKeyAuthentication(BaseAuthentication):
             return None
 
         try:
-            instance = self.model.objects.get(
-                config__external_management_api_key=auth_parts[1]
-            )
+            instance = self.model.objects.get(external_management_api_key=auth_parts[1])
         except self.model.DoesNotExist:
             return None
 
@@ -100,7 +98,7 @@ class ExternalManagementApiKeyAuthentication(BaseAuthentication):
 class OperatorExternalManagementApiKeyAuthentication(
     ExternalManagementApiKeyAuthentication
 ):
-    """Validates external_management_api_key from Operator.config."""
+    """Validates external_management_api_key from Operator."""
 
     model = models.Operator
     realm = "Operator external management API"
@@ -109,7 +107,7 @@ class OperatorExternalManagementApiKeyAuthentication(
 class ServiceExternalManagementApiKeyAuthentication(
     ExternalManagementApiKeyAuthentication
 ):
-    """Validates external_management_api_key from Service.config."""
+    """Validates external_management_api_key from Service."""
 
     model = models.Service
     realm = "Service external management API"
