@@ -139,6 +139,7 @@ def test_api_entitlements_can_access_without_subscription(
     data = response.json()
     assert data == {
         "organization": {
+            "id": str(organization.id),
             "type": organization.type,
             "name": organization.name,
             "oidc_valid": None,
@@ -171,6 +172,7 @@ def test_api_entitlements_can_access_without_subscription(
     data = response.json()
     assert data == {
         "organization": {
+            "id": str(organization.id),
             "type": organization.type,
             "name": organization.name,
             "oidc_valid": None,
@@ -289,6 +291,7 @@ def test_api_entitlements_user_can_upload(
         data,
         {
             "operator": {
+                "id": str(operator.id),
                 "name": operator.name,
             },
             "entitlements": {
@@ -398,6 +401,7 @@ def test_api_entitlements_user_can_upload(
         data,
         {
             "operator": {
+                "id": str(operator.id),
                 "name": operator.name,
             },
             "entitlements": {
@@ -579,6 +583,7 @@ def test_api_entitlements_organization_can_upload(
         data,
         {
             "operator": {
+                "id": str(operator.id),
                 "name": operator.name,
             },
             "entitlements": {
@@ -741,6 +746,7 @@ def test_api_entitlements_user_override_can_upload(
         data,
         {
             "operator": {
+                "id": str(operator.id),
                 "name": operator.name,
             },
             "entitlements": {
@@ -783,6 +789,7 @@ def test_api_entitlements_user_override_can_upload(
         data,
         {
             "operator": {
+                "id": str(operator.id),
                 "name": operator.name,
             },
             "entitlements": {
@@ -849,6 +856,7 @@ def test_api_entitlements_user_override_can_upload(
         data,
         {
             "operator": {
+                "id": str(operator.id),
                 "name": operator.name,
             },
             "entitlements": {
@@ -962,6 +970,7 @@ def test_api_entitlements_list_unlimited_storage(
         data,
         {
             "operator": {
+                "id": str(operator.id),
                 "name": operator.name,
             },
             "entitlements": {

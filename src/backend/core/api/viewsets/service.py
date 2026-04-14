@@ -15,7 +15,10 @@ from rest_framework.response import Response
 from rest_framework.settings import api_settings
 
 from core import models
-from core.authentication import ExternalManagementApiKeyAuthentication
+from core.authentication import (
+    OperatorExternalManagementApiKeyAuthentication,
+    ServiceExternalManagementApiKeyAuthentication,
+)
 from core.signals import request_user_context
 
 from .. import permissions, serializers
@@ -142,11 +145,13 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
     queryset = models.ServiceSubscription.objects.all()
     serializer_class = serializers.ServiceSubscriptionSerializer
     authentication_classes = [
-        ExternalManagementApiKeyAuthentication,
+        OperatorExternalManagementApiKeyAuthentication,
+        ServiceExternalManagementApiKeyAuthentication,
     ] + [*api_settings.DEFAULT_AUTHENTICATION_CLASSES]
     permission_classes = [
         permissions.IsAuthenticatedWithAnyMethod,
-        permissions.OperatorAndOrganizationAccessPermission,
+        permissions.OperatorAndOrganizationAccessPermission
+        | permissions.ServiceExternalManagementPermission,
     ]
 
     def get_queryset(self):
@@ -257,11 +262,13 @@ class OrganizationServiceSubscriptionEntitlementViewSet(
     queryset = models.Entitlement.objects.all()
     serializer_class = serializers.EntitlementSerializer
     authentication_classes = [
-        ExternalManagementApiKeyAuthentication,
+        OperatorExternalManagementApiKeyAuthentication,
+        ServiceExternalManagementApiKeyAuthentication,
     ] + [*api_settings.DEFAULT_AUTHENTICATION_CLASSES]
     permission_classes = [
         permissions.IsAuthenticatedWithAnyMethod,
-        permissions.OperatorAndOrganizationAccessPermission,
+        permissions.OperatorAndOrganizationAccessPermission
+        | permissions.ServiceExternalManagementPermission,
     ]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ["type", "account_type", "account__id", "account__external_id"]

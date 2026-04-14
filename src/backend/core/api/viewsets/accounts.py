@@ -16,7 +16,7 @@ from rest_framework.settings import api_settings
 from core import models
 from core.api import permissions, serializers
 from core.api.filters import AccountFilter
-from core.authentication import ExternalManagementApiKeyAuthentication
+from core.authentication import OperatorExternalManagementApiKeyAuthentication
 from core.signals import (
     request_user_context,
     send_account_webhooks,
@@ -40,7 +40,7 @@ class OrganizationAccountsViewSet(
     queryset = models.Account.objects.all()
     serializer_class = serializers.AccountSerializer
     authentication_classes = [
-        ExternalManagementApiKeyAuthentication,
+        OperatorExternalManagementApiKeyAuthentication,
     ] + [*api_settings.DEFAULT_AUTHENTICATION_CLASSES]
     permission_classes = [
         permissions.IsAuthenticatedWithAnyMethod,
@@ -136,7 +136,7 @@ class AccountViewSet(
             )
 
     authentication_classes = [
-        ExternalManagementApiKeyAuthentication,
+        OperatorExternalManagementApiKeyAuthentication,
     ] + [*api_settings.DEFAULT_AUTHENTICATION_CLASSES]
     permission_classes = [
         permissions.IsAuthenticatedWithAnyMethod,

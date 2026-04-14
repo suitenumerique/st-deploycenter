@@ -26,8 +26,8 @@ class IsAuthenticatedWithAnyMethod(permissions.BasePermission):
     """
 
     def has_permission(self, request, view):
-        # Check if authenticated via external API key (request.auth is Operator)
-        if request.auth and isinstance(request.auth, models.Operator):
+        # Check if authenticated via external API key (request.auth is Operator or Service)
+        if request.auth and isinstance(request.auth, (models.Operator, models.Service)):
             return True
         # Check if authenticated via user
         return bool(request.user and request.user.is_authenticated)
@@ -261,6 +261,46 @@ class ServiceAuthenticationPermission(permissions.BasePermission):
         # Stash the service on the request so the view can reuse it
         # without a duplicate query.
         request.service = target_service
+        return True
+
+
+class ServiceExternalManagementPermission(permissions.BasePermission):
+    """
+    Grants access when authenticated via a Service external management API key.
+    Checks that the service is configured for the operator in URL,
+    that the operator manages the organization (if in URL),
+    and that service_id in URL (if present) matches the authenticated service.
+    """
+
+    def has_permission(self, request, view):
+        if not (request.auth and isinstance(request.auth, models.Service)):
+            return False
+
+        service = request.auth
+
+        # If service_id in URL, it must match the authenticated service
+        service_id = view.kwargs.get("service_id")
+        if service_id and str(service.id) != str(service_id):
+            return False
+
+        # If operator_id in URL, the service must be configured for that operator
+        operator_id = view.kwargs.get("operator_id")
+        if operator_id:
+            if not models.OperatorServiceConfig.objects.filter(
+                operator_id=operator_id, service=service
+            ).exists():
+                return False
+
+        # If organization_id in URL, the operator must manage that organization
+        organization_id = view.kwargs.get("organization_id")
+        if organization_id:
+            if not operator_id:
+                return False
+            if not models.OperatorOrganizationRole.objects.filter(
+                organization_id=organization_id, operator_id=operator_id
+            ).exists():
+                return False
+
         return True
 
 

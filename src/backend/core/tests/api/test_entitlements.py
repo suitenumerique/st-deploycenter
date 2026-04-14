@@ -194,6 +194,7 @@ def test_api_entitlements_list_no_subscription(webhook_server):
     assert response.status_code == 200
     data = response.json()
     assert data["organization"] == {
+        "id": str(organization.id),
         "type": organization.type,
         "name": organization.name,
         "oidc_valid": None,
@@ -417,6 +418,7 @@ def test_api_entitlements_list_usage_metrics_endpoint_not_reachable():
         data,
         {
             "operator": {
+                "id": str(operator.id),
                 "name": operator.name,
             },
             "entitlements": {
@@ -484,6 +486,7 @@ def test_api_entitlements_list_usage_metrics_endpoint_error(buggy_service_server
         data,
         {
             "operator": {
+                "id": str(operator.id),
                 "name": operator.name,
             },
             "entitlements": {
