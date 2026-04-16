@@ -219,6 +219,8 @@ def fetch_metrics_from_endpoint(
         token_type = service.config.get("metrics_auth_token_type", "Bearer")
         headers["Authorization"] = f"{token_type} {auth_token}"
 
+    headers.update(service.config.get("metrics_endpoint_headers", {}))
+
     all_metrics = []
     offset = 0
     limit = service.config.get("metrics_limit", 1000)  # Default page size
@@ -306,6 +308,8 @@ def fetch_metrics_from_csv(service: Service, metrics_csv: str) -> List[Dict[str,
     headers = {}
     if auth_token:
         headers["Authorization"] = f"Bearer {auth_token}"
+
+    headers.update(service.config.get("metrics_endpoint_headers", {}))
 
     delimiter = service.config.get("metrics_csv_delimiter", ",")
 

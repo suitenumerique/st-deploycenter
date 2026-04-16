@@ -19,9 +19,12 @@ from core.tasks.metrics import fetch_metrics_from_service, store_service_metrics
 class MockMetricsServer(BaseHTTPRequestHandler):
     """Mock HTTP server that serves paginated metrics data."""
 
+    captured_headers = []
+
     def do_GET(self):  # pylint: disable=invalid-name
         """Handle GET requests with pagination support."""
         if self.path.startswith("/metrics"):
+            MockMetricsServer.captured_headers.append(dict(self.headers))
             # Check authorization header
             auth_header = self.headers.get("Authorization", "")
             if not auth_header.startswith("Bearer "):
@@ -230,6 +233,57 @@ def test_metrics_with_authentication(mock_metrics_server):
     # Fetch metrics (this will test auth headers)
     metrics_data = fetch_metrics_from_service(auth_service)
     assert len(metrics_data) == 40
+
+
+@pytest.mark.django_db
+def test_metrics_with_custom_endpoint_headers(mock_metrics_server):
+    """Test that metrics_endpoint_headers are forwarded on the request."""
+    MockMetricsServer.captured_headers = []
+
+    service = factories.ServiceFactory(
+        type="custom_headers_service",
+        config={
+            "metrics_endpoint": "http://localhost:8001/metrics",
+            "metrics_auth_token": "test_token_valid",
+            "metrics_endpoint_headers": {
+                "X-Custom-Header": "custom-value",
+                "X-Another": "another-value",
+            },
+        },
+    )
+
+    metrics_data = fetch_metrics_from_service(service)
+    assert len(metrics_data) == 40
+
+    assert MockMetricsServer.captured_headers, "No requests captured"
+    for headers in MockMetricsServer.captured_headers:
+        assert headers.get("X-Custom-Header") == "custom-value"
+        assert headers.get("X-Another") == "another-value"
+        assert headers.get("Authorization") == "Bearer test_token_valid"
+
+
+@pytest.mark.django_db
+def test_metrics_endpoint_headers_can_override_authorization(mock_metrics_server):
+    """Test that metrics_endpoint_headers override the Authorization header."""
+    MockMetricsServer.captured_headers = []
+
+    service = factories.ServiceFactory(
+        type="override_auth_service",
+        config={
+            "metrics_endpoint": "http://localhost:8001/metrics",
+            "metrics_auth_token": "test_token_invalid",
+            "metrics_endpoint_headers": {
+                "Authorization": "Bearer test_token_valid",
+            },
+        },
+    )
+
+    metrics_data = fetch_metrics_from_service(service)
+    assert len(metrics_data) == 40
+
+    assert MockMetricsServer.captured_headers, "No requests captured"
+    for headers in MockMetricsServer.captured_headers:
+        assert headers.get("Authorization") == "Bearer test_token_valid"
 
 
 @pytest.mark.django_db
