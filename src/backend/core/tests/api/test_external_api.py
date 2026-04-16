@@ -14,7 +14,7 @@ def test_external_api_organization_lookup_by_siret_search():
     """Test organization search by SIRET using external API key."""
     operator = factories.OperatorFactory()
     api_key = "test-external-api-key-12345"
-    operator.config = {"external_management_api_key": api_key}
+    operator.external_management_api_key = api_key
     operator.save()
 
     organization1 = factories.OrganizationFactory(
@@ -48,7 +48,7 @@ def test_external_api_organization_lookup_by_siren_search():
     """Test organization search by SIREN using external API key."""
     operator = factories.OperatorFactory()
     api_key = "test-external-api-key-12345"
-    operator.config = {"external_management_api_key": api_key}
+    operator.external_management_api_key = api_key
     operator.save()
 
     organization1 = factories.OrganizationFactory(
@@ -82,7 +82,7 @@ def test_external_api_create_subscription():
     """Test creating a subscription using external API key."""
     operator = factories.OperatorFactory()
     api_key = "test-external-api-key-12345"
-    operator.config = {"external_management_api_key": api_key}
+    operator.external_management_api_key = api_key
     operator.save()
 
     organization = factories.OrganizationFactory(siret="12345678901234")
@@ -152,7 +152,7 @@ def test_external_api_delete_subscription():
     """Test deleting a subscription using external API key."""
     operator = factories.OperatorFactory()
     api_key = "test-external-api-key-12345"
-    operator.config = {"external_management_api_key": api_key}
+    operator.external_management_api_key = api_key
     operator.save()
 
     organization = factories.OrganizationFactory(siret="12345678901234")
@@ -193,7 +193,7 @@ def test_external_api_invalid_api_key():
     """Test that invalid API key is rejected."""
     operator = factories.OperatorFactory()
     api_key = "test-external-api-key-12345"
-    operator.config = {"external_management_api_key": api_key}
+    operator.external_management_api_key = api_key
     operator.save()
 
     organization = factories.OrganizationFactory()
@@ -212,7 +212,7 @@ def test_external_api_missing_api_key():
     """Test that missing API key is rejected."""
     operator = factories.OperatorFactory()
     api_key = "test-external-api-key-12345"
-    operator.config = {"external_management_api_key": api_key}
+    operator.external_management_api_key = api_key
     operator.save()
 
     organization = factories.OrganizationFactory()
@@ -232,9 +232,9 @@ def test_external_api_wrong_operator():
     operator2 = factories.OperatorFactory()
     api_key1 = "test-external-api-key-12345"
     api_key2 = "test-external-api-key-67890"
-    operator1.config = {"external_management_api_key": api_key1}
+    operator1.external_management_api_key = api_key1
     operator1.save()
-    operator2.config = {"external_management_api_key": api_key2}
+    operator2.external_management_api_key = api_key2
     operator2.save()
 
     organization = factories.OrganizationFactory()
@@ -257,7 +257,7 @@ def test_external_api_organization_read_only():
     """Test that external API can only read organizations, not modify them."""
     operator = factories.OperatorFactory()
     api_key = "test-external-api-key-12345"
-    operator.config = {"external_management_api_key": api_key}
+    operator.external_management_api_key = api_key
     operator.save()
 
     organization = factories.OrganizationFactory()
@@ -287,7 +287,7 @@ def test_external_api_subscription_post_not_allowed():
     """Test that POST method is not allowed for subscription endpoint via external API."""
     operator = factories.OperatorFactory()
     api_key = "test-external-api-key-12345"
-    operator.config = {"external_management_api_key": api_key}
+    operator.external_management_api_key = api_key
     operator.save()
 
     organization = factories.OrganizationFactory()
@@ -311,7 +311,7 @@ def test_external_api_subscription_put_not_allowed():
     """Test that PUT method is not allowed for subscription endpoint via external API."""
     operator = factories.OperatorFactory()
     api_key = "test-external-api-key-12345"
-    operator.config = {"external_management_api_key": api_key}
+    operator.external_management_api_key = api_key
     operator.save()
 
     organization = factories.OrganizationFactory()
@@ -339,7 +339,7 @@ def test_external_api_create_messages_subscription_with_domains_and_quotas():
 
     operator = factories.OperatorFactory()
     api_key = "test-external-api-key-12345"
-    operator.config = {"external_management_api_key": api_key}
+    operator.external_management_api_key = api_key
     operator.save()
 
     organization = factories.OrganizationFactory(
@@ -415,7 +415,7 @@ def test_external_api_update_subscription_quotas():
 
     operator = factories.OperatorFactory()
     api_key = "test-external-api-key-12345"
-    operator.config = {"external_management_api_key": api_key}
+    operator.external_management_api_key = api_key
     operator.save()
 
     organization = factories.OrganizationFactory()

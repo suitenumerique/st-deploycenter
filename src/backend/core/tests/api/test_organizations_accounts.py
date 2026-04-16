@@ -18,10 +18,10 @@ def fixture_account_test_setup():
     user2 = factories.UserFactory()
 
     operator = factories.OperatorFactory(
-        config={"external_management_api_key": "test-external-api-key-12345"}
+        external_management_api_key="test-external-api-key-12345"
     )
     operator2 = factories.OperatorFactory(
-        config={"external_management_api_key": "test-external-api-key-abcd"}
+        external_management_api_key="test-external-api-key-abcd"
     )
     operator3 = factories.OperatorFactory()
     factories.UserOperatorRoleFactory(user=user, operator=operator)

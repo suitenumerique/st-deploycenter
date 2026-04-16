@@ -801,6 +801,10 @@ class OperatorAdmin(admin.ModelAdmin):
         ),
         (_("Financial Information"), {"fields": ("computed_contribution",)}),
         (_("Configuration"), {"fields": ("departements", "config")}),
+        (
+            _("API Keys"),
+            {"fields": ("external_management_api_key",)},
+        ),
         (_("Metadata"), {"fields": ("created_at", "updated_at")}),
     )
     autocomplete_fields = ["users"]
@@ -939,8 +943,12 @@ class ServiceAdmin(admin.ModelAdmin):
         (_("Logo"), {"fields": ("logo_svg_file",)}),
         (_("Configuration"), {"fields": ("config",)}),
         (
+            _("API Keys"),
+            {"fields": ("external_management_api_key", "entitlements_api_key_display")},
+        ),
+        (
             _("Metadata"),
-            {"fields": ("created_at", "updated_at", "entitlements_api_key_display")},
+            {"fields": ("created_at", "updated_at")},
         ),
     )
 

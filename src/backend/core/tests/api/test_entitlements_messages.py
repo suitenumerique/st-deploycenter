@@ -147,11 +147,13 @@ def test_api_entitlements_mailbox_can_store(
     data = response.json()
     assert data == {
         "organization": {
+            "id": str(organization.id),
             "type": organization.type,
             "name": organization.name,
             "oidc_valid": None,
         },
         "operator": {
+            "id": str(operator.id),
             "name": operator.name,
             "siret": operator.siret,
             "url": operator.url,
@@ -222,11 +224,13 @@ def test_api_entitlements_mailbox_can_store(
     data = response.json()
     assert data == {
         "organization": {
+            "id": str(organization.id),
             "type": organization.type,
             "name": organization.name,
             "oidc_valid": None,
         },
         "operator": {
+            "id": str(operator.id),
             "name": operator.name,
             "siret": operator.siret,
             "url": operator.url,
@@ -415,11 +419,13 @@ def test_api_entitlements_organization_can_store(
     )
     assert data == {
         "organization": {
+            "id": str(organization.id),
             "type": organization.type,
             "name": organization.name,
             "oidc_valid": None,
         },
         "operator": {
+            "id": str(operator.id),
             "name": operator.name,
             "siret": operator.siret,
             "url": operator.url,
@@ -625,11 +631,13 @@ def test_api_entitlements_mailbox_override_can_store(
     data = response.json()
     assert data == {
         "organization": {
+            "id": str(organization.id),
             "type": organization.type,
             "name": organization.name,
             "oidc_valid": None,
         },
         "operator": {
+            "id": str(operator.id),
             "name": operator.name,
             "siret": operator.siret,
             "url": operator.url,
@@ -676,11 +684,13 @@ def test_api_entitlements_mailbox_override_can_store(
     data = response.json()
     assert data == {
         "organization": {
+            "id": str(organization.id),
             "type": organization.type,
             "name": organization.name,
             "oidc_valid": None,
         },
         "operator": {
+            "id": str(operator.id),
             "name": operator.name,
             "siret": operator.siret,
             "url": operator.url,
@@ -780,11 +790,13 @@ def test_api_entitlements_mailbox_override_can_store(
     data = response.json()
     assert data == {
         "organization": {
+            "id": str(organization.id),
             "type": organization.type,
             "name": organization.name,
             "oidc_valid": None,
         },
         "operator": {
+            "id": str(operator.id),
             "name": operator.name,
             "siret": operator.siret,
             "url": operator.url,
@@ -909,11 +921,13 @@ def test_api_entitlements_list_unlimited_storage(
     data = response.json()
     assert data == {
         "organization": {
+            "id": str(organization.id),
             "type": organization.type,
             "name": organization.name,
             "oidc_valid": None,
         },
         "operator": {
+            "id": str(operator.id),
             "name": operator.name,
             "siret": operator.siret,
             "url": operator.url,

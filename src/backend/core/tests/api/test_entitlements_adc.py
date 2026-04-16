@@ -71,6 +71,7 @@ def test_api_entitlements_is_admin_email_contact(
         data,
         {
             "operator": {
+                "id": str(operator.id),
                 "name": operator.name,
             },
             "entitlements": {

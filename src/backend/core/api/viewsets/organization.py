@@ -13,7 +13,7 @@ from rest_framework.response import Response
 from rest_framework.settings import api_settings
 
 from core import models
-from core.authentication import ExternalManagementApiKeyAuthentication
+from core.authentication import OperatorExternalManagementApiKeyAuthentication
 
 from .. import permissions, serializers
 
@@ -31,7 +31,7 @@ class OperatorOrganizationViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = models.Organization.objects.all()
     serializer_class = serializers.OrganizationSerializer
     authentication_classes = [
-        ExternalManagementApiKeyAuthentication,
+        OperatorExternalManagementApiKeyAuthentication,
     ] + list(api_settings.DEFAULT_AUTHENTICATION_CLASSES)
     permission_classes = [
         permissions.IsAuthenticatedWithAnyMethod,

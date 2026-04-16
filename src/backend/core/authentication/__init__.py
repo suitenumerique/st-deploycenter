@@ -62,57 +62,52 @@ class ServerToServerAuthentication(BaseAuthentication):
 
 class ExternalManagementApiKeyAuthentication(BaseAuthentication):
     """
-    Custom authentication class for external management API requests.
-    Validates the external_management_api_key from Operator.config.
+    Base authentication class for external management API requests.
+    Looks up an external_management_api_key field on a model instance.
+    Subclasses set `model` and `realm`.
     """
 
     AUTH_HEADER = "Authorization"
     TOKEN_TYPE = "Bearer"  # noqa S105
+    model = None
+    realm = "External management API"
 
     def authenticate(self, request):
-        """
-        Authenticate the external management API request by validating the Authorization header
-        against the external_management_api_key stored in Operator.config.
-
-        This method checks if the Authorization header is present in the request, ensures it
-        contains a valid token with the correct format, and verifies the token against the
-        external_management_api_key in the Operator's config.
-
-        Returns:
-            tuple: (None, operator) if authentication is successful, where operator is the
-                   Operator instance that owns the API key.
-            None: If the request doesn't match this authentication method (allows fallback to
-                  other authentication classes).
-
-        Raises:
-            AuthenticationFailed: If the Authorization header is present but invalid,
-            or if authentication is attempted but fails.
-        """
         auth_header = request.headers.get(self.AUTH_HEADER)
         if not auth_header:
             return None
 
-        # Validate token format
         auth_parts = auth_header.split(" ")
         if len(auth_parts) != 2 or auth_parts[0] != self.TOKEN_TYPE:
             return None
 
-        token = auth_parts[1]
-
-        # Get operator_id from URL path
         if not hasattr(request, "resolver_match") or not request.resolver_match:
             return None
 
         try:
-            operator = models.Operator.objects.get(
-                config__external_management_api_key=token
-            )
-        except models.Operator.DoesNotExist:
+            instance = self.model.objects.get(external_management_api_key=auth_parts[1])
+        except self.model.DoesNotExist:
             return None
 
-        # Authentication is successful, return (None, operator) to store operator in request
-        return (None, operator)
+        return (None, instance)
 
     def authenticate_header(self, request):
-        """Return the WWW-Authenticate header value."""
-        return f"{self.TOKEN_TYPE} realm='External management API'"
+        return f"{self.TOKEN_TYPE} realm='{self.realm}'"
+
+
+class OperatorExternalManagementApiKeyAuthentication(
+    ExternalManagementApiKeyAuthentication
+):
+    """Validates external_management_api_key from Operator."""
+
+    model = models.Operator
+    realm = "Operator external management API"
+
+
+class ServiceExternalManagementApiKeyAuthentication(
+    ExternalManagementApiKeyAuthentication
+):
+    """Validates external_management_api_key from Service."""
+
+    model = models.Service
+    realm = "Service external management API"

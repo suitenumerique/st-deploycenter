@@ -34,7 +34,7 @@ class EntitlementOperatorSerializer(OperatorSerializer):
         fields = [
             f
             for f in OperatorSerializer.Meta.fields
-            if f not in ("id", "user_role", "is_active")
+            if f not in ("user_role", "is_active")
         ]
 
 
@@ -280,6 +280,7 @@ class EntitlementView(APIView):
                 ).exists()
 
             organization_data = {
+                "id": str(organization.id),
                 "type": organization.type,
                 "name": organization.name,
                 "oidc_valid": oidc_valid,

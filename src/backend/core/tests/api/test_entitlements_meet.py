@@ -53,11 +53,13 @@ def test_api_entitlements_meet_can_create_with_active_subscription():
     data = response.json()
     assert data == {
         "organization": {
+            "id": str(organization.id),
             "type": organization.type,
             "name": organization.name,
             "oidc_valid": None,
         },
         "operator": {
+            "id": str(operator.id),
             "name": operator.name,
             "siret": operator.siret,
             "url": operator.url,
@@ -104,6 +106,7 @@ def test_api_entitlements_meet_can_create_without_subscription():
     data = response.json()
     assert data == {
         "organization": {
+            "id": str(organization.id),
             "type": organization.type,
             "name": organization.name,
             "oidc_valid": None,
@@ -156,6 +159,7 @@ def test_api_entitlements_meet_can_create_with_inactive_subscription():
     data = response.json()
     assert data == {
         "organization": {
+            "id": str(organization.id),
             "type": organization.type,
             "name": organization.name,
             "oidc_valid": None,
