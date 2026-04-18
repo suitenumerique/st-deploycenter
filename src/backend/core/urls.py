@@ -14,7 +14,7 @@ from core.authentication.urls import urlpatterns as oidc_urls
 from .api.viewsets.config import ConfigView
 from .api.viewsets.entitlements import EntitlementView
 from .api.viewsets.lagaufre import LagaufreViewSet
-from .api.viewsets.metrics import SubscriptionsByServiceTypeView
+from .api.viewsets.metrics import SubscriptionsByServiceView
 from .api.viewsets.operator import OperatorViewSet
 from .api.viewsets.organization import OperatorOrganizationViewSet
 from .api.viewsets.service import (
@@ -77,9 +77,9 @@ urlpatterns = [
                 *account_router.urls,
                 path("config/", ConfigView.as_view(), name="api-config"),
                 path(
-                    "metrics/subscriptions-by-service-type/",
-                    SubscriptionsByServiceTypeView.as_view(),
-                    name="api-metrics-subscriptions-by-service-type",
+                    "metrics/subscriptions-by-service/",
+                    SubscriptionsByServiceView.as_view(),
+                    name="api-metrics-subscriptions-by-service",
                 ),
                 re_path(
                     r"^operators/(?P<operator_id>[0-9a-z-]*)/",

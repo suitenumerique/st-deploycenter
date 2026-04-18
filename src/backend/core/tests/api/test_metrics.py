@@ -11,17 +11,17 @@ pytestmark = pytest.mark.django_db
 
 METRICS_API_KEY = "test-metrics-secret"
 METRICS_AUTH_HEADER = f"Bearer {METRICS_API_KEY}"
-ENDPOINT = "/api/v1.0/metrics/subscriptions-by-service-type/"
+ENDPOINT = "/api/v1.0/metrics/subscriptions-by-service/"
 
 
-def _get(client, service_type, header=METRICS_AUTH_HEADER):
+def _get(client, params, header=METRICS_AUTH_HEADER):
     """Helper to call the endpoint."""
     headers = {}
     if header is not None:
         headers["Authorization"] = header
     return client.get(
         ENDPOINT,
-        query_params={"service_type": service_type},
+        query_params=params,
         headers=headers,
     )
 
@@ -38,7 +38,7 @@ def test_metrics_subscriptions_by_service_type_basic():
         organization=org, service=service, operator=operator
     )
 
-    response = _get(client, "drive")
+    response = _get(client, {"service_type": "drive"})
     assert response.status_code == 200
     data = response.json()
     assert data["count"] == 1
@@ -48,7 +48,50 @@ def test_metrics_subscriptions_by_service_type_basic():
 
 
 @override_settings(METRICS_API_KEY=METRICS_API_KEY)
-def test_metrics_subscriptions_by_service_type_multiple():
+def test_metrics_subscriptions_by_service_id_basic():
+    """Returns subscriptions for the requested service id."""
+    client = APIClient()
+
+    operator = factories.OperatorFactory()
+    org = factories.OrganizationFactory(siret="12345678900001")
+    service = factories.ServiceFactory(type="drive")
+    factories.ServiceSubscriptionFactory(
+        organization=org, service=service, operator=operator
+    )
+
+    response = _get(client, {"service_id": service.id})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["count"] == 1
+    assert data["results"] == [
+        {"siret": "12345678900001", "metrics": {"tu": 1}},
+    ]
+
+
+@override_settings(METRICS_API_KEY=METRICS_API_KEY)
+def test_metrics_subscriptions_by_service_id_filters():
+    """Only subscriptions for the requested service id are returned."""
+    client = APIClient()
+
+    operator = factories.OperatorFactory()
+    org = factories.OrganizationFactory(siret="12345678900001")
+    service_a = factories.ServiceFactory(type="drive")
+    service_b = factories.ServiceFactory(type="drive")
+    factories.ServiceSubscriptionFactory(
+        organization=org, service=service_a, operator=operator
+    )
+    factories.ServiceSubscriptionFactory(
+        organization=org, service=service_b, operator=operator
+    )
+
+    response = _get(client, {"service_id": service_a.id})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["count"] == 1
+
+
+@override_settings(METRICS_API_KEY=METRICS_API_KEY)
+def test_metrics_subscriptions_by_service_multiple():
     """Returns all active subscriptions for the type."""
     client = APIClient()
 
@@ -64,7 +107,7 @@ def test_metrics_subscriptions_by_service_type_multiple():
         organization=org_b, service=service, operator=operator
     )
 
-    response = _get(client, "messages")
+    response = _get(client, {"service_type": "messages"})
     assert response.status_code == 200
     data = response.json()
     assert data["count"] == 2
@@ -73,7 +116,7 @@ def test_metrics_subscriptions_by_service_type_multiple():
 
 
 @override_settings(METRICS_API_KEY=METRICS_API_KEY)
-def test_metrics_subscriptions_by_service_type_excludes_inactive():
+def test_metrics_subscriptions_by_service_excludes_inactive():
     """Inactive subscriptions are not returned."""
     client = APIClient()
 
@@ -84,13 +127,13 @@ def test_metrics_subscriptions_by_service_type_excludes_inactive():
         organization=org, service=service, operator=operator, is_active=False
     )
 
-    response = _get(client, "drive")
+    response = _get(client, {"service_type": "drive"})
     assert response.status_code == 200
     assert response.json() == {"count": 0, "results": []}
 
 
 @override_settings(METRICS_API_KEY=METRICS_API_KEY)
-def test_metrics_subscriptions_by_service_type_deduplicates():
+def test_metrics_subscriptions_by_service_deduplicates():
     """Org with two subscriptions to same-type services appears only once."""
     client = APIClient()
 
@@ -105,7 +148,7 @@ def test_metrics_subscriptions_by_service_type_deduplicates():
         organization=org, service=service_b, operator=operator
     )
 
-    response = _get(client, "drive")
+    response = _get(client, {"service_type": "drive"})
     assert response.status_code == 200
     data = response.json()
     assert data["count"] == 1
@@ -115,7 +158,7 @@ def test_metrics_subscriptions_by_service_type_deduplicates():
 
 
 @override_settings(METRICS_API_KEY=METRICS_API_KEY)
-def test_metrics_subscriptions_by_service_type_filters_by_type():
+def test_metrics_subscriptions_by_service_filters_by_type():
     """Only subscriptions for the requested service type are returned."""
     client = APIClient()
 
@@ -130,7 +173,7 @@ def test_metrics_subscriptions_by_service_type_filters_by_type():
         organization=org, service=meet_service, operator=operator
     )
 
-    response = _get(client, "meet")
+    response = _get(client, {"service_type": "meet"})
     assert response.status_code == 200
     data = response.json()
     assert data["count"] == 1
@@ -138,41 +181,41 @@ def test_metrics_subscriptions_by_service_type_filters_by_type():
 
 
 @override_settings(METRICS_API_KEY=METRICS_API_KEY)
-def test_metrics_subscriptions_by_service_type_empty():
+def test_metrics_subscriptions_by_service_empty():
     """No subscriptions for the type → empty results."""
     client = APIClient()
 
-    response = _get(client, "nonexistent")
+    response = _get(client, {"service_type": "nonexistent"})
     assert response.status_code == 200
     assert response.json() == {"count": 0, "results": []}
 
 
-def test_metrics_subscriptions_by_service_type_anon():
+def test_metrics_subscriptions_by_service_anon():
     """No auth header → 403."""
     client = APIClient()
-    response = _get(client, "drive", header=None)
+    response = _get(client, {"service_type": "drive"}, header=None)
     assert response.status_code == 403
 
 
 @override_settings(METRICS_API_KEY=METRICS_API_KEY)
-def test_metrics_subscriptions_by_service_type_wrong_key():
+def test_metrics_subscriptions_by_service_wrong_key():
     """Wrong API key → 403."""
     client = APIClient()
-    response = _get(client, "drive", header="Bearer wrong-key")
+    response = _get(client, {"service_type": "drive"}, header="Bearer wrong-key")
     assert response.status_code == 403
 
 
 @override_settings(METRICS_API_KEY=METRICS_API_KEY)
-def test_metrics_subscriptions_by_service_type_bad_header_format():
+def test_metrics_subscriptions_by_service_bad_header_format():
     """Malformed header → 403."""
     client = APIClient()
-    response = _get(client, "drive", header="not-bearer-format")
+    response = _get(client, {"service_type": "drive"}, header="not-bearer-format")
     assert response.status_code == 403
 
 
 @override_settings(METRICS_API_KEY=METRICS_API_KEY)
-def test_metrics_subscriptions_by_service_type_missing_param():
-    """Missing service_type param → 400."""
+def test_metrics_subscriptions_by_service_missing_param():
+    """Missing both service_type and service_id → 400."""
     client = APIClient()
     response = client.get(
         ENDPOINT,
@@ -182,8 +225,8 @@ def test_metrics_subscriptions_by_service_type_missing_param():
 
 
 @override_settings(METRICS_API_KEY=None)
-def test_metrics_subscriptions_by_service_type_no_key_configured():
+def test_metrics_subscriptions_by_service_no_key_configured():
     """When METRICS_API_KEY is not set, all requests are denied."""
     client = APIClient()
-    response = _get(client, "drive")
+    response = _get(client, {"service_type": "drive"})
     assert response.status_code == 403
