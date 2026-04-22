@@ -1,4 +1,5 @@
 # pylint: disable=invalid-name
+# pylint: disable=too-many-lines
 """
 Test entitlements drive API endpoints in the deploycenter core app.
 """
@@ -9,6 +10,7 @@ from responses import matchers
 from rest_framework.test import APIClient
 
 from core import factories, models
+from core.entitlements.resolvers import AccessEntitlementResolver
 from core.tests.utils import assert_equals_partial
 
 pytestmark = pytest.mark.django_db
@@ -148,6 +150,8 @@ def test_api_entitlements_can_access_without_subscription(
         "potentialOperators": [],
         "entitlements": {
             "can_access": True,
+            "can_upload": False,
+            "can_upload_reason": AccessEntitlementResolver.Reason.NOT_ACTIVATED,
         },
     }
 
@@ -181,6 +185,8 @@ def test_api_entitlements_can_access_without_subscription(
         "potentialOperators": [],
         "entitlements": {
             "can_access": True,
+            "can_upload": False,
+            "can_upload_reason": AccessEntitlementResolver.Reason.NOT_ACTIVATED,
         },
     }
 
@@ -980,3 +986,68 @@ def test_api_entitlements_list_unlimited_storage(
             },
         },
     )
+
+
+@pytest.mark.django_db()
+@responses.activate
+@pytest.mark.parametrize(
+    "has_organization,has_subscription,is_active,expected_reason",
+    [
+        # No organization matches the requested siret.
+        (False, False, None, AccessEntitlementResolver.Reason.NO_ORGANIZATION),
+        # Organization exists but no subscription was ever created for the service.
+        (True, False, None, AccessEntitlementResolver.Reason.NOT_ACTIVATED),
+        # Organization exists with an inactive subscription.
+        (True, True, False, AccessEntitlementResolver.Reason.NOT_ACTIVATED),
+    ],
+)
+def test_api_entitlements_drive_can_upload_reason(
+    has_organization, has_subscription, is_active, expected_reason
+):
+    """
+    The drive resolver should expose can_upload=False with can_upload_reason when
+    the parent access check fails (no organization or no active subscription) so the
+    frontend can explain why upload is unavailable instead of falling back to the
+    generic "storage full" message.
+    """
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    siret = "12345678900001"
+    service = factories.ServiceFactory(
+        type="drive",
+        config={"entitlements_api_key": "test_token"},
+    )
+
+    if has_organization:
+        operator = factories.OperatorFactory()
+        organization = factories.OrganizationFactory(siret=siret)
+        factories.OperatorOrganizationRoleFactory(
+            operator=operator, organization=organization
+        )
+        if has_subscription:
+            factories.ServiceSubscriptionFactory(
+                organization=organization,
+                service=service,
+                operator=operator,
+                is_active=is_active,
+            )
+
+    response = client.get(
+        "/api/v1.0/entitlements/",
+        query_params={
+            "service_id": service.id,
+            "account_type": "user",
+            "account_id": "xyz",
+            "siret": siret,
+        },
+        headers={"X-Service-Auth": "Bearer test_token"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["entitlements"] == {
+        "can_access": True,
+        "can_upload": False,
+        "can_upload_reason": expected_reason,
+    }
