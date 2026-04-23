@@ -23,7 +23,7 @@ class Command(BaseCommand):
     
     Examples:
         python manage.py run_task fetch_service_metrics
-        python manage.py run_task fetch_metrics_for_service --pargs '["123e4567-e89b-12d3-a456-426614174000"]'
+        python manage.py run_task scrape_service_metrics --pargs '[59]'
         python manage.py run_task fetch_service_metrics --kwargs '{"debug": true}'
         python manage.py run_task other_app.tasks.some_task
     """

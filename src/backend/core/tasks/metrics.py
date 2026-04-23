@@ -130,6 +130,8 @@ def scrape_service_metrics(service_id: int):
 def scrape_service_usage_metrics(service: Service, filters: Dict[str, Any] = None):
     """
     Scrape usage metrics for a specific service (Celery task).
+
+    Usage metrics are per-user/per-object disk usage or other app-specific metrics.
     """
     if filters is None:
         filters = {}
