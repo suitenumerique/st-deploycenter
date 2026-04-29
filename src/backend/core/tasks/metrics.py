@@ -415,6 +415,27 @@ def map_csv_row(
     return mapped_row
 
 
+def _extract_org_identifiers(item: Dict[str, Any]) -> tuple[str, str, str]:
+    """Return (siret, siren, insee) for a metrics item.
+
+    `autodetect_id` is dispatched to the matching field by digit length
+    (14=siret, 9=siren, 5=insee). Values are whitespace-stripped; missing
+    or unrecognized values yield empty strings.
+    """
+    siret = (item.get("siret") or "").replace(" ", "")
+    siren = (item.get("siren") or "").replace(" ", "")
+    insee = (item.get("insee") or "").replace(" ", "")
+    autodetect_id = (item.get("autodetect_id") or "").replace(" ", "")
+    if autodetect_id and autodetect_id.isdigit():
+        if len(autodetect_id) == 14:
+            siret = autodetect_id
+        elif len(autodetect_id) == 9:
+            siren = autodetect_id
+        elif len(autodetect_id) == 5:
+            insee = autodetect_id
+    return siret, siren, insee
+
+
 def _resolve_account(
     service: Service, organization: Organization, account_data: Dict[str, Any]
 ):
@@ -486,21 +507,38 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
     """
     logger.info("Storing metrics for service %s", service.name)
 
-    # Get all organizations by both SIRET and INSEE codes
-    organizations_by_siret = {
-        org.siret: org
-        for org in Organization.objects.filter(siret__isnull=False).exclude(siret="")
-    }
-    organizations_by_siren = {
-        org.siren: org
-        for org in Organization.objects.filter(siren__isnull=False).exclude(siren="")
-    }
-    organizations_by_insee = {
-        org.code_insee: org
-        for org in Organization.objects.filter(code_insee__isnull=False).exclude(
-            code_insee=""
-        )
-    }
+    # Collect only the identifiers actually referenced in this batch so we can
+    # issue targeted indexed lookups instead of dumping all organizations.
+    siret_set: set[str] = set()
+    siren_set: set[str] = set()
+    insee_set: set[str] = set()
+    for item in metrics_data:
+        siret, siren, insee = _extract_org_identifiers(item)
+        if siret:
+            siret_set.add(siret)
+        if siren:
+            siren_set.add(siren)
+        if insee:
+            insee_set.add(insee)
+
+    organizations_by_siret = (
+        {org.siret: org for org in Organization.objects.filter(siret__in=siret_set)}
+        if siret_set
+        else {}
+    )
+    organizations_by_siren = (
+        {org.siren: org for org in Organization.objects.filter(siren__in=siren_set)}
+        if siren_set
+        else {}
+    )
+    organizations_by_insee = (
+        {
+            org.code_insee: org
+            for org in Organization.objects.filter(code_insee__in=insee_set)
+        }
+        if insee_set
+        else {}
+    )
 
     metrics_to_create = {}
     timestamp = timezone.now()
@@ -520,21 +558,7 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
 
             # Find organization by SIRET, SIREN, or INSEE
             organization = None
-            siret = (organization_identifiers.get("siret") or "").replace(" ", "")
-            siren = (organization_identifiers.get("siren") or "").replace(" ", "")
-            insee = (organization_identifiers.get("insee") or "").replace(" ", "")
-
-            # Autodetect identifier type by length
-            autodetect_id = (
-                organization_identifiers.get("autodetect_id") or ""
-            ).replace(" ", "")
-            if autodetect_id:
-                if len(autodetect_id) == 14 and autodetect_id.isdigit():
-                    siret = autodetect_id
-                elif len(autodetect_id) == 9 and autodetect_id.isdigit():
-                    siren = autodetect_id
-                elif len(autodetect_id) == 5 and autodetect_id.isdigit():
-                    insee = autodetect_id
+            siret, siren, insee = _extract_org_identifiers(organization_identifiers)
 
             if siret and siret in organizations_by_siret:
                 organization = organizations_by_siret[siret]
