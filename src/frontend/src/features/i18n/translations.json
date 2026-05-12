@@ -6,6 +6,11 @@
         "save": "Valider"
       },
       "app_title": "Espace Opérateur",
+      "left_panel": {
+        "aria_label": "Navigation principale",
+        "organizations": "Adhérents",
+        "metrics": "Métriques"
+      },
       "home": {
         "title": "Espace Opérateur",
         "subtitle": "Activez et gérez simplement les services de tous vos adhérents.",
