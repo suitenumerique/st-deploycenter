@@ -72,6 +72,7 @@ def upload_deployment_metrics_dataset():
         .exclude(organization__siret__isnull=True)
         .exclude(organization__siret="")
         .filter(service__is_active=True)
+        .exclude(service__config__hidden=True)
     )
 
     data = {
@@ -137,7 +138,7 @@ def upload_deployment_services_dataset():
     dataset_id = "68b0a2a1117b75b1b09edc6b"
     resource_id = "610560cf-5893-4a53-b4d3-03e17d877e1c"
 
-    services = Service.objects.filter(is_active=True)
+    services = Service.objects.filter(is_active=True).exclude(config__hidden=True)
 
     data = [
         {
@@ -194,6 +195,7 @@ def upload_deployment_operators_dataset():
             OperatorServiceConfig.objects.filter(
                 operator=operator, display_priority__gte=-100
             )
+            .exclude(service__config__hidden=True)
             .values_list("service_id", flat=True)
             .order_by("-display_priority")
         )
@@ -319,6 +321,7 @@ def upload_deployment_subscriptions_dataset():
         )
         .filter(organization__type__in=["commune", "epci", "departement", "region"])
         .filter(service__is_active=True)
+        .exclude(service__config__hidden=True)
         .filter(operator__is_active=True)
         .filter(is_active=True)
     )
