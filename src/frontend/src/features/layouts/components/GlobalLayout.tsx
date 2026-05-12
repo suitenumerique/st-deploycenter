@@ -2,7 +2,7 @@ import { Auth } from "@/features/auth/Auth";
 import { MainLayout } from "@gouvfr-lasuite/ui-kit";
 import { HeaderRight } from "./header/Header";
 import { HeaderIcon } from "./header/Header";
-import { LeftPanelMobile } from "./left-panel/LeftPanelMobile";
+import { LeftPanel } from "./left-panel/LeftPanel";
 import { Toaster } from "@/features/ui/components/toaster/Toaster";
 import { FeedbackWidget } from "@/features/ui/components/feedback-widget";
 import { createContext, useContext } from "react";
@@ -31,8 +31,7 @@ export const GlobalExplorerLayout = ({
     <GlobalLayout>
       <OperatorContextProvider>
         <MainLayout
-          hideLeftPanelOnDesktop={true}
-          leftPanelContent={<LeftPanelMobile />}
+          leftPanelContent={<LeftPanel />}
           enableResize
           icon={<HeaderIcon />}
           rightHeaderContent={<HeaderRight />}
