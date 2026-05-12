@@ -921,6 +921,13 @@ class Service(BaseModel):
             return f"{settings.API_PUBLIC_URL}servicelogo/{self.id}/"
         return None
 
+    @property
+    def hidden(self):
+        """
+        Whether the service should be hidden from frontend listings.
+        """
+        return bool((self.config or {}).get("hidden", False))
+
     def can_activate(self, organization: Organization, operator: "Operator" = None):
         """
         Check if the service can be activated for the given organization.

@@ -7,9 +7,20 @@ Test users API endpoints in the deploycenter core app.
 import pytest
 from rest_framework.test import APIClient
 
-from core import factories
+from core import factories, models
 
 pytestmark = pytest.mark.django_db
+
+
+def test_service_hidden_property():
+    """
+    Service.hidden derives from config["hidden"] and defaults to False when
+    the key is missing or the config is null.
+    """
+    assert models.Service(config={"hidden": True}).hidden is True
+    assert models.Service(config={"hidden": False}).hidden is False
+    assert models.Service(config={}).hidden is False
+    assert models.Service(config=None).hidden is False
 
 
 def test_api_organizations_services_list_anonymous():
@@ -193,6 +204,39 @@ def test_api_organizations_services_list_authenticated():
         f"/api/v1.0/operators/{operator2.id}/organizations/{organization_ok1.id}/services/"
     )
     assert response.status_code == 403
+
+
+def test_api_organizations_services_list_exposes_hidden():
+    """
+    Services expose a `hidden` boolean derived from config.hidden.
+    The API still returns hidden services — frontend handles tile filtering.
+    """
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    visible_service = factories.ServiceFactory(config={})
+    hidden_service = factories.ServiceFactory(config={"hidden": True})
+
+    factories.OperatorServiceConfigFactory(operator=operator, service=visible_service)
+    factories.OperatorServiceConfigFactory(operator=operator, service=hidden_service)
+
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/"
+    )
+    assert response.status_code == 200
+
+    results_by_id = {result["id"]: result for result in response.json()["results"]}
+    assert results_by_id[visible_service.id]["hidden"] is False
+    assert results_by_id[hidden_service.id]["hidden"] is True
 
 
 def test_api_organization_service_enable_delete():

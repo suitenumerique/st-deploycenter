@@ -127,6 +127,7 @@ export type Service = {
   type: string;
   subscription: ServiceSubscription;
   logo: string | null;
+  hidden?: boolean;
   operator_config?: {
     display_priority?: number;
     externally_managed?: boolean;

@@ -62,15 +62,17 @@ export default function Organization() {
     if (!services?.results) {
       return [];
     }
-    return [...services.results].sort((a, b) => {
-      const aIsProConnect = a.type === SERVICE_TYPE_PROCONNECT;
-      const bIsProConnect = b.type === SERVICE_TYPE_PROCONNECT;
-      if (aIsProConnect && !bIsProConnect) return -1;
-      if (!aIsProConnect && bIsProConnect) return 1;
-      const priorityA = a.operator_config?.display_priority ?? -Infinity;
-      const priorityB = b.operator_config?.display_priority ?? -Infinity;
-      return priorityB - priorityA; // descending order, nulls at the end
-    });
+    return [...services.results]
+      .filter((service) => !service.hidden)
+      .sort((a, b) => {
+        const aIsProConnect = a.type === SERVICE_TYPE_PROCONNECT;
+        const bIsProConnect = b.type === SERVICE_TYPE_PROCONNECT;
+        if (aIsProConnect && !bIsProConnect) return -1;
+        if (!aIsProConnect && bIsProConnect) return 1;
+        const priorityA = a.operator_config?.display_priority ?? -Infinity;
+        const priorityB = b.operator_config?.display_priority ?? -Infinity;
+        return priorityB - priorityA; // descending order, nulls at the end
+      });
   }, [services]);
 
 
