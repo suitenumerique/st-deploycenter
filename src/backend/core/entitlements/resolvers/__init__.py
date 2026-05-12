@@ -23,6 +23,9 @@ from core.entitlements.resolvers.messages_admin_entitlement_resolver import (
 from core.entitlements.resolvers.messages_storage_entitlement_resolver import (
     MessagesStorageEntitlementResolver,
 )
+from core.entitlements.resolvers.transfers_access_entitlement_resolver import (
+    TransfersAccessEntitlementResolver,
+)
 
 TYPE_TO_RESOLVER = {
     models.Entitlement.EntitlementType.DRIVE_STORAGE: DriveStorageEntitlementResolver,
@@ -33,6 +36,7 @@ TYPE_TO_RESOLVER = {
 TYPE_TO_ACCESS_RESOLVER = {
     "drive": DriveAccessEntitlementResolver,
     "meet": MeetAccessEntitlementResolver,
+    "transfers": TransfersAccessEntitlementResolver,
 }
 
 
