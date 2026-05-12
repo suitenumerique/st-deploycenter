@@ -15,6 +15,8 @@ import {
   updateOrganizationProconnectDomains,
   checkDomains,
   DomainCheck,
+  getOperatorMetrics,
+  MetricsParams,
 } from "@/features/api/Repository";
 import { getOrganization } from "@/features/api/Repository";
 import { useEffect, useState } from "react";
@@ -50,7 +52,7 @@ export const useOrganization = (operatorId: string, organizationId: string) => {
 export const useOperatorOrganizations = (
   operatorId: string,
   params: Parameters<typeof getOperatorOrganizations>[1],
-  enabled = true
+  enabled = true,
 ) => {
   return useQuery({
     queryKey: [
@@ -66,7 +68,7 @@ export const useOperatorOrganizations = (
 
 export const useOrganizationServices = (
   operatorId: string,
-  organizationId: string
+  organizationId: string,
 ) => {
   return useQuery({
     queryKey: [
@@ -98,7 +100,7 @@ export const useMutationUpdateOrganizationServiceSubscription = () => {
         operatorId,
         organizationId,
         serviceId,
-        data
+        data,
       );
     },
     onSuccess: (data, variables) => {
@@ -118,7 +120,7 @@ export const useMutationUpdateOrganizationServiceSubscription = () => {
 export const useOrganizationAccounts = (
   operatorId: string,
   organizationId: string,
-  params: Parameters<typeof getOrganizationAccounts>[2]
+  params: Parameters<typeof getOrganizationAccounts>[2],
 ) => {
   return useQuery({
     queryKey: [
@@ -249,7 +251,7 @@ export const useServiceAdminCount = (
   operatorId: string,
   organizationId: string,
   serviceId: string,
-  includeServiceCount: boolean = true
+  includeServiceCount: boolean = true,
 ) => {
   return useQuery({
     // Nested under the "accounts" namespace so existing account mutations
@@ -360,7 +362,7 @@ export const useDomainsChecks = (
   operatorId: string,
   organizationId: string,
   domains: string[],
-  enabled = true
+  enabled = true,
 ) => {
   // domain -> its verdict, or null when the backend answered without one.
   const [answers, setAnswers] = useState<Record<string, DomainCheck | null>>({});
@@ -426,6 +428,17 @@ export const useDomainsChecks = (
     checksFailed: isError && !isFetching,
     retryChecks: () => void refetch(),
   };
+};
+
+export const useOperatorMetrics = (
+  operatorId: string,
+  params: MetricsParams | null,
+) => {
+  return useQuery({
+    queryKey: ["operators", operatorId, "metrics", JSON.stringify(params)],
+    queryFn: () => getOperatorMetrics(operatorId, params!),
+    enabled: !!operatorId && !!params?.key && !!params?.service,
+  });
 };
 
 export default useOperator;

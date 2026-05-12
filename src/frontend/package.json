@@ -26,6 +26,7 @@
     "react-hook-form": "7.67.0",
     "react-i18next": "15.4.1",
     "react-toastify": "11.0.2",
+    "recharts": "2.15.3",
     "sass": "1.85.0"
   },
   "devDependencies": {
