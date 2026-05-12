@@ -15,6 +15,8 @@ import {
   Account,
   getOperatorServices,
   updateOperatorOrganizationRole,
+  getOperatorMetrics,
+  MetricsParams,
 } from "@/features/api/Repository";
 import { getOrganization } from "@/features/api/Repository";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -44,7 +46,7 @@ export const useOrganization = (operatorId: string, organizationId: string) => {
 
 export const useOperatorOrganizations = (
   operatorId: string,
-  params: Parameters<typeof getOperatorOrganizations>[1]
+  params: Parameters<typeof getOperatorOrganizations>[1],
 ) => {
   return useQuery({
     queryKey: [
@@ -59,7 +61,7 @@ export const useOperatorOrganizations = (
 
 export const useOrganizationServices = (
   operatorId: string,
-  organizationId: string
+  organizationId: string,
 ) => {
   return useQuery({
     queryKey: [
@@ -88,7 +90,7 @@ export const useMutationDeleteOrganizationServiceSubscription = () => {
       return deleteOrganizationServiceSubscription(
         operatorId,
         organizationId,
-        serviceId
+        serviceId,
       );
     },
     onSuccess: (data, variables) => {
@@ -120,7 +122,7 @@ export const useMutationUpdateOrganizationServiceSubscription = () => {
         operatorId,
         organizationId,
         serviceId,
-        data
+        data,
       );
     },
     onSuccess: (data, variables) => {
@@ -169,7 +171,7 @@ export const useMutationUpdateEntitlement = () => {
 export const useOrganizationAccounts = (
   operatorId: string,
   organizationId: string,
-  params: Parameters<typeof getOrganizationAccounts>[2]
+  params: Parameters<typeof getOrganizationAccounts>[2],
 ) => {
   return useQuery({
     queryKey: [
@@ -299,7 +301,7 @@ export const useMutationUpdateAccountServiceLink = () => {
 export const useMessagesAdminCount = (
   operatorId: string,
   organizationId: string,
-  serviceId: string
+  serviceId: string,
 ) => {
   return useQuery({
     queryKey: [
@@ -353,6 +355,17 @@ export const useMutationUpdateOperatorOrganizationRole = () => {
         ],
       });
     },
+  });
+};
+
+export const useOperatorMetrics = (
+  operatorId: string,
+  params: MetricsParams | null,
+) => {
+  return useQuery({
+    queryKey: ["operators", operatorId, "metrics", JSON.stringify(params)],
+    queryFn: () => getOperatorMetrics(operatorId, params!),
+    enabled: !!operatorId && !!params?.key && !!params?.service,
   });
 };
 
