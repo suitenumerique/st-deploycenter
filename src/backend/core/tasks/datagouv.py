@@ -181,8 +181,8 @@ def upload_deployment_operators_dataset():
     dataset_id = "68b0a2a1117b75b1b09edc6b"
     resource_id = "902bb360-0b60-46d2-8169-4207a01caed1"
 
-    # First, get all operators with non-empty statut
-    operators = Operator.objects.filter(is_active=True, statut__isnull=False).exclude(statut="").order_by(
+    # First, get all operators with non-empty status
+    operators = Operator.objects.filter(is_active=True, status__isnull=False).exclude(status="").order_by(
         "name"
     )
 
