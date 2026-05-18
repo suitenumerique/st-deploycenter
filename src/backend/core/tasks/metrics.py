@@ -133,10 +133,20 @@ def scrape_service_usage_metrics(service: Service, filters: Dict[str, Any] = Non
     Scrape usage metrics for a specific service (Celery task).
 
     Usage metrics are per-user/per-object disk usage or other app-specific metrics.
+
+    Errors from the underlying endpoint are swallowed here: this path does not
+    drive the stale-row sweep, and callers (e.g. the entitlements API) must keep
+    serving even when the service-side metrics endpoint is unavailable.
     """
     if filters is None:
         filters = {}
-    metrics_data = fetch_usage_metrics_from_service(service, filters)
+    try:
+        metrics_data = fetch_usage_metrics_from_service(service, filters)
+    except (requests.RequestException, ValueError, KeyError) as e:
+        logger.error(
+            "Error fetching usage metrics for service %s: %s", service.name, str(e)
+        )
+        return
     if metrics_data:
         store_service_metrics(service, metrics_data)
 

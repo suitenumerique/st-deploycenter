@@ -19,6 +19,7 @@ from core.tasks.metrics import (
     fetch_metrics_from_service,
     fetch_usage_metrics_from_service,
     map_csv_row,
+    scrape_service_metrics,
     store_service_metrics,
 )
 
@@ -416,7 +417,7 @@ def test_metrics_with_missing_config():
 
 @pytest.mark.django_db
 def test_metrics_error_handling():
-    """Test that errors during fetching are handled gracefully."""
+    """Test that errors during fetching are handled gracefully at the task boundary."""
     # Create service with invalid endpoint
     invalid_service = factories.ServiceFactory(
         type="invalid_service",
@@ -426,14 +427,15 @@ def test_metrics_error_handling():
         },
     )
 
-    # Should return empty list due to connection error
-    metrics_data = fetch_metrics_from_service(invalid_service)
-    assert len(metrics_data) == 0
+    # fetch_metrics_from_service propagates errors so callers can skip the
+    # stale-row sweep; the celery task catches them and reports status=error.
+    result = scrape_service_metrics(invalid_service.id)
+    assert result["status"] == "error"
 
 
 @pytest.mark.django_db
 def test_metrics_error_handling_with_invalid_token(mock_metrics_server):
-    """Test that errors during fetching are handled gracefully."""
+    """Test that errors during fetching are handled gracefully at the task boundary."""
     # Create service with invalid endpoint
     invalid_service = factories.ServiceFactory(
         type="invalid_service",
@@ -443,9 +445,8 @@ def test_metrics_error_handling_with_invalid_token(mock_metrics_server):
         },
     )
 
-    # Should return empty list due to connection error
-    metrics_data = fetch_metrics_from_service(invalid_service)
-    assert len(metrics_data) == 0
+    result = scrape_service_metrics(invalid_service.id)
+    assert result["status"] == "error"
 
 
 @pytest.mark.django_db
