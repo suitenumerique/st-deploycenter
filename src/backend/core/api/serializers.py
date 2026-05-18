@@ -349,6 +349,7 @@ class ServiceSerializer(serializers.ModelSerializer):
             "maturity",
             "launch_date",
             "is_active",
+            "hidden",
             "created_at",
             "logo",
             "config",

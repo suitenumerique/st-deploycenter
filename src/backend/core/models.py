@@ -877,6 +877,12 @@ class Service(BaseModel):
         help_text=_("Whether this service is currently available for subscription"),
     )
 
+    hidden = models.BooleanField(
+        _("hidden"),
+        default=False,
+        help_text=_("Whether this service should be hidden from frontend listings"),
+    )
+
     logo_svg = models.BinaryField(
         _("logo SVG"),
         blank=True,
