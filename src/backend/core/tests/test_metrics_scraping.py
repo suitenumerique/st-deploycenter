@@ -11,9 +11,14 @@ from threading import Thread
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+import requests
 
 from core import factories, models
-from core.tasks.metrics import fetch_metrics_from_service, store_service_metrics
+from core.tasks.metrics import (
+    fetch_metrics_from_service,
+    scrape_service_metrics,
+    store_service_metrics,
+)
 
 
 class MockMetricsServer(BaseHTTPRequestHandler):
@@ -363,8 +368,7 @@ def test_metrics_with_missing_config():
 
 @pytest.mark.django_db
 def test_metrics_error_handling():
-    """Test that errors during fetching are handled gracefully."""
-    # Create service with invalid endpoint
+    """Connection errors must propagate so callers can skip the stale sweep."""
     invalid_service = factories.ServiceFactory(
         type="invalid_service",
         config={
@@ -373,15 +377,13 @@ def test_metrics_error_handling():
         },
     )
 
-    # Should return empty list due to connection error
-    metrics_data = fetch_metrics_from_service(invalid_service)
-    assert len(metrics_data) == 0
+    with pytest.raises(requests.RequestException):
+        fetch_metrics_from_service(invalid_service)
 
 
 @pytest.mark.django_db
 def test_metrics_error_handling_with_invalid_token(mock_metrics_server):
-    """Test that errors during fetching are handled gracefully."""
-    # Create service with invalid endpoint
+    """HTTP errors (401, etc.) must propagate so callers can skip the sweep."""
     invalid_service = factories.ServiceFactory(
         type="invalid_service",
         config={
@@ -390,6 +392,101 @@ def test_metrics_error_handling_with_invalid_token(mock_metrics_server):
         },
     )
 
-    # Should return empty list due to connection error
-    metrics_data = fetch_metrics_from_service(invalid_service)
-    assert len(metrics_data) == 0
+    with pytest.raises(requests.HTTPError):
+        fetch_metrics_from_service(invalid_service)
+
+
+@pytest.mark.django_db
+def test_store_service_metrics_sweeps_stale_org_rows(
+    mock_metrics_server, test_service, test_organizations
+):
+    """A successful scrape removes org-level rows the upstream no longer reports."""
+    # Org that will "unsubscribe" — present in DB but not produced by mock server.
+    stale_org = factories.OrganizationFactory(
+        siret="99999999900001",
+        name="Stale Org",
+    )
+    models.Metric.objects.create(
+        key="tu",
+        value=42,
+        service=test_service,
+        organization=stale_org,
+    )
+    assert models.Metric.objects.filter(
+        service=test_service, organization=stale_org
+    ).exists()
+
+    # Full successful scrape — mock server returns 40 orgs, stale_org is not one.
+    metrics_data = fetch_metrics_from_service(test_service)
+    store_service_metrics(test_service, metrics_data, sweep_stale=True)
+
+    # Stale row gone, current rows intact.
+    assert not models.Metric.objects.filter(
+        service=test_service, organization=stale_org
+    ).exists()
+    assert models.Metric.objects.filter(service=test_service).count() == 160
+
+
+@pytest.mark.django_db
+def test_store_service_metrics_default_does_not_sweep(
+    mock_metrics_server, test_service, test_organizations
+):
+    """Without sweep_stale=True (e.g. usage-metrics path), stale rows are kept."""
+    stale_org = factories.OrganizationFactory(siret="99999999900002")
+    models.Metric.objects.create(
+        key="tu", value=42, service=test_service, organization=stale_org
+    )
+
+    metrics_data = fetch_metrics_from_service(test_service)
+    store_service_metrics(test_service, metrics_data)  # default: no sweep
+
+    assert models.Metric.objects.filter(
+        service=test_service, organization=stale_org
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_store_service_metrics_sweep_preserves_account_rows(
+    mock_metrics_server, test_service, test_organizations
+):
+    """Account-level rows (usage metrics) must survive a regular-scrape sweep."""
+    other_org = factories.OrganizationFactory(siret="99999999900003")
+    account = factories.AccountFactory(organization=other_org)
+    models.Metric.objects.create(
+        key="disk_usage",
+        value=1234,
+        service=test_service,
+        organization=other_org,
+        account=account,
+    )
+
+    metrics_data = fetch_metrics_from_service(test_service)
+    store_service_metrics(test_service, metrics_data, sweep_stale=True)
+
+    # Account-scoped row preserved despite being older and for an org not in scrape.
+    assert models.Metric.objects.filter(
+        service=test_service, organization=other_org, account=account
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_scrape_service_metrics_skips_sweep_on_fetch_failure(test_organizations):
+    """When the fetch fails, existing rows are kept (prefer stale over partial)."""
+    service = factories.ServiceFactory(
+        type="broken_service",
+        config={
+            "metrics_endpoint": "http://localhost:9999/nonexistent",
+            "metrics_auth_token": "test_token_valid",
+        },
+    )
+    existing_org = next(iter(test_organizations.values()))
+    models.Metric.objects.create(
+        key="tu", value=42, service=service, organization=existing_org
+    )
+
+    result = scrape_service_metrics(service.id)
+
+    assert result["status"] == "error"
+    assert models.Metric.objects.filter(
+        service=service, organization=existing_org
+    ).exists()

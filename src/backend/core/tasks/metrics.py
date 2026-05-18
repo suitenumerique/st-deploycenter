@@ -6,7 +6,6 @@ This module handles scraping metrics from external services and storing them in 
 
 import csv
 import io
-import json
 import logging
 import time
 from typing import Any, Dict, List, Optional
@@ -104,7 +103,9 @@ def scrape_service_metrics(service_id: int):
         metrics_data = fetch_metrics_from_service(service)
 
         if metrics_data:
-            metrics_stored = store_service_metrics(service, metrics_data)
+            metrics_stored = store_service_metrics(
+                service, metrics_data, sweep_stale=True
+            )
             return {
                 "service": str(service),
                 "metrics_scraped": len(metrics_data),
@@ -228,57 +229,50 @@ def fetch_metrics_from_endpoint(
     limit = service.config.get("metrics_limit", 1000)  # Default page size
 
     while True:
-        try:
-            # Construct paginated URL
-            amp = "?" if "?" not in metrics_endpoint else "&"
-            paginated_url = f"{metrics_endpoint}{amp}limit={limit}&offset={offset}"
-            logger.info("Fetching metrics from: %s", paginated_url)
+        # Construct paginated URL
+        amp = "?" if "?" not in metrics_endpoint else "&"
+        paginated_url = f"{metrics_endpoint}{amp}limit={limit}&offset={offset}"
+        logger.info("Fetching metrics from: %s", paginated_url)
 
-            # Make request to metrics endpoint
-            response = requests.get(paginated_url, headers=headers, timeout=30)
-            response.raise_for_status()
+        # Make request to metrics endpoint. Errors propagate: callers must
+        # treat any failure as "fetch incomplete" and skip the stale-row sweep.
+        response = requests.get(paginated_url, headers=headers, timeout=30)
+        response.raise_for_status()
 
-            # Parse response
-            data = response.json()
+        # Parse response
+        data = response.json()
 
-            if isinstance(data, list):
-                data = {"results": data, "count": len(data)}
+        if isinstance(data, list):
+            data = {"results": data, "count": len(data)}
 
-            # Extract pagination info
-            count = data.get("count", 0)
-            results = data.get("results", [])
+        # Extract pagination info
+        count = data.get("count", 0)
+        results = data.get("results", [])
 
-            if not results:
-                logger.info("No more results at offset %d", offset)
-                break
-
-            # Add results to our collection
-            all_metrics.extend(results)
-            logger.info(
-                "Fetched %d results (offset: %d, total so far: %d)",
-                len(results),
-                offset,
-                len(all_metrics),
-            )
-
-            # Check if we've reached the end
-            if offset + len(results) >= count:
-                logger.info("Reached end of results. Total count: %d", count)
-                break
-
-            # Move to next page
-            offset += limit
-
-            # Mandatory pause between page calls
-            logger.info("Pausing 1 second before next page request...")
-            time.sleep(1)
-
-        except requests.RequestException as e:
-            logger.error("Request error at offset %d: %s", offset, str(e))
+        if not results:
+            logger.info("No more results at offset %d", offset)
             break
-        except (ValueError, KeyError, json.JSONDecodeError) as e:
-            logger.error("Unexpected error at offset %d: %s", offset, str(e))
+
+        # Add results to our collection
+        all_metrics.extend(results)
+        logger.info(
+            "Fetched %d results (offset: %d, total so far: %d)",
+            len(results),
+            offset,
+            len(all_metrics),
+        )
+
+        # Check if we've reached the end
+        if offset + len(results) >= count:
+            logger.info("Reached end of results. Total count: %d", count)
             break
+
+        # Move to next page
+        offset += limit
+
+        # Mandatory pause between page calls
+        logger.info("Pausing 1 second before next page request...")
+        time.sleep(1)
 
     logger.info("Fetch completed. Total metrics fetched: %d", len(all_metrics))
     return all_metrics
@@ -315,40 +309,32 @@ def fetch_metrics_from_csv(service: Service, metrics_csv: str) -> List[Dict[str,
 
     delimiter = service.config.get("metrics_csv_delimiter", ",")
 
-    try:
-        # Fetch CSV content
-        response = requests.get(metrics_csv, headers=headers, timeout=30)
-        response.raise_for_status()
+    # Errors propagate: callers must treat any failure as "fetch incomplete"
+    # and skip the stale-row sweep.
+    response = requests.get(metrics_csv, headers=headers, timeout=30)
+    response.raise_for_status()
 
-        # Parse CSV content
-        csv_content = response.text
-        csv_reader = csv.DictReader(io.StringIO(csv_content), delimiter=delimiter)
+    csv_content = response.text
+    csv_reader = csv.DictReader(io.StringIO(csv_content), delimiter=delimiter)
 
-        all_metrics = []
-        for row_num, row in enumerate(
-            csv_reader, start=2
-        ):  # Start at 2 because header is row 1
-            try:
-                # Map CSV columns to expected format using the mapping configuration
-                mapped_row = map_csv_row(row, csv_mapping, default_values)
-                if mapped_row:
-                    all_metrics.append(mapped_row)
-                else:
-                    logger.warning("Skipping row %d due to mapping issues", row_num)
+    all_metrics = []
+    for row_num, row in enumerate(
+        csv_reader, start=2
+    ):  # Start at 2 because header is row 1
+        try:
+            # Map CSV columns to expected format using the mapping configuration
+            mapped_row = map_csv_row(row, csv_mapping, default_values)
+            if mapped_row:
+                all_metrics.append(mapped_row)
+            else:
+                logger.warning("Skipping row %d due to mapping issues", row_num)
 
-            except (ValueError, KeyError, TypeError) as e:
-                logger.error("Error processing CSV row %d: %s", row_num, str(e))
-                continue
+        except (ValueError, KeyError, TypeError) as e:
+            logger.error("Error processing CSV row %d: %s", row_num, str(e))
+            continue
 
-        logger.info("CSV fetch completed. Total metrics fetched: %d", len(all_metrics))
-        return all_metrics
-
-    except requests.RequestException as e:
-        logger.error("Request error fetching CSV: %s", str(e))
-        return []
-    except (ValueError, csv.Error) as e:
-        logger.error("CSV parsing error: %s", str(e))
-        return []
+    logger.info("CSV fetch completed. Total metrics fetched: %d", len(all_metrics))
+    return all_metrics
 
 
 def map_csv_row(
@@ -491,7 +477,11 @@ def _resolve_account(
     return account
 
 
-def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) -> int:
+def store_service_metrics(
+    service: Service,
+    metrics_data: List[Dict[str, Any]],
+    sweep_stale: bool = False,
+) -> int:
     """
     Store metrics data for a service.
 
@@ -501,6 +491,11 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
             [{"siret": "123456789", "metrics": {"tu": 1234, "yau": 123, ...}}, ...]
             or [{"insee": "75001", "metrics": {"tu": 1234, "yau": 123, ...}}, ...]
             or any other organization identifier fields
+        sweep_stale: When True, delete org-level metric rows (account is NULL)
+            for this service that weren't refreshed by this scrape. Caller must
+            only set this when the upstream fetch was complete — partial data
+            would wipe legitimate rows. Account-level rows are left alone so
+            usage metrics in the same table aren't affected.
 
     Returns:
         Number of metrics stored
@@ -632,5 +627,18 @@ def store_service_metrics(service: Service, metrics_data: List[Dict[str, Any]]) 
         )
         metrics_stored += len(metrics_to_create)
         logger.info("Bulk created %d new metrics", len(metrics_to_create))
+
+    if sweep_stale:
+        # Every row upserted above carries `timestamp`. Anything older for this
+        # service at the org level is stale (unsubscription, dropped key, etc.)
+        # and can be removed. Account-level rows are preserved so usage metrics
+        # — scraped independently and on demand — aren't collaterally wiped.
+        deleted, _ = Metric.objects.filter(
+            service=service,
+            account__isnull=True,
+            timestamp__lt=timestamp,
+        ).delete()
+        if deleted:
+            logger.info("Swept %d stale org-level metric rows", deleted)
 
     return metrics_stored
