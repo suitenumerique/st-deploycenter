@@ -5,6 +5,9 @@ from core.entitlements.resolvers.access_entitlement_resolver import (
 from core.entitlements.resolvers.admin_entitlement_resolver import (
     AdminEntitlementResolver,
 )
+from core.entitlements.resolvers.calendars_access_entitlement_resolver import (
+    CalendarsAccessEntitlementResolver,
+)
 from core.entitlements.resolvers.drive_access_entitlement_resolver import (
     DriveAccessEntitlementResolver,
 )
@@ -34,6 +37,7 @@ TYPE_TO_RESOLVER = {
 
 
 TYPE_TO_ACCESS_RESOLVER = {
+    "calendars": CalendarsAccessEntitlementResolver,
     "drive": DriveAccessEntitlementResolver,
     "meet": MeetAccessEntitlementResolver,
     "transfers": TransfersAccessEntitlementResolver,
