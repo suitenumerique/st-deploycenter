@@ -155,6 +155,13 @@ def upload_deployment_services_dataset():
         for service in services
     ]
 
+    if not data:
+        logger.info("No active visible services to export; skipping data.gouv upload")
+        return {
+            "status": "success",
+            "message": "No data to upload",
+        }
+
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=data[0].keys(), delimiter=";")
     writer.writeheader()
