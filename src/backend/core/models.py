@@ -877,6 +877,12 @@ class Service(BaseModel):
         help_text=_("Whether this service is currently available for subscription"),
     )
 
+    hidden = models.BooleanField(
+        _("hidden"),
+        default=False,
+        help_text=_("Whether this service should be hidden from frontend listings"),
+    )
+
     logo_svg = models.BinaryField(
         _("logo SVG"),
         blank=True,
@@ -920,13 +926,6 @@ class Service(BaseModel):
         if self.logo_svg:
             return f"{settings.API_PUBLIC_URL}servicelogo/{self.id}/"
         return None
-
-    @property
-    def hidden(self):
-        """
-        Whether the service should be hidden from frontend listings.
-        """
-        return bool((self.config or {}).get("hidden", False))
 
     def can_activate(self, organization: Organization, operator: "Operator" = None):
         """

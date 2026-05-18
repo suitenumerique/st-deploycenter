@@ -7,20 +7,9 @@ Test users API endpoints in the deploycenter core app.
 import pytest
 from rest_framework.test import APIClient
 
-from core import factories, models
+from core import factories
 
 pytestmark = pytest.mark.django_db
-
-
-def test_service_hidden_property():
-    """
-    Service.hidden derives from config["hidden"] and defaults to False when
-    the key is missing or the config is null.
-    """
-    assert models.Service(config={"hidden": True}).hidden is True
-    assert models.Service(config={"hidden": False}).hidden is False
-    assert models.Service(config={}).hidden is False
-    assert models.Service(config=None).hidden is False
 
 
 def test_api_organizations_services_list_anonymous():
@@ -208,7 +197,7 @@ def test_api_organizations_services_list_authenticated():
 
 def test_api_organizations_services_list_exposes_hidden():
     """
-    Services expose a `hidden` boolean derived from config.hidden.
+    Services expose a `hidden` boolean field.
     The API still returns hidden services — frontend handles tile filtering.
     """
     user = factories.UserFactory()
@@ -223,8 +212,8 @@ def test_api_organizations_services_list_exposes_hidden():
         operator=operator, organization=organization
     )
 
-    visible_service = factories.ServiceFactory(config={})
-    hidden_service = factories.ServiceFactory(config={"hidden": True})
+    visible_service = factories.ServiceFactory()
+    hidden_service = factories.ServiceFactory(hidden=True)
 
     factories.OperatorServiceConfigFactory(operator=operator, service=visible_service)
     factories.OperatorServiceConfigFactory(operator=operator, service=hidden_service)
