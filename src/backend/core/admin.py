@@ -916,9 +916,17 @@ class ServiceAdmin(admin.ModelAdmin):
 
     form = ServiceForm
     change_form_template = "admin/core/service/change_form.html"
-    list_display = ("name", "instance_name", "type", "url", "is_active", "created_at")
+    list_display = (
+        "name",
+        "instance_name",
+        "type",
+        "url",
+        "is_active",
+        "hidden",
+        "created_at",
+    )
     actions = ["duplicate_service"]
-    list_filter = ("type", "is_active", "created_at")
+    list_filter = ("type", "is_active", "hidden", "created_at")
     search_fields = ("name", "type", "description")
     ordering = ("name", "type", "url")
     readonly_fields = ("id", "created_at", "updated_at", "entitlements_api_key_display")
@@ -936,6 +944,7 @@ class ServiceAdmin(admin.ModelAdmin):
                     "maturity",
                     "launch_date",
                     "is_active",
+                    "hidden",
                     "required_services",
                 )
             },
