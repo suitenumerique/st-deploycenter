@@ -71,12 +71,56 @@ def test_api_entitlements_transfers_can_access_with_active_drive_subscription():
             "name": organization.name,
             "oidc_valid": None,
         },
-        "operator": None,
-        "potentialOperators": [],
+        "operator": {
+            "id": str(operator.id),
+            "name": operator.name,
+            "siret": operator.siret,
+            "url": operator.url,
+            "config": {},
+        },
         "entitlements": {
             "can_access": True,
         },
     }
+
+
+def test_api_entitlements_transfers_returns_drive_operator_on_piggyback():
+    """
+    When access is granted via Drive piggyback (no Transfers subscription exists),
+    the response's operator must reflect the Drive subscription's operator, and
+    no potentialOperators should be listed.
+    """
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    drive_service = factories.ServiceFactory(type="drive")
+    factories.ServiceSubscriptionFactory(
+        organization=organization, service=drive_service, operator=operator
+    )
+
+    transfers_service = _make_transfers_service()
+    # Without this OperatorServiceConfig, potentialOperators would be empty
+    # regardless of the bug. With it, the buggy code surfaces the operator under
+    # potentialOperators while leaving operator=None — exactly the inconsistency
+    # we want to prevent.
+    factories.OperatorServiceConfigFactory(operator=operator, service=transfers_service)
+
+    response = _call_entitlements(client, transfers_service, organization.siret)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["entitlements"] == {"can_access": True}
+    assert data["operator"] is not None
+    assert data["operator"]["id"] == str(operator.id)
+    assert data["operator"]["name"] == operator.name
+    assert "potentialOperators" not in data
 
 
 def test_api_entitlements_transfers_can_access_without_drive_subscription():

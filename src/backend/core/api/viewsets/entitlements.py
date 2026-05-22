@@ -22,6 +22,9 @@ from core.entitlements.resolvers.entitlement_resolver import (
     get_context_account_unique_identifier,
     get_entitlements_by_priority,
 )
+from core.entitlements.resolvers.piggyback_access_entitlement_resolver import (
+    PiggybackAccessEntitlementResolver,
+)
 from core.tasks.metrics import scrape_service_usage_metrics
 
 
@@ -65,6 +68,16 @@ class EntitlementViewSerializer(serializers.Serializer):
             )
 
         return attrs
+
+
+def _get_piggyback_operator_data(access_resolver, entitlement_context):
+    """Return source-subscription operator data when access piggybacks, else None."""
+    if not isinstance(access_resolver, PiggybackAccessEntitlementResolver):
+        return None
+    source_subscription = access_resolver.get_source_subscription(entitlement_context)
+    if not source_subscription or not source_subscription.is_active:
+        return None
+    return EntitlementOperatorSerializer(source_subscription.operator).data
 
 
 def _find_potential_operators(organization, service):
@@ -178,9 +191,8 @@ class EntitlementView(APIView):
         }
 
         # This entitlement should always be resolved.
-        entitlements_data = {
-            **get_access_entitlement_resolver(service).resolve(entitlement_context)
-        }
+        access_resolver = get_access_entitlement_resolver(service)
+        entitlements_data = {**access_resolver.resolve(entitlement_context)}
 
         if service_subscription and service_subscription.is_active:
             operator_data = EntitlementOperatorSerializer(
@@ -254,7 +266,16 @@ class EntitlementView(APIView):
                 **get_admin_entitlement_resolver(service).resolve(entitlement_context),
             }
         elif organization:
-            potential_operators_data = _find_potential_operators(organization, service)
+            # For piggyback services (e.g. transfers on top of drive), there is
+            # no local subscription — surface the source subscription's operator
+            # so the response is consistent with can_access.
+            operator_data = _get_piggyback_operator_data(
+                access_resolver, entitlement_context
+            )
+            if operator_data is None:
+                potential_operators_data = _find_potential_operators(
+                    organization, service
+                )
 
         # Separate metric fields from entitlements.
         metrics_data = {}

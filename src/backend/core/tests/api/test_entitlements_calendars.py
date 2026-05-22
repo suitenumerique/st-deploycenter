@@ -71,8 +71,13 @@ def test_api_entitlements_calendars_can_access_with_active_messages_subscription
             "name": organization.name,
             "oidc_valid": None,
         },
-        "operator": None,
-        "potentialOperators": [],
+        "operator": {
+            "id": str(operator.id),
+            "name": operator.name,
+            "siret": operator.siret,
+            "url": operator.url,
+            "config": {},
+        },
         "entitlements": {
             "can_access": True,
         },

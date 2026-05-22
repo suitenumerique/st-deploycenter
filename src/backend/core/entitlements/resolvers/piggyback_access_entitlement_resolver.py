@@ -18,15 +18,23 @@ class PiggybackAccessEntitlementResolver(AccessEntitlementResolver):
 
     SOURCE_SERVICE_TYPE: str = ""
 
-    def resolve(self, context):
-        source_subscription = None
-        if context.get("organization"):
-            source_subscription = models.ServiceSubscription.objects.filter(
-                organization=context["organization"],
+    def get_source_subscription(self, context):
+        """Return the active source-service subscription for the org, or None."""
+        organization = context.get("organization")
+        if not organization:
+            return None
+        return (
+            models.ServiceSubscription.objects.filter(
+                organization=organization,
                 service__type=self.SOURCE_SERVICE_TYPE,
                 is_active=True,
-            ).first()
+            )
+            .select_related("operator")
+            .first()
+        )
 
+    def resolve(self, context):
+        source_subscription = self.get_source_subscription(context)
         can_access, can_access_reason = self._resolve_with_subscription(
             {**context, "service_subscription": source_subscription}
         )
