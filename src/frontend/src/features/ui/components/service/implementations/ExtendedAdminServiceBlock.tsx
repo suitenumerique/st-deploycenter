@@ -7,6 +7,7 @@ import {
   useServiceBlock,
 } from "@/features/ui/components/service/ServiceBlock";
 import { ServiceAttribute } from "../ServiceAttribute";
+import { ServiceAdminsFooter } from "../ServiceAdminsFooter";
 import { Trans, useTranslation } from "react-i18next";
 import {
   Button,
@@ -99,6 +100,13 @@ export const ExtendedAdminServiceBlock = (props: {
             interactive={!blockProps.isManagedByOtherOperator}
           />
         </div>
+      }
+      footer={
+        <ServiceAdminsFooter
+          organization={props.organization}
+          service={props.service}
+          hideServiceCount={effectiveMode === ADMIN_MODE_ALL}
+        />
       }
     />
   );

@@ -296,7 +296,7 @@ export const useMutationUpdateAccountServiceLink = () => {
   });
 };
 
-export const useMessagesAdminCount = (
+export const useServiceAdminCount = (
   operatorId: string,
   organizationId: string,
   serviceId: string
@@ -307,7 +307,7 @@ export const useMessagesAdminCount = (
       operatorId,
       "organizations",
       organizationId,
-      "messagesAdminCount",
+      "serviceAdminCount",
       serviceId,
     ],
     queryFn: async () => {

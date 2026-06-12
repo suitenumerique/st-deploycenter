@@ -62,13 +62,20 @@ class OrganizationServiceViewSet(viewsets.ReadOnlyModelViewSet):
     GET /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/
         Return the list of services including the subscription for the given organization
         based on the user's permissions.
+
+    Supports both user authentication and external API key authentication.
     """
 
     queryset = models.Service.objects.all()
     serializer_class = serializers.OrganizationServiceSerializer
+    authentication_classes = [
+        OperatorExternalManagementApiKeyAuthentication,
+        ServiceExternalManagementApiKeyAuthentication,
+    ] + [*api_settings.DEFAULT_AUTHENTICATION_CLASSES]
     permission_classes = [
         permissions.IsAuthenticatedWithAnyMethod,
-        permissions.OperatorAndOrganizationAccessPermission,
+        permissions.OperatorAndOrganizationAccessPermission
+        | permissions.ServiceExternalManagementPermission,
     ]
 
     def get_queryset(self):
