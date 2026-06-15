@@ -24,6 +24,7 @@ from .api.viewsets.service import (
     ServiceLogoViewSet,
     SubscriptionEntitlementViewSet,
 )
+from .api.viewsets.metrics import OperatorMetricsViewSet
 from .api.viewsets.user import UserViewSet
 
 # Create router and register viewsets
@@ -86,6 +87,11 @@ urlpatterns = [
                     include(
                         [
                             *operator_organization_router.urls,
+                            path(
+                                "metrics/",
+                                OperatorMetricsViewSet.as_view({"get": "list"}),
+                                name="operator-metrics",
+                            ),
                             re_path(
                                 r"^organizations/(?P<organization_id>[0-9a-z-]*)/",
                                 include(

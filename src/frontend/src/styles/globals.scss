@@ -7,12 +7,14 @@
 @use "./../features/ui/components/service/entitlements/fields/StoragePickerEntitlementField.scss"
   as *;
 @use "./../features/layouts/components/container/Container.scss" as *;
+@use "./../features/layouts/components/left-panel/LeftPanel.scss" as *;
 
 @use "./../features/ui/components/spinner/SpinnerPage.scss";
 @use "./../pages/index.scss" as *;
 @use "./../pages/operators/index.scss" as *;
 @use "./../pages/operators/[operator_id]/index.scss" as *;
 @use "./../pages/operators/[operator_id]/organizations/index.scss" as *;
+@use "./../pages/operators/[operator_id]/metrics/index.scss" as *;
 
 body {
   margin: 0;

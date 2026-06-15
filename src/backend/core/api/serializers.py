@@ -906,3 +906,57 @@ class AccountSerializer(serializers.ModelSerializer):
                 }
             entry["roles"][link.role] = {"scope": link.scope or {}}
         return list(by_service.values())
+
+class MetricAccountSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for account in metric context."""
+
+    class Meta:
+        model = models.Account
+        fields = ["id", "email", "external_id", "type"]
+        read_only_fields = fields
+
+
+class MetricOrganizationSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for organization in metric context."""
+
+    class Meta:
+        model = models.Organization
+        fields = ["id", "name"]
+        read_only_fields = fields
+
+
+class MetricSerializer(serializers.ModelSerializer):
+    """Serialize metrics with account and organization details."""
+
+    account = MetricAccountSerializer(read_only=True)
+    organization = MetricOrganizationSerializer(read_only=True)
+
+    class Meta:
+        model = models.Metric
+        fields = ["id", "key", "value", "timestamp", "account", "organization"]
+        read_only_fields = fields
+
+
+class AggregatedMetricSerializer(serializers.Serializer):
+    """Serialize aggregated metric result."""
+
+    key = serializers.CharField(help_text="Metric key")
+    service_id = serializers.UUIDField(help_text="Service ID")
+    aggregation = serializers.ChoiceField(
+        choices=["sum", "avg"],
+        help_text="Aggregation type applied",
+    )
+    value = serializers.DecimalField(
+        max_digits=20,
+        decimal_places=6,
+        help_text="Aggregated value",
+    )
+    count = serializers.IntegerField(help_text="Number of metrics aggregated")
+
+    def create(self, validated_data):
+        """Not implemented - this serializer is read-only."""
+        raise NotImplementedError("This serializer is read-only")
+
+    def update(self, instance, validated_data):
+        """Not implemented - this serializer is read-only."""
+        raise NotImplementedError("This serializer is read-only")
