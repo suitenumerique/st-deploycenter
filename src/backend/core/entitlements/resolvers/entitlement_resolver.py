@@ -139,38 +139,87 @@ class EntitlementResolver:
 
         entitlements = get_entitlements_by_priority(context["entitlements"])
         entitlement_account = entitlements.get("account")
+        entitlement_account_override = entitlements.get("account_override")
+        entitlement_organization = entitlements.get("organization")
+
+        attributes = {}
+        account_metric = None
+        organization_metric = None
+
+        # Expose entitlements and metrics attributes.
+        if entitlement_account_override or entitlement_account:
+            account_metric = self._get_metric(
+                context,
+                entitlement_account_override
+                if entitlement_account_override
+                else entitlement_account,
+            )
+        if entitlement_organization:
+            organization_metric = self._get_metric(context, entitlement_organization)
+
+        attributes[self.resolve_level_prefix + "_entitlement_account_override"] = (
+            self._expose_entitlement_attributes(context, entitlement_account_override)
+            if entitlement_account_override
+            else None
+        )
+        attributes[self.resolve_level_prefix + "_entitlement_account"] = (
+            self._expose_entitlement_attributes(context, entitlement_account)
+            if entitlement_account
+            else None
+        )
+        attributes[self.resolve_level_prefix + "_entitlement_organization"] = (
+            self._expose_entitlement_attributes(context, entitlement_organization)
+            if entitlement_organization
+            else None
+        )
+        attributes[self.resolve_level_prefix + "_metric_account"] = (
+            self._expose_metric_attributes(context, account_metric)
+            if account_metric
+            else None
+        )
+        attributes[self.resolve_level_prefix + "_metric_organization"] = (
+            self._expose_metric_attributes(context, organization_metric)
+            if organization_metric
+            else None
+        )
+
+        # Resolve entitlements.
 
         # The account override is the highest priority entitlement. Whether it
         # complies or not, we will return the result.
-        if entitlement_account_override := entitlements.get("account_override"):
-            metric = self._get_metric(context, entitlement_account_override)
-            _, attributes = self._resolve_entitlement(
-                context, entitlement_account_override, metric
+        if entitlement_account_override:
+            _, entitlement_attributes = self._resolve_entitlement(
+                context, entitlement_account_override, account_metric
             )
             return self._build_resolve_level(
-                attributes, f"{entitlement_account_override.account_type}_override"
+                {
+                    **attributes,
+                    **entitlement_attributes,
+                },
+                f"{entitlement_account_override.account_type}_override",
             )
 
         # If there is an organization entitlement, it should first resolve anyway
         # before the generic account entitlement.
-        if entitlement_organization := entitlements.get("organization"):
-            metric = self._get_metric(context, entitlement_organization)
-            compliant, attributes = self._resolve_entitlement(
-                context, entitlement_organization, metric
+        if entitlement_organization:
+            compliant, entitlement_attributes = self._resolve_entitlement(
+                context, entitlement_organization, organization_metric
             )
             # If there is an account entitlement and it this one does not comply, we can return directly.
             # Or if there is no account entitlement to run further, we can return directly in anyway.
             if not compliant or not entitlement_account:
-                return self._build_resolve_level(attributes, "organization")
+                return self._build_resolve_level(
+                    {**attributes, **entitlement_attributes}, "organization"
+                )
 
         # If there is a generic account entitlement, it should be the last one to resolve.
         if entitlement_account:
-            metric = self._get_metric(context, entitlement_account)
-            compliant, attributes = self._resolve_entitlement(
-                context, entitlement_account, metric
+            compliant, entitlement_attributes = self._resolve_entitlement(
+                context, entitlement_account, account_metric
             )
             return self._build_resolve_level(
-                attributes, entitlement_account.account_type
+                {**attributes, **entitlement_attributes},
+                entitlement_account.account_type,
             )
 
         raise ValueError(
@@ -232,6 +281,21 @@ class EntitlementResolver:
 
         """
         pass
+
+    def _expose_entitlement_attributes(self, context, entitlement):
+        """
+        Expose the attributes of the entitlement.
+        """
+        return {}
+
+    def _expose_metric_attributes(self, context, metric):
+        """
+        Expose the attributes of the metric.
+        """
+        return {
+            "key": metric.key,
+            "value": metric.value,
+        }
 
     def _log_metric_not_found_warning(self, context, entitlement):
         """
