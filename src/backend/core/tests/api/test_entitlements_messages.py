@@ -165,6 +165,14 @@ def test_api_entitlements_mailbox_can_store(
             "can_store_resolve_level": "mailbox",
             "max_storage": 1000,
             "can_admin_maildomains": [],
+            "can_store_entitlement_account_override": None,
+            "can_store_entitlement_account": {"max_storage": 1000},
+            "can_store_entitlement_organization": None,
+            "can_store_metric_account": {
+                "key": "storage_used",
+                "value": 500,
+            },
+            "can_store_metric_organization": None,
         },
         "metrics": {
             "storage_used": 500,
@@ -242,6 +250,14 @@ def test_api_entitlements_mailbox_can_store(
             "can_store_resolve_level": "mailbox",
             "max_storage": 1000,
             "can_admin_maildomains": [],
+            "can_store_entitlement_account_override": None,
+            "can_store_entitlement_account": {"max_storage": 1000},
+            "can_store_entitlement_organization": None,
+            "can_store_metric_account": {
+                "key": "storage_used",
+                "value": 1001,
+            },
+            "can_store_metric_organization": None,
         },
         "metrics": {
             "storage_used": 1001,
@@ -437,6 +453,17 @@ def test_api_entitlements_organization_can_store(
             "can_store_resolve_level": resolve_level,
             "max_storage": expected_max_storage,
             "can_admin_maildomains": [],
+            "can_store_entitlement_account_override": None,
+            "can_store_entitlement_account": {"max_storage": 1000},
+            "can_store_entitlement_organization": {"max_storage": 10000},
+            "can_store_metric_account": {
+                "key": "storage_used",
+                "value": mailbox_storage_used,
+            },
+            "can_store_metric_organization": {
+                "key": "storage_used",
+                "value": organization_storage_used,
+            },
         },
         "metrics": {
             "storage_used": expected_storage_used,
@@ -649,6 +676,17 @@ def test_api_entitlements_mailbox_override_can_store(
             "can_store_resolve_level": "mailbox",
             "max_storage": 500,
             "can_admin_maildomains": [],
+            "can_store_entitlement_account_override": None,
+            "can_store_entitlement_account": {"max_storage": 500},
+            "can_store_entitlement_organization": {"max_storage": 1000},
+            "can_store_metric_account": {
+                "key": "storage_used",
+                "value": mailbox_storage_used,
+            },
+            "can_store_metric_organization": {
+                "key": "storage_used",
+                "value": 800,
+            },
         },
         "metrics": {
             "storage_used": mailbox_storage_used,
@@ -702,6 +740,19 @@ def test_api_entitlements_mailbox_override_can_store(
             "can_store_resolve_level": "mailbox_override",
             "max_storage": override_max_storage,
             "can_admin_maildomains": [],
+            "can_store_entitlement_account_override": {
+                "max_storage": override_max_storage,
+            },
+            "can_store_entitlement_account": {"max_storage": 500},
+            "can_store_entitlement_organization": {"max_storage": 1000},
+            "can_store_metric_account": {
+                "key": "storage_used",
+                "value": mailbox_storage_used,
+            },
+            "can_store_metric_organization": {
+                "key": "storage_used",
+                "value": 800,
+            },
         },
         "metrics": {
             "storage_used": mailbox_storage_used,
@@ -808,6 +859,17 @@ def test_api_entitlements_mailbox_override_can_store(
             "can_store_resolve_level": "mailbox",
             "max_storage": 500,
             "can_admin_maildomains": [],
+            "can_store_entitlement_account_override": None,
+            "can_store_entitlement_account": {"max_storage": 500},
+            "can_store_entitlement_organization": {"max_storage": 1000},
+            "can_store_metric_account": {
+                "key": "storage_used",
+                "value": mailbox_storage_used,
+            },
+            "can_store_metric_organization": {
+                "key": "storage_used",
+                "value": 800,
+            },
         },
         "metrics": {
             "storage_used": mailbox_storage_used,
@@ -939,6 +1001,14 @@ def test_api_entitlements_list_unlimited_storage(
             "can_store_resolve_level": "mailbox",
             "max_storage": 0,
             "can_admin_maildomains": [],
+            "can_store_entitlement_account_override": None,
+            "can_store_entitlement_account": {"max_storage": 0},
+            "can_store_entitlement_organization": None,
+            "can_store_metric_account": {
+                "key": "storage_used",
+                "value": storage_used,
+            },
+            "can_store_metric_organization": None,
         },
         "metrics": {
             "storage_used": storage_used,

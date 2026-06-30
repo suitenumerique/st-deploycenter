@@ -53,3 +53,11 @@ class MessagesStorageEntitlementResolver(EntitlementResolver):
                 "key": "storage_used",
             },
         )
+
+    def _expose_entitlement_attributes(self, context, entitlement):
+        """
+        Expose the attributes of the entitlement.
+        """
+        return {
+            "max_storage": entitlement.config.get("max_storage") or 0,
+        }
