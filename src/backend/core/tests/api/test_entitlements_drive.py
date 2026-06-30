@@ -304,6 +304,21 @@ def test_api_entitlements_user_can_upload(
                 "can_access": True,
                 "can_upload": True,
                 "can_upload_resolve_level": "user",
+                "can_upload_entitlement_account": {
+                    "max_storage": 1000 * 1000 * 1000 * 5,
+                },
+                "can_upload_entitlement_organization": {
+                    "max_storage": 1000 * 1000 * 1000 * 10,
+                },
+                "can_upload_entitlement_account_override": None,
+                "can_upload_metric_account": {
+                    "key": "storage_used",
+                    "value": 500,
+                },
+                "can_upload_metric_organization": {
+                    "key": "storage_used",
+                    "value": 1000,
+                },
             },
         },
     )
@@ -389,7 +404,6 @@ def test_api_entitlements_user_can_upload(
         },
         status=200,
     )
-
     # Test that we cannot upload more than the max storage size
     response = client.get(
         "/api/v1.0/entitlements/",
@@ -412,6 +426,22 @@ def test_api_entitlements_user_can_upload(
             },
             "entitlements": {
                 "can_upload": False,
+                "can_upload_resolve_level": "organization",
+                "can_upload_entitlement_account": {
+                    "max_storage": 1000 * 1000 * 1000 * 5,
+                },
+                "can_upload_entitlement_organization": {
+                    "max_storage": 1000 * 1000 * 1000 * 10,
+                },
+                "can_upload_entitlement_account_override": None,
+                "can_upload_metric_account": {
+                    "key": "storage_used",
+                    "value": 1000 * 1000 * 1000 * 50 + 1,
+                },
+                "can_upload_metric_organization": {
+                    "key": "storage_used",
+                    "value": 1000 * 1000 * 1000 * 50 + 1,
+                },
                 "can_access": True,
             },
         },
@@ -596,6 +626,21 @@ def test_api_entitlements_organization_can_upload(
                 "can_access": True,
                 "can_upload": can_upload,
                 "can_upload_resolve_level": resolve_level,
+                "can_upload_entitlement_account": {
+                    "max_storage": 1000 * 1000 * 1000 * 5,
+                },
+                "can_upload_entitlement_organization": {
+                    "max_storage": 1000 * 1000 * 1000 * 10,
+                },
+                "can_upload_entitlement_account_override": None,
+                "can_upload_metric_account": {
+                    "key": "storage_used",
+                    "value": user_storage_used,
+                },
+                "can_upload_metric_organization": {
+                    "key": "storage_used",
+                    "value": organization_storage_used,
+                },
             },
         },
     )
@@ -748,6 +793,7 @@ def test_api_entitlements_user_override_can_upload(
     )
     assert response.status_code == 200
     data = response.json()
+
     assert_equals_partial(
         data,
         {
@@ -759,6 +805,16 @@ def test_api_entitlements_user_override_can_upload(
                 "can_access": True,
                 "can_upload": can_upload_before_override,
                 "can_upload_resolve_level": "user",
+                "can_upload_entitlement_account": {
+                    "max_storage": 500,
+                },
+                "can_upload_entitlement_organization": None,
+                "can_upload_entitlement_account_override": None,
+                "can_upload_metric_account": {
+                    "key": "storage_used",
+                    "value": user_storage_used,
+                },
+                "can_upload_metric_organization": None,
             },
         },
     )
@@ -802,6 +858,18 @@ def test_api_entitlements_user_override_can_upload(
                 "can_access": True,
                 "can_upload": can_upload,
                 "can_upload_resolve_level": "user_override",
+                "can_upload_entitlement_account": {
+                    "max_storage": 500,
+                },
+                "can_upload_entitlement_organization": None,
+                "can_upload_entitlement_account_override": {
+                    "max_storage": override_max_storage,
+                },
+                "can_upload_metric_account": {
+                    "key": "storage_used",
+                    "value": user_storage_used,
+                },
+                "can_upload_metric_organization": None,
             },
         },
     )
@@ -869,6 +937,16 @@ def test_api_entitlements_user_override_can_upload(
                 "can_access": True,
                 "can_upload": can_upload_before_override,
                 "can_upload_resolve_level": "user",
+                "can_upload_entitlement_account": {
+                    "max_storage": 500,
+                },
+                "can_upload_entitlement_organization": None,
+                "can_upload_entitlement_account_override": None,
+                "can_upload_metric_account": {
+                    "key": "storage_used",
+                    "value": user_storage_used,
+                },
+                "can_upload_metric_organization": None,
             },
         },
     )
@@ -983,6 +1061,14 @@ def test_api_entitlements_list_unlimited_storage(
                 "can_access": True,
                 "can_upload": True,  # Should be True even with high usage when max_storage is 0 or missing
                 "can_upload_resolve_level": "user",
+                "can_upload_entitlement_account_override": None,
+                "can_upload_entitlement_account": {"max_storage": 0},
+                "can_upload_entitlement_organization": None,
+                "can_upload_metric_account": {
+                    "key": "storage_used",
+                    "value": storage_used,
+                },
+                "can_upload_metric_organization": None,
             },
         },
     )
