@@ -81,6 +81,7 @@ def test_api_entitlements_transfers_can_access_with_active_drive_subscription():
         "entitlements": {
             "can_access": True,
         },
+        "metrics": {},
     }
 
 
@@ -156,6 +157,7 @@ def test_api_entitlements_transfers_can_access_without_drive_subscription():
             "can_access": False,
             "can_access_reason": TransfersAccessEntitlementResolver.Reason.NOT_ACTIVATED,
         },
+        "metrics": {},
     }
 
 
@@ -214,6 +216,7 @@ def test_api_entitlements_transfers_can_access_no_organization():
             "can_access": False,
             "can_access_reason": TransfersAccessEntitlementResolver.Reason.NO_ORGANIZATION,
         },
+        "metrics": {},
     }
 
 

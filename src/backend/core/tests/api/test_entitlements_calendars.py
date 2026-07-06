@@ -81,6 +81,7 @@ def test_api_entitlements_calendars_can_access_with_active_messages_subscription
         "entitlements": {
             "can_access": True,
         },
+        "metrics": {},
     }
 
 
@@ -117,6 +118,7 @@ def test_api_entitlements_calendars_can_access_without_messages_subscription():
             "can_access": False,
             "can_access_reason": CalendarsAccessEntitlementResolver.Reason.NOT_ACTIVATED,
         },
+        "metrics": {},
     }
 
 
@@ -175,6 +177,7 @@ def test_api_entitlements_calendars_can_access_no_organization():
             "can_access": False,
             "can_access_reason": CalendarsAccessEntitlementResolver.Reason.NO_ORGANIZATION,
         },
+        "metrics": {},
     }
 
 

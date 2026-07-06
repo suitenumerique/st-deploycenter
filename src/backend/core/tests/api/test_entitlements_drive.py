@@ -153,6 +153,7 @@ def test_api_entitlements_can_access_without_subscription(
             "can_upload": False,
             "can_upload_reason": AccessEntitlementResolver.Reason.NOT_ACTIVATED,
         },
+        "metrics": {},
     }
 
     # Create an inactive subscription to test that the user can still access the service.
@@ -188,6 +189,7 @@ def test_api_entitlements_can_access_without_subscription(
             "can_upload": False,
             "can_upload_reason": AccessEntitlementResolver.Reason.NOT_ACTIVATED,
         },
+        "metrics": {},
     }
 
 
@@ -304,20 +306,15 @@ def test_api_entitlements_user_can_upload(
                 "can_access": True,
                 "can_upload": True,
                 "can_upload_resolve_level": "user",
-                "can_upload_entitlement_account": {
-                    "max_storage": 1000 * 1000 * 1000 * 5,
+                "max_storage_account": 1000 * 1000 * 1000 * 5,
+                "max_storage_organization": 1000 * 1000 * 1000 * 10,
+            },
+            "metrics": {
+                "account": {
+                    "storage_used": 500,
                 },
-                "can_upload_entitlement_organization": {
-                    "max_storage": 1000 * 1000 * 1000 * 10,
-                },
-                "can_upload_entitlement_account_override": None,
-                "can_upload_metric_account": {
-                    "key": "storage_used",
-                    "value": 500,
-                },
-                "can_upload_metric_organization": {
-                    "key": "storage_used",
-                    "value": 1000,
+                "organization": {
+                    "storage_used": 1000,
                 },
             },
         },
@@ -427,22 +424,17 @@ def test_api_entitlements_user_can_upload(
             "entitlements": {
                 "can_upload": False,
                 "can_upload_resolve_level": "organization",
-                "can_upload_entitlement_account": {
-                    "max_storage": 1000 * 1000 * 1000 * 5,
-                },
-                "can_upload_entitlement_organization": {
-                    "max_storage": 1000 * 1000 * 1000 * 10,
-                },
-                "can_upload_entitlement_account_override": None,
-                "can_upload_metric_account": {
-                    "key": "storage_used",
-                    "value": 1000 * 1000 * 1000 * 50 + 1,
-                },
-                "can_upload_metric_organization": {
-                    "key": "storage_used",
-                    "value": 1000 * 1000 * 1000 * 50 + 1,
-                },
+                "max_storage_account": 1000 * 1000 * 1000 * 5,
+                "max_storage_organization": 1000 * 1000 * 1000 * 10,
                 "can_access": True,
+            },
+            "metrics": {
+                "account": {
+                    "storage_used": 1000 * 1000 * 1000 * 50 + 1,
+                },
+                "organization": {
+                    "storage_used": 1000 * 1000 * 1000 * 50 + 1,
+                },
             },
         },
     )
@@ -626,20 +618,15 @@ def test_api_entitlements_organization_can_upload(
                 "can_access": True,
                 "can_upload": can_upload,
                 "can_upload_resolve_level": resolve_level,
-                "can_upload_entitlement_account": {
-                    "max_storage": 1000 * 1000 * 1000 * 5,
+                "max_storage_account": 1000 * 1000 * 1000 * 5,
+                "max_storage_organization": 1000 * 1000 * 1000 * 10,
+            },
+            "metrics": {
+                "account": {
+                    "storage_used": user_storage_used,
                 },
-                "can_upload_entitlement_organization": {
-                    "max_storage": 1000 * 1000 * 1000 * 10,
-                },
-                "can_upload_entitlement_account_override": None,
-                "can_upload_metric_account": {
-                    "key": "storage_used",
-                    "value": user_storage_used,
-                },
-                "can_upload_metric_organization": {
-                    "key": "storage_used",
-                    "value": organization_storage_used,
+                "organization": {
+                    "storage_used": organization_storage_used,
                 },
             },
         },
@@ -805,16 +792,13 @@ def test_api_entitlements_user_override_can_upload(
                 "can_access": True,
                 "can_upload": can_upload_before_override,
                 "can_upload_resolve_level": "user",
-                "can_upload_entitlement_account": {
-                    "max_storage": 500,
+                "max_storage_account": 500,
+            },
+            "metrics": {
+                "account": {
+                    "storage_used": user_storage_used,
                 },
-                "can_upload_entitlement_organization": None,
-                "can_upload_entitlement_account_override": None,
-                "can_upload_metric_account": {
-                    "key": "storage_used",
-                    "value": user_storage_used,
-                },
-                "can_upload_metric_organization": None,
+                "organization": None,
             },
         },
     )
@@ -858,18 +842,14 @@ def test_api_entitlements_user_override_can_upload(
                 "can_access": True,
                 "can_upload": can_upload,
                 "can_upload_resolve_level": "user_override",
-                "can_upload_entitlement_account": {
-                    "max_storage": 500,
+                "max_storage_account": 500,
+                "max_storage_account_override": override_max_storage,
+            },
+            "metrics": {
+                "account": {
+                    "storage_used": user_storage_used,
                 },
-                "can_upload_entitlement_organization": None,
-                "can_upload_entitlement_account_override": {
-                    "max_storage": override_max_storage,
-                },
-                "can_upload_metric_account": {
-                    "key": "storage_used",
-                    "value": user_storage_used,
-                },
-                "can_upload_metric_organization": None,
+                "organization": None,
             },
         },
     )
@@ -937,16 +917,13 @@ def test_api_entitlements_user_override_can_upload(
                 "can_access": True,
                 "can_upload": can_upload_before_override,
                 "can_upload_resolve_level": "user",
-                "can_upload_entitlement_account": {
-                    "max_storage": 500,
+                "max_storage_account": 500,
+            },
+            "metrics": {
+                "account": {
+                    "storage_used": user_storage_used,
                 },
-                "can_upload_entitlement_organization": None,
-                "can_upload_entitlement_account_override": None,
-                "can_upload_metric_account": {
-                    "key": "storage_used",
-                    "value": user_storage_used,
-                },
-                "can_upload_metric_organization": None,
+                "organization": None,
             },
         },
     )
@@ -1061,14 +1038,13 @@ def test_api_entitlements_list_unlimited_storage(
                 "can_access": True,
                 "can_upload": True,  # Should be True even with high usage when max_storage is 0 or missing
                 "can_upload_resolve_level": "user",
-                "can_upload_entitlement_account_override": None,
-                "can_upload_entitlement_account": {"max_storage": 0},
-                "can_upload_entitlement_organization": None,
-                "can_upload_metric_account": {
-                    "key": "storage_used",
-                    "value": storage_used,
+                "max_storage_account": 0,
+            },
+            "metrics": {
+                "account": {
+                    "storage_used": storage_used,
                 },
-                "can_upload_metric_organization": None,
+                "organization": None,
             },
         },
     )

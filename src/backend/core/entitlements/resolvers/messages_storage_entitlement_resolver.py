@@ -22,24 +22,16 @@ class MessagesStorageEntitlementResolver(EntitlementResolver):
         if max_storage == 0:
             return (
                 True,
-                {"can_store": True, "max_storage": 0, "storage_used": storage_used},
+                {"can_store": True},
             )
         if storage_used > max_storage:
             return (
                 False,
-                {
-                    "can_store": False,
-                    "max_storage": max_storage,
-                    "storage_used": storage_used,
-                },
+                {"can_store": False},
             )
         return (
             True,
-            {
-                "can_store": True,
-                "max_storage": max_storage,
-                "storage_used": storage_used,
-            },
+            {"can_store": True},
         )
 
     def _get_metric(self, context, entitlement):

@@ -68,6 +68,7 @@ def test_api_entitlements_meet_can_create_with_active_subscription():
         "entitlements": {
             "can_create": True,
         },
+        "metrics": {},
     }
 
 
@@ -117,6 +118,7 @@ def test_api_entitlements_meet_can_create_without_subscription():
             "can_create": False,
             "can_create_reason": MeetAccessEntitlementResolver.Reason.NOT_ACTIVATED,
         },
+        "metrics": {},
     }
 
 
@@ -170,6 +172,7 @@ def test_api_entitlements_meet_can_create_with_inactive_subscription():
             "can_create": False,
             "can_create_reason": MeetAccessEntitlementResolver.Reason.NOT_ACTIVATED,
         },
+        "metrics": {},
     }
 
 
@@ -207,4 +210,5 @@ def test_api_entitlements_meet_can_create_no_organization():
             "can_create": False,
             "can_create_reason": MeetAccessEntitlementResolver.Reason.NO_ORGANIZATION,
         },
+        "metrics": {},
     }

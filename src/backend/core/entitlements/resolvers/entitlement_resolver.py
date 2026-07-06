@@ -95,6 +95,9 @@ class EntitlementResolver:
 
     resolve_level_prefix = ""
 
+    def __init__(self):
+        self.metrics_data = {}
+
     def resolve(self, context):
         """
         Resolve the metric based entitlements according to their priority.
@@ -157,27 +160,22 @@ class EntitlementResolver:
         if entitlement_organization:
             organization_metric = self._get_metric(context, entitlement_organization)
 
-        attributes[self.resolve_level_prefix + "_entitlement_account_override"] = (
-            self._expose_entitlement_attributes(context, entitlement_account_override)
-            if entitlement_account_override
-            else None
+        self._include_entitlement_attributes(
+            attributes, context, entitlement_account_override, "account_override"
         )
-        attributes[self.resolve_level_prefix + "_entitlement_account"] = (
-            self._expose_entitlement_attributes(context, entitlement_account)
-            if entitlement_account
-            else None
+        self._include_entitlement_attributes(
+            attributes, context, entitlement_account, "account"
         )
-        attributes[self.resolve_level_prefix + "_entitlement_organization"] = (
-            self._expose_entitlement_attributes(context, entitlement_organization)
-            if entitlement_organization
-            else None
+        self._include_entitlement_attributes(
+            attributes, context, entitlement_organization, "organization"
         )
-        attributes[self.resolve_level_prefix + "_metric_account"] = (
+
+        self.metrics_data["account"] = (
             self._expose_metric_attributes(context, account_metric)
             if account_metric
             else None
         )
-        attributes[self.resolve_level_prefix + "_metric_organization"] = (
+        self.metrics_data["organization"] = (
             self._expose_metric_attributes(context, organization_metric)
             if organization_metric
             else None
@@ -282,6 +280,16 @@ class EntitlementResolver:
         """
         pass
 
+    def _include_entitlement_attributes(self, attributes, context, entitlement, level):
+        entitlement_exposed_attributes = (
+            self._expose_entitlement_attributes(context, entitlement)
+            if entitlement
+            else None
+        )
+        if entitlement_exposed_attributes:
+            for key, value in entitlement_exposed_attributes.items():
+                attributes[f"{key}_{level}"] = value
+
     def _expose_entitlement_attributes(self, context, entitlement):
         """
         Expose the attributes of the entitlement.
@@ -293,8 +301,7 @@ class EntitlementResolver:
         Expose the attributes of the metric.
         """
         return {
-            "key": metric.key,
-            "value": metric.value,
+            metric.key: metric.value,
         }
 
     def _log_metric_not_found_warning(self, context, entitlement):

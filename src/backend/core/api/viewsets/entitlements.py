@@ -193,6 +193,7 @@ class EntitlementView(APIView):
         # This entitlement should always be resolved.
         access_resolver = get_access_entitlement_resolver(service)
         entitlements_data = {**access_resolver.resolve(entitlement_context)}
+        metrics_data = {}
 
         if service_subscription and service_subscription.is_active:
             operator_data = EntitlementOperatorSerializer(
@@ -259,6 +260,7 @@ class EntitlementView(APIView):
                     {**entitlement_context, "entitlements": entitlements_of_type}
                 )
                 entitlements_data = {**entitlements_data, **entitlement_data}
+                metrics_data = {**metrics_data, **resolver.metrics_data}
 
             # Resolve admin entitlement.
             entitlements_data = {
@@ -276,12 +278,6 @@ class EntitlementView(APIView):
                 potential_operators_data = _find_potential_operators(
                     organization, service
                 )
-
-        # Separate metric fields from entitlements.
-        metrics_data = {}
-        for key in ("storage_used",):
-            if key in entitlements_data:
-                metrics_data[key] = entitlements_data.pop(key)
 
         organization_data = None
         if organization:
@@ -311,6 +307,7 @@ class EntitlementView(APIView):
             "organization": organization_data,
             "operator": operator_data,
             "entitlements": entitlements_data,
+            "metrics": metrics_data,
         }
         if potential_operators_data is not None:
             response_data["potentialOperators"] = potential_operators_data

@@ -259,6 +259,7 @@ def test_api_entitlements_list_organization_not_found(webhook_server):
             "can_access": False,
             "can_access_reason": AccessEntitlementResolver.Reason.NO_ORGANIZATION,
         },
+        "metrics": {},
     }
 
 
