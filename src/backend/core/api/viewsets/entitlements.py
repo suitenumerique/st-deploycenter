@@ -6,6 +6,7 @@ from django.conf import settings
 from django.db.models import BooleanField, Case, Exists, OuterRef, Q, Value, When
 
 import rest_framework as drf
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -25,7 +26,7 @@ from core.entitlements.resolvers.entitlement_resolver import (
 from core.entitlements.resolvers.piggyback_access_entitlement_resolver import (
     PiggybackAccessEntitlementResolver,
 )
-from core.tasks.metrics import scrape_service_usage_metrics
+from core.tasks.metrics import scrape_service_usage_metrics, store_service_metrics
 
 
 class EntitlementOperatorSerializer(OperatorSerializer):
@@ -68,6 +69,89 @@ class EntitlementViewSerializer(serializers.Serializer):
             )
 
         return attrs
+
+
+# pylint: disable=abstract-method
+class EntitlementUsageMetricsPushSerializer(serializers.Serializer):
+    """
+    Optional POST body: usage metric items in the same format as the
+    service's usage_metrics_endpoint results, passed through unchanged
+    to store_service_metrics.
+    """
+
+    usage_metrics = serializers.ListField(child=serializers.DictField(), required=False)
+
+    def validate_usage_metrics(self, value):
+        """
+        Only validate the shapes the view relies on; anything else stays as
+        tolerant as the scrape path (bad rows are logged and skipped).
+        """
+        for index, item in enumerate(value):
+            if item.get("account") is not None and not isinstance(
+                item["account"], dict
+            ):
+                raise serializers.ValidationError(
+                    f"Item {index}: 'account' must be an object."
+                )
+            if item.get("metrics") is not None and not isinstance(
+                item["metrics"], dict
+            ):
+                raise serializers.ValidationError(
+                    f"Item {index}: 'metrics' must be an object."
+                )
+        return value
+
+
+def _refresh_usage_metrics(entitlement_context, entitlements_by_type, usage_metrics):
+    """
+    Store caller-pushed usage metrics and scrape the scopes they don't cover.
+    The caller is the service itself, so pushed items are as trusted as its
+    usage_metrics_endpoint.
+    """
+    service = entitlement_context["service"]
+    account_type = entitlement_context["account_type"]
+
+    # Always scrape incoming account metrics. (user, mailbox, etc.)
+    scrape_account = True
+    # Not all services supports organization account type.
+    scrape_organization = False
+
+    # Determine if we need to scrape organization metrics.
+    # We scrape organization metrics only if we have at least one organization entitlement.
+    for entitlements_of_type in entitlements_by_type.values():
+        entitlements_by_priority = get_entitlements_by_priority(entitlements_of_type)
+        if entitlements_by_priority.get("organization"):
+            scrape_organization = True
+
+    # Store the pushed metrics and skip the scrape for each account type
+    # they cover.
+    pushed_account_types = set()
+    if usage_metrics:
+        for item in usage_metrics:
+            item_account_type = (item.get("account") or {}).get("type")
+            if item_account_type:
+                pushed_account_types.add(item_account_type)
+        store_service_metrics(service, usage_metrics)
+
+    # Scrape metrics.
+    if scrape_account and account_type not in pushed_account_types:
+        scrape_filters = {
+            "account_type": account_type,
+        }
+        if entitlement_context["account_id"]:
+            scrape_filters["account_id_value"] = entitlement_context["account_id"]
+        if entitlement_context["account_email"]:
+            scrape_filters["account_email"] = entitlement_context["account_email"]
+        scrape_service_usage_metrics(service, scrape_filters)
+    if scrape_organization and "organization" not in pushed_account_types:
+        scrape_service_usage_metrics(
+            service,
+            {
+                "account_type": "organization",
+                "account_id_key": "siret",
+                "account_id_value": entitlement_context["siret"],
+            },
+        )
 
 
 def _get_piggyback_operator_data(access_resolver, entitlement_context):
@@ -150,6 +234,35 @@ class EntitlementView(APIView):
         """
         Get entitlements.
         """
+        return self._resolve_entitlements(request)
+
+    @extend_schema(
+        request=EntitlementUsageMetricsPushSerializer,
+        responses={200: OpenApiResponse(description="Same response as GET.")},
+    )
+    def post(self, request):
+        """
+        Get entitlements, exactly like GET (same query params, same response).
+
+        Additionally accepts an optional JSON body:
+        {"usage_metrics": [<items in the usage_metrics_endpoint format>]}
+        Pushed items are stored as if they had been scraped, and suppress the
+        HTTP scrape back to the service for each account type they cover
+        (the query param account_type and/or "organization"). Scopes not
+        covered by the body are still scraped as usual.
+        """
+        body_serializer = EntitlementUsageMetricsPushSerializer(data=request.data)
+        body_serializer.is_valid(raise_exception=True)
+        # An empty list behaves exactly like an absent key (full scraping).
+        usage_metrics = body_serializer.validated_data.get("usage_metrics") or None
+        return self._resolve_entitlements(request, usage_metrics=usage_metrics)
+
+    def _resolve_entitlements(self, request, usage_metrics=None):
+        """
+        Resolve entitlements for the given request query params. When
+        usage_metrics items are provided, they replace the corresponding
+        usage-metrics scrapes.
+        """
 
         serializer = EntitlementViewSerializer(data=request.query_params)
         serializer.is_valid(raise_exception=True)
@@ -219,39 +332,9 @@ class EntitlementView(APIView):
                     entitlements_by_type[entitlement.type] = []
                 entitlements_by_type[entitlement.type].append(entitlement)
 
-            # Always scrape incoming account metrics. (user, mailbox, etc.)
-            scrape_account = True
-            # Not all services supports organization account type.
-            scrape_organization = False
-
-            # Determine if we need to scrape organization metrics.
-            # We scrape organization metrics only if we have at least one organization entitlement.
-            for _entitlement_type, entitlements_of_type in entitlements_by_type.items():
-                entitlements_by_priority = get_entitlements_by_priority(
-                    entitlements_of_type
-                )
-                if entitlements_by_priority.get("organization"):
-                    scrape_organization = True
-
-            # Scrape metrics.
-            if scrape_account:
-                scrape_filters = {
-                    "account_type": account_type,
-                }
-                if account_id:
-                    scrape_filters["account_id_value"] = account_id
-                if account_email:
-                    scrape_filters["account_email"] = account_email
-                scrape_service_usage_metrics(service, scrape_filters)
-            if scrape_organization:
-                scrape_service_usage_metrics(
-                    service,
-                    {
-                        "account_type": "organization",
-                        "account_id_key": "siret",
-                        "account_id_value": siret,
-                    },
-                )
+            _refresh_usage_metrics(
+                entitlement_context, entitlements_by_type, usage_metrics
+            )
 
             # Resolve entitlements.
             for entitlement_type, entitlements_of_type in entitlements_by_type.items():
