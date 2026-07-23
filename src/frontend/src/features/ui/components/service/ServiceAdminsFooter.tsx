@@ -17,7 +17,8 @@ export const ServiceAdminsFooter = (props: {
   const { data: adminCount } = useServiceAdminCount(
     operatorId,
     props.organization.id,
-    props.service.id
+    props.service.id,
+    !props.hideServiceCount
   );
 
   const serviceAdminCount = adminCount?.serviceCount ?? 0;

@@ -299,32 +299,39 @@ export const useMutationUpdateAccountServiceLink = () => {
 export const useServiceAdminCount = (
   operatorId: string,
   organizationId: string,
-  serviceId: string
+  serviceId: string,
+  includeServiceCount: boolean = true
 ) => {
   return useQuery({
+    // Nested under the "accounts" namespace so existing account mutations
+    // (which invalidate [..., "accounts"]) also refresh these counts.
     queryKey: [
       "operators",
       operatorId,
       "organizations",
       organizationId,
-      "serviceAdminCount",
+      "accounts",
       serviceId,
+      "serviceAdminCount",
+      includeServiceCount,
     ],
     queryFn: async () => {
-      // Fetch both admin counts in parallel
+      // Only fetch the per-service count when it will actually be displayed.
       const [globalAdmins, serviceAdmins] = await Promise.all([
         getOrganizationAccounts(operatorId, organizationId, {
           role: "org.admin",
         }),
-        getOrganizationAccounts(operatorId, organizationId, {
-          role: `service.${serviceId}.admin`,
-        }),
+        includeServiceCount
+          ? getOrganizationAccounts(operatorId, organizationId, {
+              role: `service.${serviceId}.admin`,
+            })
+          : Promise.resolve(null),
       ]);
 
       // Use count field for total count (handles pagination)
       return {
         globalCount: globalAdmins.count,
-        serviceCount: serviceAdmins.count,
+        serviceCount: serviceAdmins?.count ?? 0,
       };
     },
     enabled: !!operatorId && !!organizationId && !!serviceId,
