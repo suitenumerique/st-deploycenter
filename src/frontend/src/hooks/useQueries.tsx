@@ -44,7 +44,8 @@ export const useOrganization = (operatorId: string, organizationId: string) => {
 
 export const useOperatorOrganizations = (
   operatorId: string,
-  params: Parameters<typeof getOperatorOrganizations>[1]
+  params: Parameters<typeof getOperatorOrganizations>[1],
+  enabled = true
 ) => {
   return useQuery({
     queryKey: [
@@ -54,6 +55,7 @@ export const useOperatorOrganizations = (
       JSON.stringify(params),
     ],
     queryFn: () => getOperatorOrganizations(operatorId, params),
+    enabled: enabled && !!operatorId,
   });
 };
 

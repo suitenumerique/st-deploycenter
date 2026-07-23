@@ -26,6 +26,11 @@
         "title": "Adhérents",
         "subtitle": "Liste des collectivités de votre périmètre",
         "empty": "Aucune collectivité trouvée",
+        "redirect": {
+          "searching": "Recherche de la collectivité…",
+          "not_found": "Aucune collectivité trouvée pour cet identifiant.",
+          "missing_identifier": "Aucun identifiant fourni. Ajoutez un paramètre ?siret= ou ?siren= à l'URL."
+        },
         "rpnt": {
           "yes": "Oui"
         },

@@ -611,3 +611,17 @@
     }
   }
 }
+
+.dc__organization__resolver {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+
+  p {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--c--theme--colors--greyscale-600, #666);
+  }
+}
