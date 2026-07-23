@@ -57,6 +57,10 @@ server {
         try_files $uri /operators/[operator_id]/organizations/[id].html;
     }
 
+    location ~ "^/operators/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/organizations/?$" {
+        try_files $uri /operators/[operator_id]/organizations.html;
+    }
+
     location / {
         try_files $uri index.html $uri/ =404;
     }
