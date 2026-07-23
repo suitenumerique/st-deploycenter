@@ -7,6 +7,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from core import factories
+from core.entitlements.resolvers import get_admin_entitlement_resolver
 from core.tests.utils import assert_equals_partial
 
 pytestmark = pytest.mark.django_db
@@ -1293,10 +1294,6 @@ def test_non_messages_admin_resolver_not_run_without_active_subscription():
 def test_messages_admin_resolver_runs_without_active_subscription_flag():
     """The Messages admin resolver is flagged to run without an active
     subscription; the base and extended resolvers are not."""
-    from core.entitlements.resolvers import (  # pylint: disable=import-outside-toplevel
-        get_admin_entitlement_resolver,
-    )
-
     messages_service = factories.ServiceFactory(type="messages")
     adc_service = factories.ServiceFactory(type="adc")
     other_service = factories.ServiceFactory(type="some-other-type")
