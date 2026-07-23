@@ -26,7 +26,13 @@ class MessagesAdminEntitlementResolver(AdminEntitlementResolver):
     operator_admins_have_admin_role=True, users with a UserOperatorRole
     for that operator are granted unrestricted mail domain admin on
     the corresponding organization's subscriptions.
+
+    Because this resolver aggregates admin rights across *all* organizations
+    (not just the queried one), it must run even when the queried organization
+    has no active subscription of its own.
     """
+
+    runs_without_active_subscription = True
 
     def resolve(self, context):
         account_email = context.get("account_email") or ""

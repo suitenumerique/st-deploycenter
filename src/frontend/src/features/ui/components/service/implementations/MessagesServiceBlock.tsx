@@ -8,14 +8,14 @@ import {
   useServiceBlock,
 } from "@/features/ui/components/service/ServiceBlock";
 import { ServiceAttribute } from "../ServiceAttribute";
+import { ServiceAdminsFooter } from "../ServiceAdminsFooter";
 import { useTranslation } from "react-i18next";
 import { useMemo, useState } from "react";
-import { useMessagesAdminCount, useOrganizationServices } from "@/hooks/useQueries";
+import { useOrganizationServices } from "@/hooks/useQueries";
 import { useOperatorContext } from "@/features/layouts/components/GlobalLayout";
 import { useAuth } from "@/features/auth/Auth";
 import { Icon, IconSize } from "@gouvfr-lasuite/ui-kit";
 import { useModal } from "@openfun/cunningham-react";
-import Link from "next/link";
 import { MutateOptions } from "@tanstack/react-query";
 import { DomainSelectorModal } from "../DomainSelectorModal";
 
@@ -43,13 +43,6 @@ export const MessagesServiceBlock = (props: {
     return undefined;
   }, [props.service.subscription?.metadata?.domains]);
 
-  // Fetch admin count
-  const { data: adminCount } = useMessagesAdminCount(
-    operatorId,
-    props.organization.id,
-    props.service.id
-  );
-
   // Fetch services to get ProConnect domains as default
   const { data: services } = useOrganizationServices(
     operatorId,
@@ -75,10 +68,6 @@ export const MessagesServiceBlock = (props: {
   const domains = savedDomains !== undefined ? savedDomains : proConnectDomains;
   const hasDomains = domains.length > 0;
 
-  const getAccountsUrl = (role: string) => {
-    return `/operators/${operatorId}/organizations/${props.organization.id}?tab=accounts&role=${encodeURIComponent(role)}`;
-  };
-
   // Block activation if no domains are configured
   const canActivateSubscription = async () => {
     if (!hasDomains) {
@@ -87,10 +76,6 @@ export const MessagesServiceBlock = (props: {
     }
     return true;
   };
-
-  const serviceAdminCount = adminCount?.serviceCount ?? 0;
-  const globalAdminCount = adminCount?.globalCount ?? 0;
-
 
   const handleDomainsChange = (
     newDomains: string[],
@@ -158,22 +143,10 @@ export const MessagesServiceBlock = (props: {
         </div>
       }
       footer={
-        <div className="dc__service__admins-summary">
-          {t(`${PREFIX}.admins.label`)} :{" "}
-          <Link
-            href={getAccountsUrl(`service.${props.service.id}.admin`)}
-            className="dc__service__admins-summary__link"
-          >
-            {t(`${PREFIX}.admins.service_count`, { count: serviceAdminCount })}
-          </Link>
-          {" "}{t(`${PREFIX}.admins.and`)}{" "}
-          <Link
-            href={getAccountsUrl("org.admin")}
-            className="dc__service__admins-summary__link"
-          >
-            {t(`${PREFIX}.admins.global_count`, { count: globalAdminCount })}
-          </Link>
-        </div>
+        <ServiceAdminsFooter
+          organization={props.organization}
+          service={props.service}
+        />
       }
     />
   );

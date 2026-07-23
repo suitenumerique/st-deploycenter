@@ -96,13 +96,6 @@
                   "contact_support": "Si vous souhaitez utiliser d'autres domaines, veuillez contacter le support ANCT."
                 }
               },
-              "admins": {
-                "label": "Administrateurs",
-                "service_count": "{{count}} pour ce service",
-                "global_count_one": "{{count}} global",
-                "global_count_other": "{{count}} globaux",
-                "and": "et"
-              },
               "entitlements": {
                 "messages_storage": {
                   "max_storage": {
@@ -126,6 +119,14 @@
                 }
               }
             }
+          },
+          "admins": {
+            "label": "Administrateurs",
+            "service_count": "{{count}} pour ce service",
+            "global_count_one": "{{count}} global",
+            "global_count_other": "{{count}} globaux",
+            "and": "et",
+            "operator_admins_note": "Les administrateurs de l'opérateur ont aussi un rôle d'administrateur sur ce service."
           },
           "extended_admin": {
             "label": "Rôles d'administration",

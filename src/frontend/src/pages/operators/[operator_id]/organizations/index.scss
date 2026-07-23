@@ -531,6 +531,11 @@
       color: var(--c--theme--colors--primary-700);
     }
   }
+
+  &__note {
+    font-style: italic;
+    margin-top: 2px;
+  }
 }
 
 .dc__domain-selector {

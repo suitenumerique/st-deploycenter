@@ -223,6 +223,84 @@ def test_service_api_key_cannot_list_other_service_entitlements():
     assert response.status_code == 403
 
 
+# --- Services list tests ---
+
+
+def test_service_api_key_can_list_services():
+    """A service key can list the services for a managed organization."""
+    client, operator, service, organization = _setup_service_with_key()
+
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/"
+    )
+    assert response.status_code == 200
+    returned_ids = {str(result["id"]) for result in response.json()["results"]}
+    assert str(service.id) in returned_ids
+
+
+def test_operator_api_key_can_list_services():
+    """An operator key can list the services for a managed organization."""
+    operator = factories.OperatorFactory()
+    api_key = "test-operator-api-key-services"
+    operator.external_management_api_key = api_key
+    operator.save()
+
+    service = factories.ServiceFactory(type="test_service")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {api_key}")
+
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/"
+    )
+    assert response.status_code == 200
+    returned_ids = {str(result["id"]) for result in response.json()["results"]}
+    assert str(service.id) in returned_ids
+
+
+def test_service_api_key_cannot_list_services_unmanaged_organization():
+    """A service key cannot list services for an organization not managed by the operator."""
+    client, operator, _service, _organization = _setup_service_with_key()
+    unmanaged_org = factories.OrganizationFactory()
+
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{unmanaged_org.id}/services/"
+    )
+    assert response.status_code == 403
+
+
+def test_service_api_key_cannot_list_services_unconfigured_operator():
+    """A service key cannot list services for an operator without OperatorServiceConfig.
+
+    Exercises ServiceExternalManagementPermission's missing-OperatorServiceConfig
+    branch on the /services/ endpoint (no service_id in the URL).
+    """
+    api_key = "test-service-api-key-services-unconfigured"
+    service = factories.ServiceFactory(type="test_service")
+    service.external_management_api_key = api_key
+    service.save()
+
+    # Operator manages the org but has NO OperatorServiceConfig for this service.
+    other_operator = factories.OperatorFactory()
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=other_operator, organization=organization
+    )
+
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {api_key}")
+
+    response = client.get(
+        f"/api/v1.0/operators/{other_operator.id}/organizations/{organization.id}/services/"
+    )
+    assert response.status_code == 403
+
+
 # --- Access denied tests ---
 
 

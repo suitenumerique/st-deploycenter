@@ -864,6 +864,7 @@ class OrganizationAdmin(admin.ModelAdmin):
     search_fields = (
         "name",
         "code_insee",
+        "siret",
         "siren",
         "code_postal",
         "epci_libelle",
