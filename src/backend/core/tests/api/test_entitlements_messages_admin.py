@@ -925,7 +925,9 @@ def test_operator_admin_passthrough_only_with_email():
 
 
 def test_operator_admin_passthrough_inactive_subscription():
-    """Inactive subscription → admin resolver doesn't run, no can_admin_maildomains."""
+    """Inactive subscription for the queried org → no domains, but the field is
+    still present (empty), since the Messages admin resolver is cross-org and
+    always runs."""
     user = factories.UserFactory(email="admin@operator.fr")
     client = APIClient()
     client.force_login(user)
@@ -953,7 +955,7 @@ def test_operator_admin_passthrough_inactive_subscription():
         client, service, organization.siret, account_email="admin@operator.fr"
     )
     assert response.status_code == 200
-    assert "can_admin_maildomains" not in response.json()["entitlements"]
+    assert response.json()["entitlements"]["can_admin_maildomains"] == []
 
 
 def test_operator_admin_passthrough_multiple_orgs():
@@ -1034,7 +1036,8 @@ def test_operator_admin_passthrough_mixed_flags():
 
 
 def test_operator_admin_passthrough_requires_active_service_subscription():
-    """Flag on OperatorOrganizationRole but no subscription for the queried service → no access."""
+    """Flag on OperatorOrganizationRole but no subscription for the queried
+    service → no domains for that service (empty list)."""
     user = factories.UserFactory(email="admin@operator.fr")
     client = APIClient()
     client.force_login(user)
@@ -1067,7 +1070,9 @@ def test_operator_admin_passthrough_requires_active_service_subscription():
         client, queried_service, organization.siret, account_email="admin@operator.fr"
     )
     assert response.status_code == 200
-    assert "can_admin_maildomains" not in response.json()["entitlements"]
+    # The subscription is for another service, so no domains for this service —
+    # but the field is present (empty) since the Messages resolver always runs.
+    assert response.json()["entitlements"]["can_admin_maildomains"] == []
 
 
 def test_operator_admin_passthrough_combined_with_account_admin():
@@ -1120,7 +1125,11 @@ def test_operator_admin_passthrough_combined_with_account_admin():
 
 
 def test_operator_admin_passthrough_email_must_match_exactly():
-    """Email match is exact — different casing in User.email won't match."""
+    """Email match is exact — different casing in User.email won't match.
+
+    But when the entitlements request sends the account_email with the exact
+    same casing as User.email, it matches and returns the admin domains.
+    """
     user = factories.UserFactory(email="Admin@Operator.FR")
     client = APIClient()
     client.force_login(user)
@@ -1148,3 +1157,159 @@ def test_operator_admin_passthrough_email_must_match_exactly():
     )
     assert response.status_code == 200
     assert response.json()["entitlements"]["can_admin_maildomains"] == []
+
+    # But the exact same casing as User.email matches and returns the domains.
+    response = _entitlements_request(
+        client, service, organization.siret, account_email="Admin@Operator.FR"
+    )
+    assert response.status_code == 200
+    assert response.json()["entitlements"]["can_admin_maildomains"] == ["commune.fr"]
+
+
+def test_operator_admin_passthrough_when_queried_org_has_no_subscription():
+    """Regression (production SIDEC case): a user who is operator-admin of
+    *other* organizations with active Messages must still receive
+    can_admin_maildomains even when the organization actually being queried has
+    no Messages subscription of its own.
+
+    Before the fix, the admin resolver only ran when the queried org had its own
+    active subscription, so this returned no can_admin_maildomains at all.
+    """
+    user = factories.UserFactory(email="admin@operator.fr")
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    # The organization actually being queried (e.g. the operator's own org) has
+    # NO Messages subscription.
+    queried_org = factories.OrganizationFactory(siret="25390109400016")
+
+    # A *different* organization the operator manages, with active Messages and
+    # the admin passthrough flag on.
+    managed_org = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator,
+        organization=managed_org,
+        operator_admins_have_admin_role=True,
+    )
+
+    service = _make_messages_service()
+    factories.ServiceSubscriptionFactory(
+        organization=managed_org,
+        service=service,
+        operator=operator,
+        metadata={"domains": ["commune.fr"]},
+    )
+
+    response = _entitlements_request(
+        client, service, queried_org.siret, account_email="admin@operator.fr"
+    )
+    assert response.status_code == 200
+    entitlements = response.json()["entitlements"]
+    # The queried org itself is not activated...
+    assert entitlements["can_access"] is False
+    # ...but the cross-org admin domains are still surfaced.
+    assert entitlements["can_admin_maildomains"] == ["commune.fr"]
+
+
+def test_account_admin_domains_when_queried_org_has_no_subscription():
+    """A service-admin in one organization gets that org's Messages domains even
+    when the queried organization has no subscription of its own."""
+    user = factories.UserFactory(email="admin@example.com")
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+
+    # Queried org has no subscription at all.
+    queried_org = factories.OrganizationFactory(siret="25390109400016")
+
+    # Managed org has active Messages, and the user is a service-admin there.
+    managed_org = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=managed_org
+    )
+
+    service = _make_messages_service()
+    factories.ServiceSubscriptionFactory(
+        organization=managed_org,
+        service=service,
+        operator=operator,
+        metadata={"domains": ["managed.fr"]},
+    )
+    account = factories.AccountFactory(
+        organization=managed_org,
+        type="user",
+        external_id="",
+        email="admin@example.com",
+        roles=[],
+    )
+    account.service_links.create(service=service, role="admin")
+
+    response = _entitlements_request(
+        client, service, queried_org.siret, account_email="admin@example.com"
+    )
+    assert response.status_code == 200
+    assert response.json()["entitlements"]["can_admin_maildomains"] == ["managed.fr"]
+
+
+def test_non_messages_admin_resolver_not_run_without_active_subscription():
+    """Scoping guard: for a non-Messages service, the admin resolver is NOT
+    cross-org, so it must NOT run when the queried org has no active
+    subscription. This proves the fix is scoped to Messages only and does not
+    change behavior for other services (e.g. service_id pointing at adc/esd).
+    """
+    user = factories.UserFactory(email="contact@commune.fr")
+    client = APIClient()
+    client.force_login(user)
+
+    # adc uses ExtendedAdminEntitlementResolver, which would return is_admin=True
+    # via the population fallback (population < threshold) *if* it ran — so if
+    # is_admin is absent, we know the resolver did not run.
+    service = factories.ServiceFactory(
+        type="adc",
+        config={"entitlements_api_key": "test_token"},
+    )
+
+    organization = factories.OrganizationFactory(
+        siret="12345678900001",
+        population=100,  # under the auto-admin population threshold
+    )
+    # No subscription for this service → the queried org is not activated.
+
+    response = _entitlements_request(
+        client, service, organization.siret, account_email="contact@commune.fr"
+    )
+    assert response.status_code == 200
+    entitlements = response.json()["entitlements"]
+    assert entitlements["can_access"] is False
+    # The (non-cross-org) admin resolver did not run: no admin fields leak in.
+    assert "is_admin" not in entitlements
+    assert "can_admin_maildomains" not in entitlements
+
+
+def test_messages_admin_resolver_runs_without_active_subscription_flag():
+    """The Messages admin resolver is flagged to run without an active
+    subscription; the base and extended resolvers are not."""
+    from core.entitlements.resolvers import (  # pylint: disable=import-outside-toplevel
+        get_admin_entitlement_resolver,
+    )
+
+    messages_service = factories.ServiceFactory(type="messages")
+    adc_service = factories.ServiceFactory(type="adc")
+    other_service = factories.ServiceFactory(type="some-other-type")
+
+    assert (
+        get_admin_entitlement_resolver(messages_service).runs_without_active_subscription
+        is True
+    )
+    assert (
+        get_admin_entitlement_resolver(adc_service).runs_without_active_subscription
+        is False
+    )
+    assert (
+        get_admin_entitlement_resolver(other_service).runs_without_active_subscription
+        is False
+    )

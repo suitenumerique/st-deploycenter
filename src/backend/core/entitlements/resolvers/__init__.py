@@ -47,6 +47,8 @@ TYPE_TO_ACCESS_RESOLVER = {
 class NoopAdminEntitlementResolver:
     """No-op admin entitlement resolver for services that don't need admin entitlements."""
 
+    runs_without_active_subscription = False
+
     def resolve(self, context):
         return {}
 

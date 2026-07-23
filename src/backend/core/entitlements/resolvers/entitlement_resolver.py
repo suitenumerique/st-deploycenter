@@ -95,6 +95,12 @@ class EntitlementResolver:
 
     resolve_level_prefix = ""
 
+    # When True, this resolver is invoked even when the queried organization has
+    # no active subscription for the service. Used by cross-organization admin
+    # resolvers that aggregate rights across *other* organizations (e.g. Messages
+    # admin domains), which must not be gated by the queried org's own activation.
+    runs_without_active_subscription = False
+
     def __init__(self):
         self.metrics_data = {}
 

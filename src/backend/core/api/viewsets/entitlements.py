@@ -308,6 +308,8 @@ class EntitlementView(APIView):
         entitlements_data = {**access_resolver.resolve(entitlement_context)}
         metrics_data = {}
 
+        admin_resolver = get_admin_entitlement_resolver(service)
+
         if service_subscription and service_subscription.is_active:
             operator_data = EntitlementOperatorSerializer(
                 service_subscription.operator
@@ -348,7 +350,7 @@ class EntitlementView(APIView):
             # Resolve admin entitlement.
             entitlements_data = {
                 **entitlements_data,
-                **get_admin_entitlement_resolver(service).resolve(entitlement_context),
+                **admin_resolver.resolve(entitlement_context),
             }
         elif organization:
             # For piggyback services (e.g. transfers on top of drive), there is
@@ -361,6 +363,22 @@ class EntitlementView(APIView):
                 potential_operators_data = _find_potential_operators(
                     organization, service
                 )
+
+        # Cross-organization admin resolvers (e.g. Messages) aggregate admin
+        # rights across *other* organizations, so they must run even when the
+        # queried organization has no active subscription of its own. When the
+        # queried org *is* active, the admin entitlement was already resolved
+        # inside the branch above, so we skip it here to avoid resolving twice.
+        active_subscription = bool(
+            service_subscription and service_subscription.is_active
+        )
+        if not active_subscription and getattr(
+            admin_resolver, "runs_without_active_subscription", False
+        ):
+            entitlements_data = {
+                **entitlements_data,
+                **admin_resolver.resolve(entitlement_context),
+            }
 
         organization_data = None
         if organization:
