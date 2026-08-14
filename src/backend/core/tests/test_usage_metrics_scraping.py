@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlparse
 from django.db.models import Count
 
 import pytest
+import requests
 
 from core import factories, models
 from core.tasks.metrics import (
@@ -27,9 +28,13 @@ from core.tasks.metrics import (
 class MockMetricsServer(BaseHTTPRequestHandler):
     """Mock HTTP server that serves paginated metrics data."""
 
+    captured_headers = []
+
     def do_GET(self):  # pylint: disable=invalid-name
         """Handle GET requests with pagination support."""
         if self.path.startswith("/metrics/usage"):
+            MockMetricsServer.captured_headers.append(dict(self.headers))
+
             # Check authorization header
             auth_header = self.headers.get("Authorization", "")
             if not auth_header.startswith("Bearer "):
@@ -150,7 +155,7 @@ def fixture_test_service():
         type="test_service",
         config={
             "usage_metrics_endpoint": "http://localhost:8001/metrics/usage",
-            "metrics_auth_token": "test_token_valid",
+            "usage_metrics_auth_token": "test_token_valid",
             "trusted_account_binding": True,
         },
     )
@@ -236,13 +241,68 @@ def test_metrics_with_authentication(mock_metrics_server):
         type="auth_service",
         config={
             "usage_metrics_endpoint": "http://localhost:8001/metrics/usage",
-            "metrics_auth_token": "test_token_valid",
+            "usage_metrics_auth_token": "test_token_valid",
         },
     )
 
     # Fetch metrics (this will test auth headers)
     metrics_data = fetch_usage_metrics_from_service(auth_service)
     assert len(metrics_data) == 40
+
+
+@pytest.mark.django_db
+def test_usage_metrics_never_share_metrics_credentials(mock_metrics_server):
+    """The usage endpoint must ignore the `metrics_*` credentials entirely."""
+    MockMetricsServer.captured_headers = []
+
+    service = factories.ServiceFactory(
+        type="shared_token_service",
+        config={
+            "usage_metrics_endpoint": "http://localhost:8001/metrics/usage",
+            # Credentials for the (unrelated) `metrics_endpoint`: must not leak here.
+            "metrics_auth_token": "test_token_valid",
+            "metrics_auth_token_type": "Token",
+            "metrics_endpoint_headers": {"X-Metrics": "leaked"},
+        },
+    )
+
+    # No usage_metrics_auth_token configured => request goes out unauthenticated
+    # and the server rejects it, instead of silently reusing the metrics token.
+    with pytest.raises(requests.HTTPError):
+        fetch_usage_metrics_from_service(service)
+
+    assert MockMetricsServer.captured_headers, "No requests captured"
+    for headers in MockMetricsServer.captured_headers:
+        assert "Authorization" not in headers
+        assert "X-Metrics" not in headers
+
+
+@pytest.mark.django_db
+def test_usage_metrics_own_credentials_and_headers(mock_metrics_server):
+    """The usage endpoint uses its own `usage_metrics_*` token, type and headers."""
+    MockMetricsServer.captured_headers = []
+
+    service = factories.ServiceFactory(
+        type="usage_credentials_service",
+        config={
+            "usage_metrics_endpoint": "http://localhost:8001/metrics/usage",
+            "usage_metrics_auth_token": "test_token_valid",
+            "usage_metrics_auth_token_type": "Bearer",
+            "usage_metrics_endpoint_headers": {"X-Usage": "custom-value"},
+            "usage_metrics_limit": 20,
+        },
+    )
+
+    metrics_data = fetch_usage_metrics_from_service(service)
+    assert len(metrics_data) == 40
+
+    assert MockMetricsServer.captured_headers, "No requests captured"
+    for headers in MockMetricsServer.captured_headers:
+        assert headers.get("Authorization") == "Bearer test_token_valid"
+        assert headers.get("X-Usage") == "custom-value"
+
+    # usage_metrics_limit drove the pagination: 40 rows in pages of 20.
+    assert len(MockMetricsServer.captured_headers) == 2
 
 
 @pytest.mark.django_db

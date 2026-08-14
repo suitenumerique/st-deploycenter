@@ -115,7 +115,7 @@ def test_api_entitlements_mailbox_can_store(
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
-            "metrics_auth_token": "test_token",
+            "usage_metrics_auth_token": "test_token",
         },
     )
     service_subscription = factories.ServiceSubscriptionFactory(
@@ -374,7 +374,7 @@ def test_api_entitlements_organization_can_store(
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
-            "metrics_auth_token": "test_token",
+            "usage_metrics_auth_token": "test_token",
         },
     )
     service_subscription = factories.ServiceSubscriptionFactory(
@@ -588,7 +588,7 @@ def test_api_entitlements_mailbox_override_can_store(
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
-            "metrics_auth_token": "test_token",
+            "usage_metrics_auth_token": "test_token",
         },
     )
     service_subscription = factories.ServiceSubscriptionFactory(
@@ -896,7 +896,7 @@ def test_api_entitlements_list_unlimited_storage(
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
-            "metrics_auth_token": "test_token",
+            "usage_metrics_auth_token": "test_token",
         },
     )
     service_subscription = factories.ServiceSubscriptionFactory(

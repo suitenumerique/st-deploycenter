@@ -176,7 +176,7 @@ def test_api_entitlements_list_no_subscription(webhook_server):
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
-            "metrics_auth_token": "test_token",
+            "usage_metrics_auth_token": "test_token",
         },
     )
     factories.OperatorServiceConfigFactory(operator=operator, service=service)
@@ -235,7 +235,7 @@ def test_api_entitlements_list_organization_not_found(webhook_server):
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
-            "metrics_auth_token": "test_token",
+            "usage_metrics_auth_token": "test_token",
         },
     )
 
@@ -283,7 +283,7 @@ def test_api_entitlements_list_with_inactive_subscription(webhook_server):
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
-            "metrics_auth_token": "test_token",
+            "usage_metrics_auth_token": "test_token",
         },
     )
     factories.OperatorServiceConfigFactory(operator=operator, service=service)
@@ -385,7 +385,7 @@ def test_api_entitlements_list_usage_metrics_endpoint_not_reachable():
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
-            "metrics_auth_token": "test_token",
+            "usage_metrics_auth_token": "test_token",
         },
     )
     service_subscription = factories.ServiceSubscriptionFactory(
@@ -454,7 +454,7 @@ def test_api_entitlements_list_usage_metrics_endpoint_error(buggy_service_server
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": metrics_usage_endpoint,
-            "metrics_auth_token": "test_token",
+            "usage_metrics_auth_token": "test_token",
         },
     )
     service_subscription = factories.ServiceSubscriptionFactory(
@@ -600,7 +600,7 @@ def test_api_entitlements_oidc_valid_true(webhook_server):
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": f"http://localhost:{port}/metrics/usage",
-            "metrics_auth_token": "test_token",
+            "usage_metrics_auth_token": "test_token",
         },
     )
 
@@ -655,7 +655,7 @@ def test_api_entitlements_oidc_valid_false(webhook_server):
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": f"http://localhost:{port}/metrics/usage",
-            "metrics_auth_token": "test_token",
+            "usage_metrics_auth_token": "test_token",
         },
     )
 
@@ -705,7 +705,7 @@ def test_api_entitlements_oidc_valid_inactive_subscription(webhook_server):
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": f"http://localhost:{port}/metrics/usage",
-            "metrics_auth_token": "test_token",
+            "usage_metrics_auth_token": "test_token",
         },
     )
 
@@ -754,7 +754,7 @@ def test_api_entitlements_oidc_valid_none_without_idp_id(webhook_server):
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": f"http://localhost:{port}/metrics/usage",
-            "metrics_auth_token": "test_token",
+            "usage_metrics_auth_token": "test_token",
         },
     )
 
@@ -796,7 +796,7 @@ def test_api_entitlements_oidc_valid_none_for_other_org_type(webhook_server):
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": f"http://localhost:{port}/metrics/usage",
-            "metrics_auth_token": "test_token",
+            "usage_metrics_auth_token": "test_token",
         },
     )
 
@@ -1287,7 +1287,7 @@ def test_api_entitlements_no_potential_operators_with_active_subscription(
     service = _make_service(
         config={
             "usage_metrics_endpoint": f"http://localhost:{port}/metrics/usage",
-            "metrics_auth_token": "test_token",
+            "usage_metrics_auth_token": "test_token",
         },
     )
     factories.OperatorServiceConfigFactory(operator=operator, service=service)

@@ -46,7 +46,7 @@ def _setup_drive_subscription(is_active=True):
         config={
             "entitlements_api_key": "test_token",
             "usage_metrics_endpoint": METRICS_USAGE_ENDPOINT,
-            "metrics_auth_token": "test_token",
+            "usage_metrics_auth_token": "test_token",
         },
     )
     factories.ServiceSubscriptionFactory(

@@ -173,7 +173,9 @@ def fetch_usage_metrics_from_service(
         )
         return []
 
-    return fetch_metrics_from_endpoint(service, usage_metrics_endpoint, filters)
+    return fetch_metrics_from_endpoint(
+        service, usage_metrics_endpoint, filters, config_prefix="usage_metrics"
+    )
 
 
 def fetch_metrics_from_service(service: Service) -> List[Dict[str, Any]]:
@@ -203,7 +205,10 @@ def fetch_metrics_from_service(service: Service) -> List[Dict[str, Any]]:
 
 
 def fetch_metrics_from_endpoint(
-    service: Service, metrics_endpoint: str, filters: Dict[str, Any] = None
+    service: Service,
+    metrics_endpoint: str,
+    filters: Dict[str, Any] = None,
+    config_prefix: str = "metrics",
 ) -> List[Dict[str, Any]]:
     """
     Fetch metrics from a service's metrics endpoint with pagination support.
@@ -211,6 +216,11 @@ def fetch_metrics_from_endpoint(
     Args:
         service: Service to fetch metrics from
         metrics_endpoint: URL of the metrics endpoint
+        filters: Filters to append to the endpoint query string
+        config_prefix: Prefix of the service config keys holding the credentials
+            and request settings for this endpoint ("metrics" or "usage_metrics").
+            Credentials are never shared between the two endpoints: the usage
+            endpoint reads only `usage_metrics_*` keys and falls back to nothing.
 
     Returns:
         List of metrics data dictionaries
@@ -226,17 +236,17 @@ def fetch_metrics_from_endpoint(
         metrics_endpoint = f"{metrics_endpoint}{separator}{query_string}"
 
     # Get authentication token from service config
-    auth_token = service.config.get("metrics_auth_token")
+    auth_token = service.config.get(f"{config_prefix}_auth_token")
     headers = {}
     if auth_token:
-        token_type = service.config.get("metrics_auth_token_type", "Bearer")
+        token_type = service.config.get(f"{config_prefix}_auth_token_type", "Bearer")
         headers["Authorization"] = f"{token_type} {auth_token}"
 
-    headers.update(service.config.get("metrics_endpoint_headers", {}))
+    headers.update(service.config.get(f"{config_prefix}_endpoint_headers", {}))
 
     all_metrics = []
     offset = 0
-    limit = service.config.get("metrics_limit", 1000)  # Default page size
+    limit = service.config.get(f"{config_prefix}_limit", 1000)  # Default page size
 
     while True:
         # Construct paginated URL

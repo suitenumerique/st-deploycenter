@@ -1299,7 +1299,9 @@ def test_messages_admin_resolver_runs_without_active_subscription_flag():
     other_service = factories.ServiceFactory(type="some-other-type")
 
     assert (
-        get_admin_entitlement_resolver(messages_service).runs_without_active_subscription
+        get_admin_entitlement_resolver(
+            messages_service
+        ).runs_without_active_subscription
         is True
     )
     assert (
