@@ -2,10 +2,16 @@
 Test ProConnect services API endpoints in the deploycenter core app.
 """
 
+import re
+
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
+
 import pytest
 from rest_framework.test import APIClient
 
 from core import factories
+from core.services.locks import advisory_lock_key
 
 pytestmark = pytest.mark.django_db
 
@@ -275,8 +281,12 @@ def test_api_organization_proconnect_superuser_can_override_domains():
     assert "idp_id" not in data["metadata"]
 
 
-def test_api_organization_proconnect_regular_user_cannot_override_domains():
-    """Test that a regular user cannot override domains — they are forced back to RPNT."""
+def test_api_organization_proconnect_regular_user_cannot_route_a_domain_the_org_lacks():
+    """A regular user's routing is bounded by proconnect_routable — and refused, not ignored.
+
+    It used to force the list silently back to the RPNT domain and answer 201, so
+    the caller got a success carrying domains it never sent.
+    """
     user = factories.UserFactory()
     client = APIClient()
     client.force_login(user)
@@ -303,10 +313,38 @@ def test_api_organization_proconnect_regular_user_cannot_override_domains():
         },
         format="json",
     )
+    assert response.status_code == 400
+    assert "not routable" in str(response.json())
+
+
+def test_api_organization_proconnect_regular_user_can_route_a_routable_domain():
+    """A regular user routes a domain the organization holds — no superuser needed."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory(
+        rpnt=["1.1", "1.2", "2.1", "2.2", "2.3"],
+        adresse_messagerie="contact@commune.fr",
+        site_internet="https://www.commune.fr",
+        # Validated by a superuser earlier: routable, so offered in the modal.
+        proconnect_domains={"manual": ["autre.fr"]},
+    )
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    service = factories.ServiceFactory(type="proconnect", config={"idp_id": "abc123"})
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}"
+        f"/services/{service.id}/subscription/",
+        {"metadata": {"domains": ["autre.fr"]}, "is_active": False},
+        format="json",
+    )
     assert response.status_code == 201
-    data = response.json()
-    # Domains are forced back to RPNT-derived value
-    assert data["metadata"]["domains"] == ["commune.fr"]
+    assert response.json()["metadata"]["domains"] == ["autre.fr"]
 
 
 def test_api_organization_proconnect_superuser_can_set_domains_without_rpnt():
@@ -340,7 +378,7 @@ def test_api_organization_proconnect_superuser_can_set_domains_without_rpnt():
 
 
 def test_api_organization_proconnect_regular_user_cannot_set_domains_without_rpnt():
-    """Test that a regular user on an org without mail_domain still fails."""
+    """A regular user on an org with nothing routable is refused whatever it sends."""
     user = factories.UserFactory()
     client = APIClient()
     client.force_login(user)
@@ -364,7 +402,8 @@ def test_api_organization_proconnect_regular_user_cannot_set_domains_without_rpn
         format="json",
     )
     assert response.status_code == 400
-    assert "Mail domain is required" in str(response.json())
+    # Refused for not being routable, before the "needs a domain to activate" check.
+    assert "not routable" in str(response.json())
 
 
 def test_api_organization_proconnect_superuser_can_update_existing_domains():
@@ -483,6 +522,53 @@ def test_api_organization_proconnect_domain_uniqueness_blocks_overlapping_domain
     assert response.status_code == 400
     assert "commune.fr" in str(response.json())
     assert "already used" in str(response.json())
+
+
+def test_api_organization_proconnect_domain_uniqueness_locks_each_domain():
+    """The uniqueness check locks the domains themselves.
+
+    select_for_update can only lock rows that already exist, so two transactions
+    activating the same domain on different subscriptions would both find no
+    conflict. The advisory lock makes the second one wait and then see the first.
+    """
+    user = factories.UserFactory(is_superuser=True)
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory(
+        rpnt=["1.1", "1.2", "2.1", "2.2", "2.3"],
+        adresse_messagerie="contact@commune.fr",
+        site_internet="https://www.commune.fr",
+    )
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    service = factories.ServiceFactory(type="proconnect", config={"idp_id": "idp1"})
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    url = (
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}"
+        f"/services/{service.id}/subscription/"
+    )
+    with CaptureQueriesContext(connection) as ctx:
+        response = client.patch(
+            url,
+            {"metadata": {"domains": ["b.fr", "a.fr"]}, "is_active": True},
+            format="json",
+        )
+    assert response.status_code == 201
+
+    locks = [
+        q["sql"] for q in ctx.captured_queries if "pg_advisory_xact_lock" in q["sql"]
+    ]
+    # One per domain, taken in sorted order so two writers can't deadlock.
+    # (No idp lock here: api-partenaires is unconfigured, so no push runs.)
+    keys = [int(re.search(r"\(\s*(-?\d+)\)", sql).group(1)) for sql in locks]
+    assert keys == [
+        advisory_lock_key("domain", "a.fr"),
+        advisory_lock_key("domain", "b.fr"),
+    ]
 
 
 def test_api_organization_proconnect_domain_uniqueness_blocks_across_organizations():
@@ -658,3 +744,125 @@ def test_api_organization_proconnect_domain_uniqueness_allows_same_sub_update():
     assert response.status_code == 200
     data = response.json()
     assert data["metadata"]["domains"] == ["commune.fr", "extra.fr"]
+
+
+@pytest.mark.parametrize("service_type", ["proconnect", "domains", "drive"])
+@pytest.mark.parametrize("metadata", ["a string", 42, ["a.fr"], True])
+def test_api_subscription_rejects_a_non_object_metadata(service_type, metadata):
+    """A metadata that is not an object is a 400, never a 500.
+
+    DRF's JSONField takes any JSON value, and each per-service validator reads
+    metadata with .get()/in — so a scalar or a list used to raise
+    AttributeError/TypeError out of validate(), i.e. a 500 on caller-controlled
+    input. Covers the three validators, which each failed differently.
+    """
+    user = factories.UserFactory(is_superuser=True)
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory(
+        rpnt=["1.1", "1.2", "2.1", "2.2", "2.3"],
+        adresse_messagerie="contact@commune.fr",
+        site_internet="https://www.commune.fr",
+    )
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    service = factories.ServiceFactory(type=service_type, config={"idp_id": "abc123"})
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}"
+        f"/services/{service.id}/subscription/",
+        {"metadata": metadata, "is_active": False},
+        format="json",
+    )
+    assert response.status_code == 400
+    assert "metadata" in response.json()
+
+
+def test_api_subscription_rejects_a_non_object_body():
+    """A list body is a 400: to_internal_value's `{**data}` used to TypeError."""
+    user = factories.UserFactory(is_superuser=True)
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    service = factories.ServiceFactory(type="drive")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}"
+        f"/services/{service.id}/subscription/",
+        [{"is_active": True}],
+        format="json",
+    )
+    assert response.status_code == 400
+
+
+def test_api_subscription_rejects_the_entitlements_input_field_name():
+    """`entitlements_input` must not reach ModelSerializer.update().
+
+    It is the declared write field (source="entitlements"); clients send
+    "entitlements". Only the latter used to be popped, so the former reached
+    super() as a writable nested field and tripped DRF's assertion — a 500.
+    """
+    user = factories.UserFactory(is_superuser=True)
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    service = factories.ServiceFactory(type="drive")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+    url = (
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}"
+        f"/services/{service.id}/subscription/"
+    )
+    assert client.patch(url, {"is_active": True}, format="json").status_code == 201
+
+    response = client.patch(
+        url, {"entitlements_input": [], "is_active": True}, format="json"
+    )
+    assert response.status_code != 500
+
+
+@pytest.mark.parametrize("domains", ["notalist", 42, [1, 2], [{"a": 1}], [None]])
+def test_api_organization_proconnect_rejects_a_malformed_domains_value(domains):
+    """A domains value that is not a list of strings is a 400, not a silent drop.
+
+    It used to fall through to the "not submitted" branch (or be filtered out by
+    normalization), so the caller got a 200 carrying domains it never sent.
+    """
+    user = factories.UserFactory(is_superuser=True)
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory(
+        rpnt=["1.1", "1.2", "2.1", "2.2", "2.3"],
+        adresse_messagerie="contact@commune.fr",
+        site_internet="https://www.commune.fr",
+    )
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    service = factories.ServiceFactory(type="proconnect", config={"idp_id": "abc123"})
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}"
+        f"/services/{service.id}/subscription/",
+        {"metadata": {"domains": domains}, "is_active": False},
+        format="json",
+    )
+    assert response.status_code == 400
+    assert "metadata" in response.json()

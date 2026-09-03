@@ -10,6 +10,9 @@
       "command": "0 2 * * * python manage.py run_task scrape_all_service_metrics"
     },
     {
+      "command": "0 * * * * python manage.py proconnect_fetch_prevalidated"
+    },
+    {
       "command": "0 */4 * * * sh -c 'python manage.py run_task upload_deployment_services_dataset && python manage.py run_task upload_deployment_operators_dataset && python manage.py run_task upload_deployment_adherents_dataset && python manage.py run_task upload_deployment_subscriptions_dataset && python manage.py run_task upload_deployment_metrics_dataset'",
       "size": "2XL"
     }

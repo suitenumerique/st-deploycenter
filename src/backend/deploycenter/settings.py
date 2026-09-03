@@ -274,6 +274,60 @@ class Base(Configuration):
         None, environ_name="FRONTEND_THEME", environ_prefix=None
     )
 
+    # ProConnect "api-partenaires": push of authorized email domains to OIDC
+    # providers (``attached_email_domains`` on their side).
+    # The secret is global to all /api/oidc_providers/* routes (not per-provider);
+    # per-provider access is enforced by the api-partenaires allowlist on their side.
+    PROCONNECT_API_PARTENAIRES_URL = values.Value(
+        None,
+        environ_name="PROCONNECT_API_PARTENAIRES_URL",
+        environ_prefix=None,
+    )
+    PROCONNECT_API_PARTENAIRES_SECRET = values.Value(
+        None,
+        environ_name="PROCONNECT_API_PARTENAIRES_SECRET",
+        environ_prefix=None,
+    )
+    # Optional SOCKS5 proxy for api-partenaires calls (to egress from a fixed IP),
+    # e.g. "socks5://user:pass@proxy-host:1080". Empty = direct connection.
+    PROCONNECT_API_PARTENAIRES_PROXY_URL = values.Value(
+        None,
+        environ_name="PROCONNECT_API_PARTENAIRES_PROXY_URL",
+        environ_prefix=None,
+    )
+    # API key gating the allowlist route
+    # (GET /api/v1.0/proconnect/oidc_providers.yaml), sent as
+    # "Authorization: Bearer <key>". Empty = the route is closed to everyone.
+    PROCONNECT_ALLOWLIST_VIEW_API_KEY = values.Value(
+        None,
+        environ_name="PROCONNECT_ALLOWLIST_VIEW_API_KEY",
+        environ_prefix=None,
+    )
+    # Webhooks fired when an operator requests a new ProConnect domain (into the
+    # "requested" bucket). Same config format as service webhooks; provided as a
+    # JSON list in the env var. There is no natural per-org/per-service DB home for
+    # this notification, so it is configured statically here.
+    PROCONNECT_REQUESTED_DOMAIN_WEBHOOKS = values.Value(
+        [],
+        environ_name="PROCONNECT_REQUESTED_DOMAIN_WEBHOOKS",
+        environ_prefix=None,
+    )
+    # Deployed ProConnect allowlist (per-idp allowed_attached_email_domains), fetched
+    # from the api-partenaires repo by `proconnect_fetch_prevalidated` and cached, so
+    # the UI can show which of an org's domains are already pre-validated (routable) vs
+    # pending the allowlist deploy.
+    PROCONNECT_DOMAIN_ALLOWLIST_URL = values.Value(
+        "https://raw.githubusercontent.com/proconnect-gouv/api-partenaires/"
+        "refs/heads/main/config/anct/oidc_providers.production.yaml",
+        environ_name="PROCONNECT_DOMAIN_ALLOWLIST_URL",
+        environ_prefix=None,
+    )
+    PROCONNECT_DOMAIN_ALLOWLIST_CACHE_TTL = values.IntegerValue(
+        4 * 3600,  # 4 hours
+        environ_name="PROCONNECT_DOMAIN_ALLOWLIST_CACHE_TTL",
+        environ_prefix=None,
+    )
+
     # Posthog
     POSTHOG_KEY = values.Value(None, environ_name="POSTHOG_KEY", environ_prefix=None)
     POSTHOG_HOST = values.Value(
@@ -433,6 +487,39 @@ class Base(Configuration):
 
     METRICS_API_KEY = values.Value(
         None, environ_name="METRICS_API_KEY", environ_prefix=None
+    )
+
+    # Key gating the read-only domains export (GET /api/v1.0/domains/), used by the
+    # external job generating DNS zones. Sent as "Authorization: Bearer <key>".
+    # Empty = the route is closed to everyone.
+    DOMAINS_API_KEY = values.Value(
+        None, environ_name="DOMAINS_API_KEY", environ_prefix=None
+    )
+
+    # The nameservers a domain declared through the domains service must be
+    # delegated to. The DNS check compares a domain's NS records against this list.
+    DOMAINS_NAMESERVERS = values.ListValue(
+        ["ns1.lst-domaines.fr", "ns2.lst-domaines.fr"],
+        environ_name="DOMAINS_NAMESERVERS",
+        environ_prefix=None,
+    )
+
+    # Per-query timeout of the DNS check, in seconds — the conventional resolver
+    # default (dig, resolv.conf). An authoritative server that is up answers in
+    # milliseconds; this budget is for the far and the lossy ones (overseas
+    # départements especially), not for the healthy case.
+    DOMAINS_DNS_TIMEOUT = values.FloatValue(
+        5.0, environ_name="DOMAINS_DNS_TIMEOUT", environ_prefix=None
+    )
+
+    # Wall-clock cap on resolving one name, in seconds. Independent of the per-query
+    # timeout on purpose: a lookup is several queries (TLD, then the authoritative
+    # servers, plus any glueless NS to chase, plus retries), so tying the two
+    # together makes lowering one silently starve the other.
+    # Must stay below core.services.dns.BATCH_TIMEOUT, which itself has to leave the
+    # request under the platform router's 30s timeout — see the budget chain there.
+    DOMAINS_DNS_MAX_RESOLUTION_TIME = values.FloatValue(
+        15.0, environ_name="DOMAINS_DNS_MAX_RESOLUTION_TIME", environ_prefix=None
     )
 
     SUITE_TERRITORIALE_BASE_URL = values.Value(

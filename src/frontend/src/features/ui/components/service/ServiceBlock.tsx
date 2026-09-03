@@ -11,6 +11,11 @@ import { useEffect, useState } from "react";
 import { useMutationUpdateOrganizationServiceSubscription } from "@/hooks/useQueries";
 import { useOperatorContext } from "@/features/layouts/components/GlobalLayout";
 import { UseMutateFunction } from "@tanstack/react-query";
+import { errorToString } from "@/features/api/APIError";
+import {
+  addToast,
+  ToasterItem,
+} from "@/features/ui/components/toaster/Toaster";
 
 type SubscriptionMutationOptions = Parameters<
   UseMutateFunction<
@@ -234,8 +239,13 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
                   props.onChangeSubscription(
                     { ...activationData, is_active: true },
                     {
-                      onError: () => {
+                      onError: (error) => {
                         props.setChecked(false);
+                        addToast(
+                          <ToasterItem type="error">
+                            <span>{errorToString(error)}</span>
+                          </ToasterItem>
+                        );
                       },
                     }
                   );
@@ -252,8 +262,13 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
                   props.onChangeSubscription(
                     { is_active: false },
                     {
-                      onError: () => {
+                      onError: (error) => {
                         props.setChecked(true);
+                        addToast(
+                          <ToasterItem type="error">
+                            <span>{errorToString(error)}</span>
+                          </ToasterItem>
+                        );
                       },
                     }
                   );

@@ -560,6 +560,27 @@ class Organization(BaseModel):
         help_text=_("URL of the associated page on Service-Public.fr"),
     )
 
+    # Raw storage for per-org ProConnect domain buckets ({source: [domains]}).
+    # All logic lives in core.services.proconnect
+    # Five lists: three provenances — "dpnt" (declared on service-public.gouv.fr,
+    # authoritative), "candidates" (generated from the name, a guess), "manual"
+    # (added by a superuser) — and two statuses, "requested" (awaiting validation)
+    # and "discarded" (set aside). What is *actually* routed is not in here: that
+    # is the ProConnect subscription's metadata["domains"].
+    #
+    # Read and write through core.services.proconnect only:
+    # update_proconnect_domains() locks the row, normalizes, and keeps a DILA
+    # domain out of the other provenance buckets. See docs/proconnect_domains.md.
+    #
+    # Keep help_text short: it is baked into a migration, so every reword of it
+    # costs a schema-less migration for nothing. Detail belongs here, in comments.
+    proconnect_domains = models.JSONField(
+        _("ProConnect domains"),
+        default=dict,
+        blank=True,
+        help_text=_("ProConnect domain buckets by source"),
+    )
+
     # Relationships
     operators = models.ManyToManyField(
         Operator,
@@ -613,6 +634,20 @@ class Organization(BaseModel):
         return domain
 
     @property
+    def rpnt_valid_mail_domain(self):
+        """The org's email domain when RPNT says it is valid (criteria 2.1 + 2.2)."""
+        if {"2.1", "2.2"}.issubset(set(self.rpnt or [])):
+            return self.adresse_messagerie_domain
+        return None
+
+    @property
+    def rpnt_valid_site_domain(self):
+        """The org's website domain when RPNT says it is valid (criterion 1.1)."""
+        if "1.1" in set(self.rpnt or []):
+            return self.site_internet_domain
+        return None
+
+    @property
     def mail_domain(self):
         """Get the mail domain for the organization."""
         mail_domain, _ = self.get_mail_domain_status()
@@ -642,21 +677,17 @@ class Organization(BaseModel):
         if not self.rpnt:
             return (None, self.MailDomainStatus.INVALID)
 
-        rpnt_set = set(self.rpnt)
+        # Same two RPNT rules the ProConnect "dpnt" bucket is built from
+        # (core.services.proconnect.org_rpnt_valid_domains); this picks the one to
+        # use as *the* mail domain, in that order of preference.
+        if self.rpnt_valid_mail_domain:
+            return (self.rpnt_valid_mail_domain, self.MailDomainStatus.VALID)
 
-        website_valid = {"1.1"}
-        email_valid = {"2.1", "2.2"}
-
-        # Email domain is valid
-        if email_valid.issubset(rpnt_set) and self.adresse_messagerie_domain:
-            return (self.adresse_messagerie_domain, self.MailDomainStatus.VALID)
-
-        # Website domain is valid.
-        if website_valid.issubset(rpnt_set) and self.site_internet_domain:
+        if self.rpnt_valid_site_domain:
             # Email domain is invalid or does not match the website domain.
             # Set the email domain to the website domain as it should be anyway once
             # it will be valid.
-            return (self.site_internet_domain, self.MailDomainStatus.NEED_EMAIL_SETUP)
+            return (self.rpnt_valid_site_domain, self.MailDomainStatus.NEED_EMAIL_SETUP)
 
         # Website domain is invalid.
         return (None, self.MailDomainStatus.INVALID)

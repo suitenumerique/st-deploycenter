@@ -1,0 +1,30 @@
+.dc__copyable {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.15rem 0.15rem 0.6rem;
+  border: 1px solid var(--c--theme--colors--greyscale-300);
+  border-radius: 4px;
+  background: var(--c--theme--colors--greyscale-000);
+
+  &:focus-within {
+    border-color: var(--c--theme--colors--primary-500);
+  }
+
+  &__value {
+    font-family: monospace;
+    font-size: 13px;
+    padding: 0.25rem 0;
+    border: none;
+    background: transparent;
+    color: var(--c--theme--colors--greyscale-800);
+
+    &:focus {
+      outline: none;
+    }
+  }
+
+  &__button {
+    flex-shrink: 0;
+  }
+}

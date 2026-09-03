@@ -39,6 +39,13 @@ During each DPNT import (`import_dpnt_dataset` task), the `_process_auto_join()`
 - **Covers all matching orgs**: Processes all organizations in the database matching the type filter, not just newly imported ones
 - **Non-destructive**: Does not modify or re-activate existing subscriptions that were manually deactivated
 - **Requires OperatorServiceConfig**: Services referenced in `auto_join.services` must have a corresponding `OperatorServiceConfig` for the operator, otherwise they're skipped with a warning
+- **Bypasses signals**: rows are written with `bulk_create()`, which emits no
+  `post_save`. No `subscription.created` webhook is sent, and no synchronous
+  ProConnect push happens. Default entitlements *are* created, explicitly, by the
+  service handler. The rows it seeds carry no `metadata["domains"]`, so they
+  contribute nothing to any provider's pushed set; a proconnect service listed in
+  `auto_join.services` still needs `manage.py proconnect_sync` (or the cron) if it
+  ever gains routed domains — see the note in `_create_service_subscriptions`.
 
 ## Security
 

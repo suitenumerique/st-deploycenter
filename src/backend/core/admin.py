@@ -871,7 +871,10 @@ class OrganizationAdmin(admin.ModelAdmin):
         "adresse_messagerie",
     )
     ordering = ("name", "type")
-    readonly_fields = ("id", "created_at", "updated_at")
+    # proconnect_domains is displayed but not editable: writes must go through
+    # update_proconnect_domains(), which locks the row and enforces the bucket
+    # invariants a raw JSON edit here would silently break.
+    readonly_fields = ("id", "created_at", "updated_at", "proconnect_domains")
 
     fieldsets = (
         (None, {"fields": ("name", "type")}),
@@ -903,6 +906,7 @@ class OrganizationAdmin(admin.ModelAdmin):
                     "telephone",
                     "rpnt",
                     "service_public_url",
+                    "proconnect_domains",
                 )
             },
         ),

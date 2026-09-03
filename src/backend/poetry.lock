@@ -967,6 +967,31 @@ files = [
 django = ">=4.2"
 
 [[package]]
+name = "dnspython"
+version = "2.8.0"
+description = "DNS toolkit"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "dnspython-2.8.0-py3-none-any.whl", hash = "sha256:01d9bbc4a2d76bf0db7c1f729812ded6d912bd318d3b1cf81d30c0f845dbf3af"},
+    {file = "dnspython-2.8.0.tar.gz", hash = "sha256:181d3c6996452cb1189c4046c61599b84a5a86e099562ffde77d26984ff26d0f"},
+]
+
+[package.dependencies]
+cryptography = {version = ">=45", optional = true, markers = "extra == \"dnssec\""}
+idna = {version = ">=3.10", optional = true, markers = "extra == \"idna\""}
+
+[package.extras]
+dev = ["black (>=25.1.0)", "coverage (>=7.0)", "flake8 (>=7)", "hypercorn (>=0.17.0)", "mypy (>=1.17)", "pylint (>=3)", "pytest (>=8.4)", "pytest-cov (>=6.2.0)", "quart-trio (>=0.12.0)", "sphinx (>=8.2.0)", "sphinx-rtd-theme (>=3.0.0)", "twine (>=6.1.0)", "wheel (>=0.45.0)"]
+dnssec = ["cryptography (>=45)"]
+doh = ["h2 (>=4.2.0)", "httpcore (>=1.0.0)", "httpx (>=0.28.0)"]
+doq = ["aioquic (>=1.2.0)"]
+idna = ["idna (>=3.10)"]
+trio = ["trio (>=0.30)"]
+wmi = ["wmi (>=1.5.1) ; platform_system == \"Windows\""]
+
+[[package]]
 name = "drf-spectacular"
 version = "0.28.0"
 description = "Sane and flexible OpenAPI 3 schema generation for Django REST framework"
@@ -1910,6 +1935,19 @@ files = [
 diagrams = ["jinja2", "railroad-diagrams"]
 
 [[package]]
+name = "pysocks"
+version = "1.7.1"
+description = "A Python SOCKS client module. See https://github.com/Anorov/PySocks for more information."
+optional = false
+python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
+groups = ["main"]
+files = [
+    {file = "PySocks-1.7.1-py27-none-any.whl", hash = "sha256:08e69f092cc6dbe92a0fdd16eeb9b9ffbc13cadfe5ca4c7bd92ffb078b293299"},
+    {file = "PySocks-1.7.1-py3-none-any.whl", hash = "sha256:2725bd0a9925919b9b51739eea5f9e2bae91e83288108a9ad338b2e3a4435ee5"},
+    {file = "PySocks-1.7.1.tar.gz", hash = "sha256:3f8804571ebe159c380ac6de37643bb4685970655d3bba243530d6558b799aa0"},
+]
+
+[[package]]
 name = "pytest"
 version = "8.4.1"
 description = "pytest: simple powerful testing with Python"
@@ -2157,6 +2195,24 @@ files = [
 ]
 
 [[package]]
+name = "recursive-resolver"
+version = "0.1.0"
+description = "Pure-Python iterative DNS resolver: resolves from the root servers with DNSSEC validation"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "recursive_resolver-0.1.0-py3-none-any.whl", hash = "sha256:57b02936c9afb3c07a2e72f0a06982f558d1805e784ff202fcab2e5da0a6645e"},
+    {file = "recursive_resolver-0.1.0.tar.gz", hash = "sha256:f252ceec5ba7a34df5a4ea97c69c8d0832195b70096b0ee10db7184d8b2900ec"},
+]
+
+[package.dependencies]
+dnspython = {version = ">=2.8.0", extras = ["dnssec", "idna"]}
+
+[package.extras]
+dnssec = ["cryptography (>=42)"]
+
+[[package]]
 name = "redis"
 version = "5.2.1"
 description = "Python client for Redis database and key-value store"
@@ -2204,6 +2260,7 @@ files = [
 certifi = ">=2017.4.17"
 charset_normalizer = ">=2,<4"
 idna = ">=2.5,<4"
+PySocks = {version = ">=1.5.6,<1.5.7 || >1.5.7", optional = true, markers = "extra == \"socks\""}
 urllib3 = ">=1.21.1,<3"
 
 [package.extras]
@@ -2653,4 +2710,4 @@ dev = ["django-debug-toolbar", "django-extensions", "drf-spectacular-sidecar", "
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<4.0"
-content-hash = "a698d5ae1477dec3e00fa918092d4fe2eda2c291c108acd9383ca2311eec565a"
+content-hash = "15925262eb2758938cceb05aeef2da87a18b3dc94b2ea054212c25ea1e0a2855"

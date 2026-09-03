@@ -1,12 +1,9 @@
 import {
   getOperator,
   getOrganizationServices,
-  deleteOrganizationServiceSubscription,
   getOperatorOrganizations,
   updateOrganizationServiceSubscription,
   ServiceSubscriptionInput,
-  updateEntitlement,
-  Entitlement,
   getOrganizationAccounts,
   createOrganizationAccount,
   updateAccount,
@@ -15,9 +12,17 @@ import {
   Account,
   getOperatorServices,
   updateOperatorOrganizationRole,
+  updateOrganizationProconnectDomains,
+  checkDomains,
+  DomainCheck,
 } from "@/features/api/Repository";
 import { getOrganization } from "@/features/api/Repository";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 
 export const useOperator = (operatorId: string) => {
   return useQuery({
@@ -75,35 +80,6 @@ export const useOrganizationServices = (
   });
 };
 
-export const useMutationDeleteOrganizationServiceSubscription = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      operatorId,
-      organizationId,
-      serviceId,
-    }: {
-      operatorId: string;
-      organizationId: string;
-      serviceId: string;
-    }) => {
-      return deleteOrganizationServiceSubscription(
-        operatorId,
-        organizationId,
-        serviceId
-      );
-    },
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: ["organizations", variables.organizationId, "services"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["operators"],
-      });
-    },
-  });
-};
-
 export const useMutationUpdateOrganizationServiceSubscription = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -124,35 +100,6 @@ export const useMutationUpdateOrganizationServiceSubscription = () => {
         serviceId,
         data
       );
-    },
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: [
-          "operators",
-          variables.operatorId,
-          "organizations",
-          variables.organizationId,
-          "services",
-        ],
-      });
-    },
-  });
-};
-
-export const useMutationUpdateEntitlement = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      entitlementId,
-      data,
-    }: {
-      operatorId: string;
-      organizationId: string;
-      serviceId: string;
-      entitlementId: string;
-      data: Partial<Entitlement>;
-    }) => {
-      return updateEntitlement(entitlementId, data);
     },
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({
@@ -363,6 +310,122 @@ export const useMutationUpdateOperatorOrganizationRole = () => {
       });
     },
   });
+};
+
+export const useMutationUpdateOrganizationProconnectDomains = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      operatorId,
+      organizationId,
+      payload,
+    }: {
+      operatorId: string;
+      organizationId: string;
+      payload: { manual?: string[]; requested?: string[]; discarded?: string[] };
+    }) =>
+      updateOrganizationProconnectDomains(operatorId, organizationId, payload),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: [
+          "operators",
+          variables.operatorId,
+          "organizations",
+          variables.organizationId,
+        ],
+      });
+    },
+  });
+};
+
+/**
+ * DNS delegation and RPNT 1.2 checks for a list of domains.
+ *
+ * Each domain is checked once and its verdict kept, so adding one only resolves
+ * that one — a check walks the DNS from the root and caches no answer, so
+ * re-checking a list of ten to add an eleventh would cost eleven walks and could
+ * run into the batch deadline. Answers are held for as long as the modal is open;
+ * closing and reopening it checks everything again, which is how a user re-checks
+ * a delegation they just fixed.
+ *
+ * A domain the backend drops from the results (not well-formed) still counts as
+ * answered, or it would be asked for again on every render.
+ *
+ * A failed batch is reported through `checksFailed` rather than retried: the query
+ * key is the list of unanswered domains, so it does not change while the batch is
+ * unanswered and an automatic retry would just loop. `retryChecks` is the way back,
+ * driven by the user.
+ */
+export const useDomainsChecks = (
+  operatorId: string,
+  organizationId: string,
+  domains: string[],
+  enabled = true
+) => {
+  // domain -> its verdict, or null when the backend answered without one.
+  const [answers, setAnswers] = useState<Record<string, DomainCheck | null>>({});
+  // The parts of the response that describe the service, not a domain.
+  const [rules, setRules] = useState<{
+    expectedNameservers: string[];
+    modesWithTarget: string[];
+  } | null>(null);
+
+  const missing = domains.filter((domain) => !(domain in answers)).sort();
+  const { data, isFetching, isError, refetch } = useQuery({
+    queryKey: [
+      "operators",
+      operatorId,
+      "organizations",
+      organizationId,
+      "domains-check",
+      missing.join(","),
+    ],
+    queryFn: () => checkDomains(operatorId, organizationId, missing),
+    // The empty list is worth one call: it carries no lookup, but it carries the
+    // nameservers and the mode rules the modal needs before any domain exists.
+    enabled:
+      enabled &&
+      !!operatorId &&
+      !!organizationId &&
+      (missing.length > 0 || rules === null),
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+
+  const requested = missing.join(",");
+  useEffect(() => {
+    if (!data) {
+      return;
+    }
+    setRules({
+      expectedNameservers: data.expected_nameservers,
+      modesWithTarget: data.modes_with_target,
+    });
+    setAnswers((previous) => {
+      const next = { ...previous };
+      for (const domain of requested ? requested.split(",") : []) {
+        next[domain] = null;
+      }
+      for (const result of data.results) {
+        next[result.domain] = result;
+      }
+      return next;
+    });
+    // `requested` is the query key: it changes with `data`, and reading it here
+    // keeps the merge tied to the batch that produced it.
+  }, [data, requested]);
+
+  return {
+    checkOf: (domain: string) => answers[domain] ?? undefined,
+    expectedNameservers: rules?.expectedNameservers ?? [],
+    modesWithTarget: rules?.modesWithTarget ?? [],
+    // Only a domain of the batch in flight is still waiting for its verdict.
+    isCheckPending: (domain: string) => isFetching && !(domain in answers),
+    // The last batch failed and its domains have no verdict; without this the
+    // modal would show them blank with no way to ask again.
+    checksFailed: isError && !isFetching,
+    retryChecks: () => void refetch(),
+  };
 };
 
 export default useOperator;

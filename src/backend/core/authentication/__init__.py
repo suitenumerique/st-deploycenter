@@ -46,10 +46,17 @@ class ServerToServerAuthentication(BaseAuthentication):
             raise AuthenticationFailed("Invalid authorization header.")
 
         token = auth_parts[1]
-        # Use constant-time comparison to prevent timing attacks
+        if not token:
+            raise AuthenticationFailed("Invalid server-to-server token.")
+
+        # Use constant-time comparison to prevent timing attacks. Falsy entries are
+        # skipped: ListValue already drops them when parsing the environment, but
+        # compare_digest("", "") is True, so one reaching this list from anywhere
+        # else would turn an empty bearer token into a valid credential.
         if not any(
             secrets.compare_digest(token, allowed_token)
             for allowed_token in settings.SERVER_TO_SERVER_API_TOKENS
+            if allowed_token
         ):
             raise AuthenticationFailed("Invalid server-to-server token.")
 
@@ -81,11 +88,20 @@ class ExternalManagementApiKeyAuthentication(BaseAuthentication):
         if len(auth_parts) != 2 or auth_parts[0] != self.TOKEN_TYPE:
             return None
 
+        # Belt and braces. Nothing stores "" in this field today — the admin saves
+        # NULL, because CharField.formfield() sets empty_value=None when the field is
+        # null=True, and NULL never matches the lookup below. But a row holding ""
+        # (a fixture, a bulk update, a hand-written import) would be authenticated by
+        # an empty bearer token, so refuse one outright rather than rely on that.
+        token = auth_parts[1]
+        if not token:
+            return None
+
         if not hasattr(request, "resolver_match") or not request.resolver_match:
             return None
 
         try:
-            instance = self.model.objects.get(external_management_api_key=auth_parts[1])
+            instance = self.model.objects.get(external_management_api_key=token)
         except self.model.DoesNotExist:
             return None
 

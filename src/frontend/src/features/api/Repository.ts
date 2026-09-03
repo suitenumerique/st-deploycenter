@@ -47,6 +47,26 @@ export type Organization = {
   adresse_messagerie: string | null;
   site_internet: string | null;
   telephone: string | null;
+  // The org's ProConnect domains, by provenance — "dpnt" (declared on
+  // service-public.gouv.fr), "candidates" (generated from the name), "manual"
+  // (added by a superuser) — and status — "requested" (awaiting validation),
+  // "discarded" (set aside). What is currently live is not a bucket: it is the
+  // subscription's routed domains.
+  proconnect_domains: {
+    requested: string[];
+    manual: string[];
+    dpnt: string[];
+    candidates: string[];
+    discarded: string[];
+  };
+  // The domains the org may route, buckets and discards already resolved by the
+  // backend. Offer exactly these — never re-derive them from the buckets here.
+  proconnect_routable: string[];
+  // Per-idp pre-validation: {idp_id: [domains already in that provider's deployed
+  // allowlist]}. An idp present (even with []) means its allowlist is known and a
+  // domain missing from it is "not yet pre-validated"; null means unknown. Per-idp
+  // because the same domain can be deployed on one provider and pending on another.
+  proconnect_prevalidated: Record<string, string[]> | null;
   operator_admins_have_admin_role?: boolean;
 };
 
@@ -89,7 +109,49 @@ export const SERVICE_TYPE_ADC = "adc";
 export const SERVICE_TYPE_ESD = "esd";
 export const SERVICE_TYPE_MESSAGES = "messages";
 export const SERVICE_TYPE_DRIVE = "drive";
-export const SERVICE_TYPE_MEET = "meet";
+export const SERVICE_TYPE_DOMAINS = "domains";
+
+// What serves a domain's website, in the Domains service subscription metadata.
+export const WEBSITE_MODE_NONE = "none";
+export const WEBSITE_MODE_PARKING = "parking";
+export const WEBSITE_MODE_DNS_A = "dns_a";
+export const WEBSITE_MODE_DNS_CNAME = "dns_cname";
+export const WEBSITE_MODE_REDIRECT_301 = "redirect_301";
+export const WEBSITE_MODE_REDIRECT_302 = "redirect_302";
+
+export type DomainWebsite = {
+  mode: string;
+  // The value the mode points at: an IPv4 address for dns_a, a domain name for
+  // dns_cname, an https url for the redirections. Absent for parking and none.
+  target?: string;
+};
+
+export type DomainWebsiteConfig = Record<string, DomainWebsite>;
+
+// One domain's checks, as returned by the domains-check route. The backend is the
+// only validator: everything the modal needs to shape itself comes from here rather
+// than from rules restated in TypeScript.
+export type DomainCheck = {
+  domain: string;
+  // The domain's NS records as published, empty when the lookup failed.
+  nameservers: string[];
+  nameservers_valid: boolean;
+  // Why there are no nameservers: "nxdomain", "not_delegated", "timeout",
+  // "error". Null when the lookup succeeded.
+  error: string | null;
+  rpnt_1_2_valid: boolean;
+  extension: string;
+  // The website modes this domain may use, and the one it falls back to.
+  allowed_modes: string[];
+  default_mode: string;
+};
+
+export type DomainsCheck = {
+  expected_nameservers: string[];
+  // The modes that carry a "target" value, so the form knows when to show it.
+  modes_with_target: string[];
+  results: DomainCheck[];
+};
 
 export type AccountServiceLinkRole = { scope: Record<string, unknown> };
 
@@ -150,13 +212,6 @@ export const sortModelToOrdering = (sortModel: SortModel): string => {
       return "";
     })
     .join(",");
-};
-
-export const orderingToSortModel = (ordering: string): SortModel => {
-  return ordering.split(",").map((order) => {
-    if (order.startsWith("-")) return { field: order.slice(1), sort: "desc" };
-    return { field: order, sort: "asc" };
-  });
 };
 
 export const getOperators = async (): Promise<PaginatedResponse<Operator>> => {
@@ -230,6 +285,30 @@ export const updateOperatorOrganizationRole = async (
   return (await response.json()) as { operator_admins_have_admin_role: boolean };
 };
 
+export const updateOrganizationProconnectDomains = async (
+  operatorId: string,
+  organizationId: string,
+  payload: { manual?: string[]; requested?: string[]; discarded?: string[] }
+): Promise<Organization["proconnect_domains"]> => {
+  const response = await fetchAPI(
+    `operators/${operatorId}/organizations/${organizationId}/proconnect-domains/`,
+    { method: "PATCH", body: JSON.stringify(payload) }
+  );
+  return (await response.json()) as Organization["proconnect_domains"];
+};
+
+export const checkDomains = async (
+  operatorId: string,
+  organizationId: string,
+  domains: string[]
+): Promise<DomainsCheck> => {
+  const response = await fetchAPI(
+    `operators/${operatorId}/organizations/${organizationId}/domains-check/`,
+    { method: "POST", body: JSON.stringify({ domains }) }
+  );
+  return (await response.json()) as DomainsCheck;
+};
+
 export const getOrganizationServices = async (
   operatorId: string,
   organizationId: string
@@ -239,19 +318,6 @@ export const getOrganizationServices = async (
   );
   const data = (await response.json()) as PaginatedResponse<Service>;
   return data;
-};
-
-export const deleteOrganizationServiceSubscription = async (
-  operatorId: string,
-  organizationId: string,
-  serviceId: string
-): Promise<void> => {
-  await fetchAPI(
-    `operators/${operatorId}/organizations/${organizationId}/services/${serviceId}/subscription/`,
-    {
-      method: "DELETE",
-    }
-  );
 };
 
 export const updateOrganizationServiceSubscription = async (
@@ -269,18 +335,6 @@ export const updateOrganizationServiceSubscription = async (
   );
   const subscription = (await response.json()) as ServiceSubscription;
   return subscription;
-};
-
-export const updateEntitlement = async (
-  entitlementId: string,
-  data: Partial<Entitlement>
-): Promise<Entitlement> => {
-  const response = await fetchAPI(`entitlements/${entitlementId}/`, {
-    method: "PATCH",
-    body: JSON.stringify(data),
-  });
-  const entitlement = (await response.json()) as Entitlement;
-  return entitlement;
 };
 
 export const getOrganizationAccounts = async (

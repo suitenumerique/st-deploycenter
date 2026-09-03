@@ -4,18 +4,12 @@ import logging
 import secrets
 
 from django.conf import settings
-from django.core import exceptions
 
 from rest_framework import permissions
 
 from core import models
 
 logger = logging.getLogger(__name__)
-
-ACTION_FOR_METHOD_TO_PERMISSION = {
-    "versions_detail": {"DELETE": "versions_destroy", "GET": "versions_retrieve"},
-    "children": {"GET": "children_list", "POST": "children_create"},
-}
 
 
 class IsAuthenticatedWithAnyMethod(permissions.BasePermission):
@@ -33,22 +27,6 @@ class IsAuthenticatedWithAnyMethod(permissions.BasePermission):
         return bool(request.user and request.user.is_authenticated)
 
 
-class IsSuperUser(permissions.IsAdminUser):
-    """Allows access only to superusers users."""
-
-    def has_permission(self, request, view):
-        return request.user and (request.user.is_superuser)
-
-
-class IsAuthenticatedOrSafe(IsAuthenticatedWithAnyMethod):
-    """Allows access to authenticated users (or anonymous users but only on safe methods)."""
-
-    def has_permission(self, request, view):
-        if request.method in permissions.SAFE_METHODS:
-            return True
-        return super().has_permission(request, view)
-
-
 class IsSelf(IsAuthenticatedWithAnyMethod):
     """
     Allows access only to authenticated users. Alternative method checking the presence
@@ -58,26 +36,6 @@ class IsSelf(IsAuthenticatedWithAnyMethod):
     def has_object_permission(self, request, view, obj):
         """Write permissions are only allowed to the user itself."""
         return obj == request.user
-
-
-class IsOwnedOrPublic(IsAuthenticatedWithAnyMethod):
-    """
-    Allows access to authenticated users only for objects that are owned or not related
-    to any user via the "owner" field.
-    """
-
-    def has_object_permission(self, request, view, obj):
-        """Unsafe permissions are only allowed for the owner of the object."""
-        if obj.owner == request.user:
-            return True
-
-        if request.method in permissions.SAFE_METHODS and obj.owner is None:
-            return True
-
-        try:
-            return obj.user == request.user
-        except exceptions.ObjectDoesNotExist:
-            return False
 
 
 class OperatorAccessPermission(permissions.BasePermission):
@@ -245,6 +203,8 @@ class ServiceAuthenticationPermission(permissions.BasePermission):
             return False
 
         api_key = api_key_parts[1]
+        if not api_key:
+            return False
 
         # Check if the service matches.
         target_service = models.Service.objects.filter(
@@ -253,8 +213,19 @@ class ServiceAuthenticationPermission(permissions.BasePermission):
         if not target_service:
             return False
 
-        # Check if the API key is valid.
-        service_api_key = target_service.config.get("entitlements_api_key", "")
+        # Check if the API key is valid. "config" is nullable, and the key is only
+        # written when an admin generates one, so both sides can be empty — and
+        # compare_digest("", "") is True, which would authenticate anyone sending an
+        # empty bearer token. A service without a generated key accepts nobody.
+        config = target_service.config or {}
+        service_api_key = config.get("entitlements_api_key") or ""
+        if not service_api_key:
+            logger.warning(
+                "Entitlements auth denied: service %s has no entitlements_api_key",
+                target_service.pk,
+            )
+            return False
+
         if not secrets.compare_digest(service_api_key, api_key):
             return False
 
@@ -304,34 +275,80 @@ class ServiceExternalManagementPermission(permissions.BasePermission):
         return True
 
 
-class MetricsApiKeyPermission(permissions.BasePermission):
-    """Allows access only to requests bearing a valid metrics API key
-    via the standard Authorization header."""
+class StaticApiKeyPermission(permissions.BasePermission):
+    """Allows access only to requests bearing a valid static API key
+    via the standard Authorization header.
+
+    The one way a route is guarded by a static bearer key. Subclasses name the
+    setting holding the key (``label``) and return its value
+    (``get_expected_key``). An unset key closes the route to everyone — there is
+    no "public when unconfigured" mode, so forgetting to set a key can never
+    silently publish a route.
+    """
+
+    label = "API"
+
+    def get_expected_key(self):
+        """Return the configured key, or a falsy value when unconfigured."""
+        raise NotImplementedError
 
     def has_permission(self, request, view):
         auth_header = request.headers.get("Authorization")
         if not auth_header:
             logger.warning(
-                "Metrics auth denied: missing Authorization header (%s)", request.path
+                "%s auth denied: missing Authorization header (%s)",
+                self.label,
+                request.path,
             )
             return False
 
         parts = auth_header.split(" ", 1)
         if len(parts) != 2 or parts[0] != "Bearer":
             logger.warning(
-                "Metrics auth denied: malformed Authorization header (%s)", request.path
+                "%s auth denied: malformed Authorization header (%s)",
+                self.label,
+                request.path,
             )
             return False
 
-        expected = settings.METRICS_API_KEY
+        expected = self.get_expected_key()
         if not expected:
             logger.warning(
-                "Metrics auth denied: METRICS_API_KEY not configured (%s)", request.path
+                "%s auth denied: API key not configured (%s)", self.label, request.path
             )
             return False
 
         if not secrets.compare_digest(expected, parts[1]):
-            logger.warning("Metrics auth denied: invalid token (%s)", request.path)
+            logger.warning(
+                "%s auth denied: invalid token (%s)", self.label, request.path
+            )
             return False
 
         return True
+
+
+class MetricsApiKeyPermission(StaticApiKeyPermission):
+    """Allows access only to requests bearing a valid metrics API key."""
+
+    label = "Metrics"
+
+    def get_expected_key(self):
+        return settings.METRICS_API_KEY
+
+
+class DomainsApiKeyPermission(StaticApiKeyPermission):
+    """Allows access only to requests bearing a valid domains export API key."""
+
+    label = "Domains"
+
+    def get_expected_key(self):
+        return settings.DOMAINS_API_KEY
+
+
+class ProConnectAllowlistApiKeyPermission(StaticApiKeyPermission):
+    """Allows access only to requests bearing a valid ProConnect allowlist API key."""
+
+    label = "ProConnect allowlist"
+
+    def get_expected_key(self):
+        return settings.PROCONNECT_ALLOWLIST_VIEW_API_KEY
