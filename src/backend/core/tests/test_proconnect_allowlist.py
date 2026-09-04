@@ -35,6 +35,7 @@ from core.services.proconnect import (
     proconnect_domains,
     render_proconnect_allowlist_yaml,
     routable_domains,
+    store_prevalidated_domains,
     update_proconnect_domains,
 )
 
@@ -761,7 +762,60 @@ def test_fetch_prevalidated_caches_per_idp_allowlist():
 
     assert get_prevalidated_domains("idp-x") == ["a.fr", "b.fr"]
     assert get_prevalidated_domains("idp-y") == []  # empty but DEFINED
-    assert get_prevalidated_domains("idp-z") is None  # never seen → unknown
+    # The fetched file covers every provider, so one it does not mention has
+    # nothing deployed — empty, not unknown.
+    assert get_prevalidated_domains("idp-z") == []
+
+
+@responses.activate
+def test_fetch_prevalidated_keeps_the_previous_entry_for_a_malformed_provider():
+    """A provider without a domains *list* keeps what the last fetch cached for it."""
+    store_prevalidated_domains("idp-x", ["kept.fr"])
+    responses.add(
+        responses.GET,
+        "https://allowlist.test/x.yaml",
+        body=(
+            "oidc_providers:\n"
+            '  - uid: "idp-x"\n'
+            "    allowed_attached_email_domains: null\n"
+            '  - uid: "idp-y"\n'
+            "    allowed_attached_email_domains:\n"
+            "      - y.fr\n"
+        ),
+        status=200,
+    )
+
+    call_command(
+        "proconnect_fetch_prevalidated",
+        "--url",
+        "https://allowlist.test/x.yaml",
+        stdout=StringIO(),
+        stderr=StringIO(),
+    )
+
+    assert get_prevalidated_domains("idp-x") == ["kept.fr"]
+    assert get_prevalidated_domains("idp-y") == ["y.fr"]
+
+
+@responses.activate
+def test_fetch_prevalidated_drops_a_provider_the_new_file_omits():
+    """The file is authoritative: a uid it no longer lists has nothing deployed."""
+    store_prevalidated_domains("idp-gone", ["stale.fr"])
+    responses.add(
+        responses.GET,
+        "https://allowlist.test/x.yaml",
+        body='oidc_providers:\n  - uid: "idp-x"\n    allowed_attached_email_domains: []\n',
+        status=200,
+    )
+
+    call_command(
+        "proconnect_fetch_prevalidated",
+        "--url",
+        "https://allowlist.test/x.yaml",
+        stdout=StringIO(),
+    )
+
+    assert get_prevalidated_domains("idp-gone") == []
 
 
 @responses.activate

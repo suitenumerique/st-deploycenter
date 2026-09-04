@@ -406,18 +406,22 @@ export const DomainMultiSelectModal = (props: DomainMultiSelectModalProps) => {
                   isEnLigne &&
                   !row.sources.includes("dpnt") &&
                   COLLECTIVITE_TYPES.includes(props.organization.type);
-                // A "not yet pre-validated" domain can't be routed (it would be
-                // rejected), so its checkbox is disabled — unless it's already
-                // selected, so a live domain can still be un-routed.
-                const notYetBlocked =
-                  prevalidation === "not_yet" && !selected.includes(row.domain);
+                const isSelected = selected.includes(row.domain);
+                // Only *adding* is gated: a domain outside the routable pool, or
+                // not yet in the deployed allowlist, would be rejected on save.
+                // Unchecking is always allowed — `routable` ignores inactive
+                // subscriptions, so a domain configured on one and since dropped
+                // from every bucket (discarded, request rejected) would otherwise
+                // be stuck checked with no way to un-route it.
+                const disabled =
+                  !isSelected && (!isRoutable || prevalidation === "not_yet");
                 return (
                   <div key={row.domain} className="dc__domain-selector__item">
                     <input
                       type="checkbox"
                       id={`domain-${row.domain}`}
-                      checked={selected.includes(row.domain)}
-                      disabled={!isRoutable || notYetBlocked}
+                      checked={isSelected}
+                      disabled={disabled}
                       onChange={() => toggle(row.domain)}
                     />
                     {/* The visible domain labels the checkbox, so each control

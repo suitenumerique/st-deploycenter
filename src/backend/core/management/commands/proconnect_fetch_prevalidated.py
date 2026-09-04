@@ -20,8 +20,9 @@ import yaml
 
 from core.services.proconnect import (
     ALLOWED_DOMAINS_KEY,
+    get_prevalidated_allowlist,
     redact_credentials,
-    store_prevalidated_domains,
+    store_prevalidated_allowlist,
 )
 
 
@@ -87,6 +88,8 @@ class Command(BaseCommand):
             )
 
         providers = data.get("oidc_providers") or []
+        previous = get_prevalidated_allowlist() or {}
+        allowlist = {}
         count = 0
         skipped = 0
         for provider in providers:
@@ -96,8 +99,8 @@ class Command(BaseCommand):
             domains = provider.get(ALLOWED_DOMAINS_KEY)
             # An explicit empty list is authoritative ("nothing pre-validated");
             # a missing/malformed key is not — caching [] for it would wrongly
-            # flag every domain as "not yet pre-validated" in the UI. Keep the
-            # previous cache entry (or "unknown") instead.
+            # flag every domain as "not yet pre-validated" in the UI. Carry the
+            # previous entry over instead.
             if not isinstance(domains, list):
                 skipped += 1
                 self.stderr.write(
@@ -106,13 +109,20 @@ class Command(BaseCommand):
                         "keeping the previous cache entry"
                     )
                 )
+                if uid in previous:
+                    allowlist[uid] = previous[uid]
                 continue
-            cached = store_prevalidated_domains(uid, domains)
+            allowlist[uid] = domains
             count += 1
-            self.stdout.write(f"{uid}: cached {len(cached)} allowed domains")
 
         if not count and not skipped:
             raise CommandError(f"No providers found in the allowlist at {safe_url}.")
+
+        # One write for the whole file: what it does not mention has no deployed
+        # allowlist, and only a map replaced wholesale can say so.
+        cached = store_prevalidated_allowlist(allowlist)
+        for uid in sorted(cached):
+            self.stdout.write(f"{uid}: cached {len(cached[uid])} allowed domains")
 
         self.stdout.write(
             self.style.SUCCESS(

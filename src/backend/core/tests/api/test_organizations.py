@@ -905,6 +905,25 @@ def test_api_organization_proconnect_domains_prevalidated_empty_but_defined():
     assert response.json()["proconnect_prevalidated"] == {"idp-x": []}
 
 
+def test_api_organization_proconnect_domains_prevalidated_covers_unlisted_idps():
+    """An idp the fetched allowlist never mentions is empty, not unknown."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator, organization = _setup_proconnect_operator_org(
+        user, proconnect_domains={"manual": ["a.fr"]}
+    )
+    # A fetch landed, but it covered some other provider entirely.
+    store_prevalidated_domains("idp-other", ["a.fr"])
+
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/"
+    )
+    assert response.status_code == 200
+    # api-partenaires would reject a.fr on idp-x, so it is "not yet", not unknown.
+    assert response.json()["proconnect_prevalidated"] == {"idp-x": []}
+
+
 def test_api_organization_proconnect_domains_prevalidated_is_per_idp():
     """A domain deployed on one idp is not shown pre-validated for another idp."""
     user = factories.UserFactory()

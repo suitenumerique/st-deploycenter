@@ -581,11 +581,15 @@ def sync_proconnect_provider_for_subscription(
 # lags our generated one, and their PATCH rejects any domain not yet in it. We fetch
 # it (``proconnect_fetch_prevalidated``) and cache the allowed domains per idp so the
 # UI can flag which of an org's domains are already routable vs pending the deploy.
-# Stored as a list value (NOT a native redis SET, which can't represent an
-# empty-but-defined allowlist) keyed ``proconnect_idps_allowed_fqdns:{uid}``.
+#
+# The whole ``{uid: [domains]}`` map lives under ONE key, and the values are lists
+# (not native redis SETs, which can't represent an empty-but-defined allowlist).
+# One key because the file is authoritative for every provider at once: a uid it
+# does not mention has nothing deployed, which is only distinguishable from "we
+# never fetched the file" if the map is written and expires atomically.
 # ---------------------------------------------------------------------------
 
-PREVALIDATED_KEY_PREFIX = "proconnect_idps_allowed_fqdns:"
+PREVALIDATED_CACHE_KEY = "proconnect_idps_allowed_fqdns"
 
 
 def _allowlist_cache():
@@ -599,20 +603,45 @@ def _allowlist_cache():
     return caches[settings.SESSION_CACHE_ALIAS]
 
 
-def store_prevalidated_domains(idp_id: str, domains) -> list[str]:
-    """Cache an idp's deployed allowlist (normalized list; TTL from settings)."""
-    cleaned = normalize_domains(domains)
+def get_prevalidated_allowlist() -> Optional[dict]:
+    """The whole cached deployed allowlist ``{idp_id: [domains]}``.
+
+    ``None`` means no fetch has landed (or its TTL expired) — pre-validation is
+    unknown for every provider. Anything else means the file was read, so it is
+    authoritative about which uids have a deployed allowlist and which don't.
+    """
+    cached = _allowlist_cache().get(PREVALIDATED_CACHE_KEY)
+    return cached if isinstance(cached, dict) else None
+
+
+def store_prevalidated_allowlist(allowlist: dict) -> dict:
+    """Cache the deployed allowlist (normalized values; TTL from settings)."""
+    cleaned = {uid: normalize_domains(domains) for uid, domains in allowlist.items()}
     _allowlist_cache().set(
-        f"{PREVALIDATED_KEY_PREFIX}{idp_id}",
+        PREVALIDATED_CACHE_KEY,
         cleaned,
         timeout=settings.PROCONNECT_DOMAIN_ALLOWLIST_CACHE_TTL,
     )
     return cleaned
 
 
+def store_prevalidated_domains(idp_id: str, domains) -> list[str]:
+    """Cache one idp's deployed allowlist, keeping the other idps' entries."""
+    allowlist = dict(get_prevalidated_allowlist() or {})
+    allowlist[idp_id] = domains
+    return store_prevalidated_allowlist(allowlist)[idp_id]
+
+
 def get_prevalidated_domains(idp_id: str) -> Optional[list]:
-    """An idp's cached deployed allowlist, or ``None`` if not defined (unknown)."""
-    return _allowlist_cache().get(f"{PREVALIDATED_KEY_PREFIX}{idp_id}")
+    """An idp's deployed allowlist, or ``None`` when none has been fetched at all.
+
+    An idp the fetched allowlist does not mention has nothing deployed: ``[]``,
+    not unknown. api-partenaires would reject every domain pushed there.
+    """
+    allowlist = get_prevalidated_allowlist()
+    if allowlist is None:
+        return None
+    return allowlist.get(idp_id, [])
 
 
 def operator_prevalidated_allowlists(operator_id) -> dict:
@@ -620,13 +649,20 @@ def operator_prevalidated_allowlists(operator_id) -> dict:
     (``{idp_id: frozenset(domains)}``) — the deployed set from
     :func:`get_prevalidated_domains`.
 
-    idps whose allowlist is not cached are omitted (→ "pre-validation unknown" for
-    that idp). Computed once per request (one query + a few cache reads) so the org
-    serializer stays N+1-free. An allowlist is per-idp: the same domain can be
-    deployed on one provider and pending on another.
+    Every one of the operator's idps gets an entry once *any* allowlist has been
+    fetched: one absent from the fetched file has nothing deployed (empty), which
+    is not the same as the unknown we report when no fetch has landed at all — then
+    the map is empty and no idp gets a verdict.
+
+    Computed once per request (one query + one cache read) so the org serializer
+    stays N+1-free. An allowlist is per-idp: the same domain can be deployed on one
+    provider and pending on another.
     """
     result = {}
     if not operator_id:
+        return result
+    allowlist = get_prevalidated_allowlist()
+    if allowlist is None:
         return result
     idps = set()
     for config in OperatorServiceConfig.objects.filter(
@@ -638,9 +674,7 @@ def operator_prevalidated_allowlists(operator_id) -> dict:
             idps.add(idp)
 
     for idp in idps:
-        cached = get_prevalidated_domains(idp)
-        if cached is not None:
-            result[idp] = frozenset(cached)
+        result[idp] = frozenset(allowlist.get(idp) or ())
     return result
 
 

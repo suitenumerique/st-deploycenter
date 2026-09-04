@@ -1100,17 +1100,18 @@ class OrganizationSerializer(serializers.ModelSerializer):
             "nullable": True,
             "additionalProperties": {"type": "array", "items": {"type": "string"}},
             "description": (
-                "Per idp with a known deployed allowlist, the org domains already in "
-                "it. Null when no allowlist is known (pre-validation unknown)."
+                "Per operator idp, the org domains already in the deployed allowlist "
+                "(empty for an idp the allowlist does not cover). Null when no "
+                "allowlist has been fetched at all (pre-validation unknown)."
             ),
         }
     )
     def get_proconnect_prevalidated(self, instance):
         """The subset of the org's domains already in the *deployed* allowlist.
 
-        From the cache filled by ``proconnect_fetch_prevalidated``. Null means "we
-        do not know that provider's allowlist", which the UI shows as unknown
-        rather than as "not pre-validated".
+        From the cache filled by ``proconnect_fetch_prevalidated``. Null means no
+        allowlist has been fetched, which the UI shows as unknown rather than as
+        "not pre-validated"; once one has, every idp gets a verdict.
         """
         return proconnect_service.prevalidated_org_domains(
             instance, self.context.get("proconnect_prevalidated_allowlists")

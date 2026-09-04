@@ -40,7 +40,17 @@ const getProConnectMessage = (
   // Active subscription: no text. The card already lists these domains in its
   // "Domaines" row and the toggle already says the service is on, so naming them
   // again adds nothing. Only the conformity warning below is worth saying.
-  if (isActive && subscriptionDomains && subscriptionDomains.length > 0) {
+  if (isActive) {
+    // Active with nothing routed. The API refuses to reach this state, but an
+    // admin edit or an import can, and the pending-domain message below would
+    // then announce a mail_domain that is not routed at all.
+    if (!subscriptionDomains || subscriptionDomains.length === 0) {
+      return {
+        alert: <span>Aucun domaine n&apos;est routé vers ce FI.</span>,
+        icon: "warning",
+      };
+    }
+
     const message: ProConnectMessage = {};
     // Conformity is per routed domain: every one of them must be declared on
     // service-public.gouv.fr (the "dpnt" bucket), not just the first.
@@ -254,7 +264,7 @@ export const ProConnectServiceBlock = (props: {
           {props.service.config?.help_center_url && (
             <div className="dc__service__block__goto">
               <a target="_blank" href={props.service.config?.help_center_url}>
-                Centre de ressources
+                Documentation
               </a>
               <Button
                 color="tertiary"
