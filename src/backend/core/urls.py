@@ -12,11 +12,13 @@ from core.api.viewsets.accounts import AccountViewSet, OrganizationAccountsViewS
 from core.authentication.urls import urlpatterns as oidc_urls
 
 from .api.viewsets.config import ConfigView
+from .api.viewsets.domains import DomainCheckView, DomainListView
 from .api.viewsets.entitlements import EntitlementView
 from .api.viewsets.lagaufre import LagaufreViewSet
 from .api.viewsets.metrics import SubscriptionsByServiceView
 from .api.viewsets.operator import OperatorViewSet
 from .api.viewsets.organization import OperatorOrganizationViewSet
+from .api.viewsets.proconnect import ProConnectAllowlistView
 from .api.viewsets.service import (
     OrganizationServiceSubscriptionEntitlementViewSet,
     OrganizationServiceSubscriptionViewSet,
@@ -76,6 +78,12 @@ urlpatterns = [
                 ),
                 *account_router.urls,
                 path("config/", ConfigView.as_view(), name="api-config"),
+                path("domains/", DomainListView.as_view(), name="api-domains"),
+                path(
+                    "proconnect/oidc_providers.yaml",
+                    ProConnectAllowlistView.as_view(),
+                    name="api-proconnect-allowlist",
+                ),
                 path(
                     "metrics/subscriptions-by-service/",
                     SubscriptionsByServiceView.as_view(),
@@ -92,6 +100,11 @@ urlpatterns = [
                                     [
                                         *organization_service_router.urls,
                                         *organization_accounts_router.urls,
+                                        path(
+                                            "domains-check/",
+                                            DomainCheckView.as_view(),
+                                            name="api-domains-check",
+                                        ),
                                         re_path(
                                             r"^services/(?P<service_id>[0-9a-z-]*)/",
                                             include(

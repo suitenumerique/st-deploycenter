@@ -27,23 +27,6 @@ class UserFactory(factory.django.DjangoModelFactory):
     password = make_password("password")
 
 
-class ParentNodeFactory(factory.declarations.ParameteredAttribute):
-    """Custom factory attribute for setting the parent node."""
-
-    def generate(self, step, params):
-        """
-        Generate a parent node for the factory.
-
-        This method is invoked during the factory's build process to determine the parent
-        node of the current object being created. If `params` is provided, it uses the factory's
-        metadata to recursively create or fetch the parent node. Otherwise, it returns `None`.
-        """
-        if not params:
-            return None
-        subfactory = step.builder.factory_meta.factory
-        return step.recurse(subfactory, params)
-
-
 class OperatorFactory(factory.django.DjangoModelFactory):
     """Factory for Operator model."""
 

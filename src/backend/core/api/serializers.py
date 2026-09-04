@@ -1,6 +1,8 @@
 """Client serializers for the deploycenter core app."""
+# pylint: disable=too-many-lines
 
 from collections import defaultdict
+from collections.abc import Mapping
 
 from django.db.models import Q
 
@@ -12,7 +14,9 @@ from core.entitlements.resolvers import TYPE_TO_ADMIN_RESOLVER
 from core.entitlements.resolvers.extended_admin_entitlement_resolver import (
     ExtendedAdminEntitlementResolver,
 )
-from core.services import get_service_handler
+from core.services import domainnames, get_service_handler, locks
+from core.services import domains as domains_service
+from core.services import proconnect as proconnect_service
 
 
 class IntegerChoicesField(serializers.ChoiceField):
@@ -108,26 +112,6 @@ class UserSerializer(serializers.ModelSerializer):
         model = models.User
         fields = ["id", "email", "full_name", "language", "is_superuser"]
         read_only_fields = ["id", "email", "full_name", "is_superuser"]
-
-
-class UserField(serializers.PrimaryKeyRelatedField):
-    """Custom field that accepts either UUID or email address for user lookup."""
-
-    def to_internal_value(self, data):
-        """Convert UUID string or email to User instance."""
-        if isinstance(data, str):
-            if "@" in data:
-                # It's an email address, look up the user
-                try:
-                    return models.User.objects.get(email=data)
-                except models.User.DoesNotExist as e:
-                    raise serializers.ValidationError(
-                        f"No user found with email: {data}"
-                    ) from e
-            else:
-                # It's a UUID, use the parent method
-                return super().to_internal_value(data)
-        return super().to_internal_value(data)
 
 
 # Subscription check serializers
@@ -441,10 +425,23 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
 
     def to_internal_value(self, data):
         """Extract entitlements input before validation."""
+        if not isinstance(data, Mapping):
+            # `{**data}` would TypeError on a list or scalar body. DRF's own check
+            # for this lives in super().to_internal_value, which runs after us.
+            raise serializers.ValidationError(
+                {"non_field_errors": ["Invalid data. Expected a dictionary."]}
+            )
         # Work on a shallow copy to avoid mutating the original input
         data = {**data}
-        # Pop the entitlements from input data to handle separately
+        # BOTH names must come out before super(): "entitlements" is what clients
+        # send, "entitlements_input" is the declared write field (its source is
+        # "entitlements"). Either one left in place lands in validated_data as a
+        # writable nested field, which ModelSerializer.update() asserts against —
+        # a 500 on caller-controlled input.
         entitlements_data = data.pop("entitlements", None)
+        aliased = data.pop("entitlements_input", None)
+        if entitlements_data is None:
+            entitlements_data = aliased
         result = super().to_internal_value(data)
         if entitlements_data is not None:
             # Validate entitlements input
@@ -461,40 +458,35 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
         self.apply_entitlement_configs(instance)
         return instance
 
-    def apply_entitlement_configs(self, subscription):
-        """Apply pending entitlement configs to the subscription.
+    def _validate_entitlement_types(self, service):
+        """Validate pending entitlement types are appropriate for the service.
 
-        Only updates default entitlements (where account=None).
-        Account-specific entitlements are never modified by this method.
-        Validates that entitlement types are appropriate for the service.
+        Runs at ``validate()`` time (during ``is_valid()``), i.e. *before* the
+        subscription is saved — so an invalid type raises a 400 before any
+        ProConnect push happens, instead of rolling one back afterwards.
         """
-        if not self._pending_entitlement_configs:
+        if not self._pending_entitlement_configs or service is None:
             return
 
-        # Get valid entitlement types for this service
-        handler = get_service_handler(subscription.service)
+        handler = get_service_handler(service)
         valid_types = set()
         if handler:
             valid_types = {d["type"] for d in handler.get_default_entitlements()}
+        valid_enum_types = [t.value for t in models.Entitlement.EntitlementType]
 
         for config_data in self._pending_entitlement_configs:
             entitlement_type = config_data["type"]
-            account_type = config_data["account_type"]
-            config = config_data["config"]
 
-            # Validate entitlement type is appropriate for this service
-            # Only validate if the service has defined valid types (via handler)
+            # Only validate against the handler when it defines valid types.
             if valid_types and entitlement_type not in valid_types:
                 raise serializers.ValidationError(
                     {
                         "entitlements": f"Entitlement type '{entitlement_type}' is not valid "
-                        f"for service type '{subscription.service.type}'. "
+                        f"for service type '{service.type}'. "
                         f"Valid types: {', '.join(str(t) for t in valid_types)}"
                     }
                 )
 
-            # Also validate the type is a valid EntitlementType enum value
-            valid_enum_types = [t.value for t in models.Entitlement.EntitlementType]
             if entitlement_type not in valid_enum_types:
                 raise serializers.ValidationError(
                     {
@@ -503,13 +495,24 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
                     }
                 )
 
+    def apply_entitlement_configs(self, subscription):
+        """Persist pending entitlement configs on the subscription.
+
+        Only updates default entitlements (where account=None); account-specific
+        entitlements are never modified. Types are validated up-front in
+        :meth:`_validate_entitlement_types` (at ``is_valid()`` time).
+        """
+        if not self._pending_entitlement_configs:
+            return
+
+        for config_data in self._pending_entitlement_configs:
             # Only update default entitlements (account=None), never account-specific ones
             # Use update_or_create for atomic operation
             subscription.entitlements.update_or_create(
-                type=entitlement_type,
-                account_type=account_type,
+                type=config_data["type"],
+                account_type=config_data["account_type"],
                 account=None,
-                defaults={"config": config},
+                defaults={"config": config_data["config"]},
             )
 
     VALID_AUTO_ADMIN_VALUES = ("all", "manual")
@@ -527,29 +530,67 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
         instance = self.instance
         organization = self._get_organization()
 
-        current_metadata = instance.metadata if instance else {}
+        # `or {}`: a row whose metadata was nulled outside the API (admin, import)
+        # must stay editable rather than 500 here. Same guard as the domains one.
+        current_metadata = (instance.metadata if instance else {}) or {}
         is_active = attrs.get("is_active", instance.is_active if instance else True)
 
         mail_domain = organization.mail_domain if organization else None
         existing_domains = current_metadata.get("domains")
-        superuser_domains = attrs.get("metadata", {}).get("domains")
+        submitted_domains = attrs.get("metadata", {}).get("domains")
 
-        # Superusers can override domains
-        if self._is_superuser() and isinstance(superuser_domains, list):
-            resolved_domains = superuser_domains
+        # Shape first, whatever the caller's role. A non-list (or a list holding a
+        # number/dict) used to fall through to the "not submitted" branch, so the
+        # caller got a 200 carrying domains it never sent — the silent-drop the
+        # rest of this module refuses on principle.
+        if submitted_domains is not None and (
+            not isinstance(submitted_domains, list)
+            or not all(isinstance(d, str) for d in submitted_domains)
+        ):
+            raise serializers.ValidationError(
+                {"metadata": "domains must be a list of domain strings."}
+            )
+
+        if submitted_domains is not None:
+            # Same rule as every other domain write: refuse what normalization
+            # would otherwise drop, or the UI shows a routed domain we never push.
+            # Only what the caller sends is refused — a malformed domain already
+            # stored (older write, bad import) must not block deactivating or
+            # otherwise editing the subscription; it is normalized away below.
+            invalid = domainnames.invalid_domains(submitted_domains)
+            if invalid:
+                raise serializers.ValidationError(
+                    {"metadata": f"Not valid domain name(s): {', '.join(invalid)}."}
+                )
+            if not self._is_superuser():
+                # Any operator member may change the routing, but only within what
+                # the organization may already route — the exact set the modal
+                # offers (`proconnect_routable`). Refusing is the point: silently
+                # forcing the list back, as this used to, answered 200 with domains
+                # the caller never sent. Superusers keep the override.
+                # Fails closed: no organization resolved -> nothing is routable.
+                allowed = (
+                    set(proconnect_service.routable_domains(organization))
+                    if organization
+                    else set()
+                )
+                refused = sorted(set(submitted_domains) - allowed)
+                if refused:
+                    raise serializers.ValidationError(
+                        {
+                            "metadata": (
+                                f"Domain(s) not routable for this organization: "
+                                f"{', '.join(refused)}."
+                            )
+                        }
+                    )
+            resolved_domains = submitted_domains
         else:
             resolved_domains = existing_domains or (
                 [mail_domain] if mail_domain else []
             )
 
-        # Normalize domains: lowercase, strip whitespace, deduplicate
-        resolved_domains = sorted(
-            {
-                d.strip().lower()
-                for d in resolved_domains
-                if isinstance(d, str) and d.strip()
-            }
-        )
+        resolved_domains = domainnames.normalize_domains(resolved_domains)
 
         # When activating a subscription, we must have a valid domain.
         if is_active and not resolved_domains:
@@ -564,6 +605,11 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
         # select_for_update prevents TOCTOU races (locks held until the
         # view-level transaction commits).
         if resolved_domains and is_active:
+            # Lock each domain first: select_for_update below can only lock rows
+            # that already exist, so without this two transactions activating the
+            # same domain on different subscriptions both see "no conflict".
+            locks.lock_domains(resolved_domains)
+
             current_sub_id = instance.pk if instance else None
             overlap_q = Q()
             for domain in resolved_domains:
@@ -604,6 +650,199 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
         attrs["metadata"] = {
             "domains": resolved_domains,
         }
+
+    @staticmethod
+    def _clean_domain_list(value, field):
+        """Validate and normalize one domain list of the ``domains`` metadata."""
+        if not isinstance(value, list) or not all(isinstance(d, str) for d in value):
+            raise serializers.ValidationError(
+                {field: "Must be a list of domain strings."}
+            )
+        if len(value) > domainnames.MAX_DOMAINS:
+            raise serializers.ValidationError(
+                {field: f"Too many domains (max {domainnames.MAX_DOMAINS})."}
+            )
+        # Reject what the normalization would otherwise drop silently: a 200 with the
+        # domain quietly missing is worse than a 400 naming it.
+        invalid = domainnames.invalid_domains(value)
+        if invalid:
+            raise serializers.ValidationError(
+                {field: f"Not valid domain name(s): {', '.join(invalid)}."}
+            )
+        return domainnames.normalize_domains(value)
+
+    @staticmethod
+    def _clean_website(value, domains):
+        """Validate the per-domain website configuration against the declared domains.
+
+        Returns one entry per declared domain, falling back to the domain's default
+        mode for the ones the payload doesn't mention.
+        """
+        field = domains_service.WEBSITE_KEY
+        if not isinstance(value, dict):
+            raise serializers.ValidationError(
+                {field: "Must be an object keyed by domain name."}
+            )
+
+        unknown = sorted(set(value) - set(domains))
+        if unknown:
+            raise serializers.ValidationError(
+                {
+                    field: (
+                        f"Domain(s) {', '.join(unknown)} are not declared "
+                        f"for this organization."
+                    )
+                }
+            )
+
+        website = {}
+        for domain in domains:
+            entry = value.get(domain)
+            default = domains_service.default_mode(domain)
+            if entry is None:
+                website[domain] = {"mode": default}
+                continue
+            if not isinstance(entry, dict):
+                raise serializers.ValidationError(
+                    {field: f"{domain}: must be an object with a 'mode'."}
+                )
+            mode = entry.get("mode", default)
+            if mode not in domains_service.WEBSITE_MODES:
+                raise serializers.ValidationError(
+                    {
+                        field: (
+                            f"{domain}: unknown mode '{mode}'. Valid modes: "
+                            f"{', '.join(domains_service.WEBSITE_MODES)}."
+                        )
+                    }
+                )
+            # A collectivité's website — our parking page or its own server — is
+            # only served on an RPNT 1.2 conformant extension. Anything else may
+            # redirect to the official domain, or serve nothing.
+            allowed = domains_service.allowed_modes(domain)
+            if mode not in allowed:
+                raise serializers.ValidationError(
+                    {
+                        field: (
+                            f"{domain}: mode '{mode}' requires an RPNT 1.2 "
+                            f"conformant extension "
+                            f"({', '.join(sorted(domains_service.DOMAIN_EXTENSIONS_ALLOWED))}). "
+                            f"Valid modes for this domain: {', '.join(allowed)}."
+                        )
+                    }
+                )
+            if mode not in domains_service.MODES_WITH_TARGET:
+                website[domain] = {"mode": mode}
+                continue
+            # A mode without a usable target would silently fall back to the default
+            # mode on read; refuse it instead.
+            target = entry.get("target")
+            if not domains_service.is_valid_target(mode, target):
+                if mode == domains_service.MODE_DNS_A:
+                    expected = (
+                        f"up to {domains_service.MAX_ADDRESSES} IPv4/IPv6 "
+                        f"addresses separated by commas"
+                    )
+                elif mode == domains_service.MODE_DNS_CNAME:
+                    expected = "a domain name"
+                else:
+                    expected = "an https url"
+                raise serializers.ValidationError(
+                    {field: f"{domain}: mode '{mode}' requires {expected} as target."}
+                )
+            website[domain] = {
+                "mode": mode,
+                "target": domains_service.normalize_target(mode, target),
+            }
+        return website
+
+    def _validate_domains_subscription(self, attrs):
+        """Validate the ``domains`` service metadata (declared domains + website).
+
+        Domains are normalized, the website configuration is restricted to declared
+        domains (with a validated target for the DNS modes), and an active
+        subscription owns its domains exclusively: a domain can only have one
+        organization behind it.
+        """
+        if self._get_service_type() != domains_service.SERVICE_TYPE:
+            return
+
+        instance = self.instance
+        existing_metadata = (instance.metadata if instance else {}) or {}
+        new_metadata = attrs.get("metadata") or {}
+
+        domains = self._clean_domain_list(
+            new_metadata.get(
+                domains_service.DOMAINS_KEY,
+                existing_metadata.get(domains_service.DOMAINS_KEY, []),
+            ),
+            domains_service.DOMAINS_KEY,
+        )
+        if domains_service.WEBSITE_KEY in new_metadata:
+            website_value = new_metadata[domains_service.WEBSITE_KEY]
+        else:
+            # Keep what is stored, minus the domains that have since been removed:
+            # the caller didn't send that config, so don't reject the request over it.
+            stored = existing_metadata.get(domains_service.WEBSITE_KEY) or {}
+            website_value = (
+                {d: entry for d, entry in stored.items() if d in domains}
+                if isinstance(stored, dict)
+                else {}
+            )
+        website = self._clean_website(website_value, domains)
+
+        is_active = attrs.get("is_active", instance.is_active if instance else True)
+        if domains and is_active:
+            self._check_domains_not_claimed(domains)
+
+        # Merge so metadata keys we don't own are preserved, and store the
+        # normalized values (this also normalizes on an is_active-only PATCH).
+        attrs["metadata"] = {
+            **existing_metadata,
+            **new_metadata,
+            domains_service.DOMAINS_KEY: domains,
+            domains_service.WEBSITE_KEY: website,
+        }
+
+    def _check_domains_not_claimed(self, domains):
+        """Refuse domains already declared on another active domains subscription."""
+        # Lock the domains first: select_for_update can only lock rows that already
+        # exist, so without this two transactions claiming the same new domain both
+        # see "no conflict". Held until the view transaction commits.
+        locks.lock_domains(domains)
+
+        overlap_q = Q()
+        for domain in domains:
+            overlap_q |= Q(metadata__domains__contains=[domain])
+
+        conflicting = (
+            models.ServiceSubscription.objects.filter(
+                overlap_q,
+                service__type=domains_service.SERVICE_TYPE,
+                is_active=True,
+            )
+            .select_for_update()
+            .exclude(pk=self.instance.pk if self.instance else None)
+            .values_list("metadata", flat=True)
+        )
+
+        overlap = set()
+        for metadata in conflicting:
+            overlap |= set(
+                domainnames.normalize_domains(
+                    (metadata or {}).get(domains_service.DOMAINS_KEY)
+                )
+            ) & set(domains)
+
+        if overlap:
+            raise serializers.ValidationError(
+                {
+                    domains_service.DOMAINS_KEY: (
+                        f"Domain(s) {', '.join(sorted(overlap))} are already "
+                        f"declared by another organization."
+                    )
+                }
+            )
 
     def _is_superuser(self):
         """Check if the current request user is a superuser."""
@@ -679,14 +918,29 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
         """Validate subscription data."""
         instance = self.instance
 
-        self._validate_proconnect_subscription(attrs)
+        # DRF's JSONField accepts any JSON value, so "metadata" can arrive as a
+        # string/number/list. Every per-service validator below reads it with
+        # .get()/in and would raise AttributeError/TypeError on those — a 500 on
+        # attacker-controlled shape. Reject the shape once, here, rather than
+        # guarding three call sites.
+        if "metadata" in attrs and not isinstance(attrs["metadata"], dict):
+            raise serializers.ValidationError(
+                {"metadata": "Must be an object keyed by metadata name."}
+            )
 
-        service_type = self._get_service_type()
-        if service_type:
+        self._validate_proconnect_subscription(attrs)
+        self._validate_domains_subscription(attrs)
+
+        service = self._get_service()
+        if service:
             existing_metadata = instance.metadata if instance else {}
             self._validate_extended_admin_subscription(
-                attrs, service_type, existing_metadata
+                attrs, service.type, existing_metadata
             )
+        # Validate entitlement types here (at is_valid time) so an invalid type is
+        # rejected before the subscription is saved — otherwise the save's
+        # ProConnect push would fire and then get rolled back, drifting the provider.
+        self._validate_entitlement_types(service)
 
         return attrs
 
@@ -725,12 +979,56 @@ class ServiceSubscriptionWithServiceSerializer(ServiceSubscriptionSerializer):
         read_only_fields = [field for field in fields if field != "metadata"]
 
 
+class ProConnectDomainsSerializer(serializers.Serializer):
+    """The normalized domain buckets returned by the ``proconnect-domains`` action.
+
+    Documentation/schema only — the action returns the dict built by the service
+    layer, not a serialized model.
+    """
+
+    requested = serializers.ListField(child=serializers.CharField())
+    manual = serializers.ListField(child=serializers.CharField())
+    dpnt = serializers.ListField(child=serializers.CharField())
+    candidates = serializers.ListField(child=serializers.CharField())
+    discarded = serializers.ListField(child=serializers.CharField())
+
+    def create(self, validated_data):
+        raise NotImplementedError
+
+    def update(self, instance, validated_data):
+        raise NotImplementedError
+
+
+class ProConnectDomainsUpdateSerializer(serializers.Serializer):
+    """Body of the ``proconnect-domains`` PATCH action.
+
+    Documentation/schema only — the action validates and normalizes the buckets
+    itself (each key is optional; an omitted bucket is left untouched).
+    """
+
+    manual = serializers.ListField(child=serializers.CharField(), required=False)
+    requested = serializers.ListField(child=serializers.CharField(), required=False)
+    discarded = serializers.ListField(child=serializers.CharField(), required=False)
+
+    def create(self, validated_data):
+        raise NotImplementedError
+
+    def update(self, instance, validated_data):
+        raise NotImplementedError
+
+
 class OrganizationSerializer(serializers.ModelSerializer):
     """Serialize organizations."""
 
     service_subscriptions = ServiceSubscriptionWithServiceSerializer(
         many=True, read_only=True
     )
+    # The raw buckets, plus the two derived views the UI needs. Both are computed
+    # here so the routable rule and the pre-validation verdict are never restated
+    # in the frontend.
+    proconnect_domains = serializers.SerializerMethodField(read_only=True)
+    proconnect_routable = serializers.SerializerMethodField(read_only=True)
+    proconnect_prevalidated = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = models.Organization
@@ -753,9 +1051,70 @@ class OrganizationSerializer(serializers.ModelSerializer):
             "telephone",
             "rpnt",
             "service_public_url",
+            "proconnect_domains",
+            "proconnect_routable",
+            "proconnect_prevalidated",
             "service_subscriptions",
         ]
         read_only_fields = fields
+
+    @extend_schema_field(
+        {
+            "type": "object",
+            "description": (
+                "The org's ProConnect domains by provenance (dpnt/candidates/manual) "
+                "and status (requested/discarded)."
+            ),
+            "properties": {
+                bucket: {"type": "array", "items": {"type": "string"}}
+                for bucket in proconnect_service.PROCONNECT_DOMAIN_BUCKETS
+            },
+        }
+    )
+    def get_proconnect_domains(self, instance):
+        """The normalized buckets, as stored."""
+        return proconnect_service.proconnect_domains(instance)
+
+    @extend_schema_field(
+        {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": (
+                "The domains the org may route to a ProConnect provider — the "
+                "buckets with the discard rules applied. The UI offers exactly these."
+            ),
+        }
+    )
+    def get_proconnect_routable(self, instance):
+        """The routable set (see ``core.services.proconnect.domain_provenances``).
+
+        Org-wide: an org can have several ProConnect services, and this payload is
+        not about one of them, so "live" here means live on any of its providers.
+        Routing the same domain to two providers is refused on write anyway.
+        """
+        return proconnect_service.routable_domains(instance)
+
+    @extend_schema_field(
+        {
+            "type": "object",
+            "nullable": True,
+            "additionalProperties": {"type": "array", "items": {"type": "string"}},
+            "description": (
+                "Per idp with a known deployed allowlist, the org domains already in "
+                "it. Null when no allowlist is known (pre-validation unknown)."
+            ),
+        }
+    )
+    def get_proconnect_prevalidated(self, instance):
+        """The subset of the org's domains already in the *deployed* allowlist.
+
+        From the cache filled by ``proconnect_fetch_prevalidated``. Null means "we
+        do not know that provider's allowlist", which the UI shows as unknown
+        rather than as "not pre-validated".
+        """
+        return proconnect_service.prevalidated_org_domains(
+            instance, self.context.get("proconnect_prevalidated_allowlists")
+        )
 
     def to_representation(self, instance):
         """Convert the representation to the desired format."""

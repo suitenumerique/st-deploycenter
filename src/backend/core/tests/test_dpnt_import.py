@@ -332,3 +332,70 @@ def test_dpnt_auto_join(_mock_dl):
     )
     assert result2["auto_join"]["operator_organization_roles_created"] == 0
     assert result2["auto_join"]["service_subscriptions_created"] == 0
+
+
+def _mock_download_with_a_malformed_email():
+    """A dataset whose first row has an adresse_messagerie with no "@"."""
+    broken = {
+        "type": "commune",
+        "libelle": "Commune Cassée",
+        "siret": "70000000000001",
+        "siren": "700000000",
+        "code_insee": "70001",
+        "code_postal": "99999",
+        "population": 100,
+        # RPNT says the messaging domain is valid, so the import reads it — but
+        # there is no domain to read.
+        "rpnt": ["2.1", "2.2"],
+        "adresse_messagerie": "contact.commune-cassee.fr",
+    }
+    return {
+        "status": "success",
+        "message": "Downloaded fake records",
+        "data": [broken, *FAKE_DPNT_DATA],
+    }
+
+
+@pytest.mark.django_db
+@patch(
+    "core.tasks.dpnt.download_dpnt_dataset",
+    side_effect=_mock_download_with_a_malformed_email,
+)
+def test_dpnt_import_survives_a_malformed_email(_mock_dl):
+    """A row we cannot read a domain from is counted as an error, not fatal."""
+    result = import_dpnt_dataset.apply(kwargs={"force_update": True}).get()
+
+    assert result["errors"] == 1
+    assert "70000000000001" in " ".join(result["errors_details"])
+    assert not Organization.objects.filter(siret="70000000000001").exists()
+    # The rest of the dataset was still imported.
+    assert result["created"] > 0
+    assert Organization.objects.filter(siret="11111111100001").exists()
+
+
+def _mock_download_with_malformed_rows():
+    """A dataset whose first rows are unparseable: not a dict, and no "type"."""
+    return {
+        "status": "success",
+        "message": "Downloaded fake records",
+        "data": [
+            "not a dict",
+            {"libelle": "No type", "siret": "80000000000001"},
+            *FAKE_DPNT_DATA,
+        ],
+    }
+
+
+@pytest.mark.django_db
+@patch(
+    "core.tasks.dpnt.download_dpnt_dataset",
+    side_effect=_mock_download_with_malformed_rows,
+)
+def test_dpnt_import_survives_unparseable_rows(_mock_dl):
+    """A row that is not a dict, or lacks "type", costs one row — not the import."""
+    result = import_dpnt_dataset.apply(kwargs={"force_update": True}).get()
+
+    assert result["errors"] == 2
+    # The rest of the dataset still imported.
+    assert result["created"] > 0
+    assert Organization.objects.filter(siret="11111111100001").exists()

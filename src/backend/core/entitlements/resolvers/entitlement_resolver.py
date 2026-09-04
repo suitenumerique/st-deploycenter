@@ -80,14 +80,6 @@ def get_context_account_unique_identifier(context):
     )
 
 
-class MetricNotFoundError(Exception):
-    """
-    Exception raised when a metric is not found.
-    """
-
-    pass
-
-
 class EntitlementResolver:
     """
     Base entitlement resolver.

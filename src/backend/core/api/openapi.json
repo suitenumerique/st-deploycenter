@@ -1,0 +1,2947 @@
+{
+    "openapi": "3.0.3",
+    "info": {
+        "title": "Deploy Center API",
+        "version": "1.0.0 (v1.0)",
+        "description": "This is the Deploy Center API schema."
+    },
+    "paths": {
+        "/api/v1.0/accounts/{id}/": {
+            "get": {
+                "operationId": "accounts_retrieve",
+                "description": "ViewSet for Account model.\n\nGET /api/v1.0/accounts/<account_id>/\n    Get the account for the given account id.\n\nPATCH /api/v1.0/accounts/<account_id>/\n    Partially update the account for the given account id.\n\nPATCH /api/v1.0/accounts/<account_id>/services/<service_id>/\n    Partially update the service link for the given account and service.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "accounts"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Account"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "put": {
+                "operationId": "accounts_update",
+                "description": "ViewSet for Account model.\n\nGET /api/v1.0/accounts/<account_id>/\n    Get the account for the given account id.\n\nPATCH /api/v1.0/accounts/<account_id>/\n    Partially update the account for the given account id.\n\nPATCH /api/v1.0/accounts/<account_id>/services/<service_id>/\n    Partially update the service link for the given account and service.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "accounts"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AccountRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Account"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "accounts_partial_update",
+                "description": "ViewSet for Account model.\n\nGET /api/v1.0/accounts/<account_id>/\n    Get the account for the given account id.\n\nPATCH /api/v1.0/accounts/<account_id>/\n    Partially update the account for the given account id.\n\nPATCH /api/v1.0/accounts/<account_id>/services/<service_id>/\n    Partially update the service link for the given account and service.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "accounts"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedAccountRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Account"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "accounts_destroy",
+                "description": "ViewSet for Account model.\n\nGET /api/v1.0/accounts/<account_id>/\n    Get the account for the given account id.\n\nPATCH /api/v1.0/accounts/<account_id>/\n    Partially update the account for the given account id.\n\nPATCH /api/v1.0/accounts/<account_id>/services/<service_id>/\n    Partially update the service link for the given account and service.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "accounts"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/accounts/{id}/services/{service_id}/": {
+            "patch": {
+                "operationId": "accounts_services_partial_update",
+                "description": "Partially update the service link for the given account and service.\n\nAccepts both legacy list format and new dict format for roles:\n- List (legacy): {\"roles\": [\"admin\", \"editor\"]} → each role gets empty scope\n- Dict (new): {\"roles\": {\"admin\": {\"scope\": {\"domains\": [\"x.fr\"]}}}}",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "service_id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "accounts"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedAccountRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Account"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/config/": {
+            "get": {
+                "operationId": "config_retrieve",
+                "description": "Return a dictionary of public settings for the frontend to consume.",
+                "tags": [
+                    "config"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    },
+                    {}
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ENVIRONMENT": {
+                                            "type": "string",
+                                            "readOnly": true
+                                        },
+                                        "POSTHOG_KEY": {
+                                            "type": "string",
+                                            "nullable": true,
+                                            "readOnly": true
+                                        },
+                                        "POSTHOG_HOST": {
+                                            "type": "string",
+                                            "nullable": true,
+                                            "readOnly": true
+                                        },
+                                        "POSTHOG_SURVEY_ID": {
+                                            "type": "string",
+                                            "nullable": true,
+                                            "readOnly": true
+                                        },
+                                        "LANGUAGES": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            },
+                                            "readOnly": true
+                                        },
+                                        "LANGUAGE_CODE": {
+                                            "type": "string",
+                                            "readOnly": true
+                                        }
+                                    },
+                                    "required": [
+                                        "ENVIRONMENT",
+                                        "POSTHOG_KEY",
+                                        "POSTHOG_HOST",
+                                        "POSTHOG_SURVEY_ID",
+                                        "LANGUAGES",
+                                        "LANGUAGE_CODE"
+                                    ]
+                                }
+                            }
+                        },
+                        "description": "A dictionary of public configuration settings."
+                    }
+                }
+            }
+        },
+        "/api/v1.0/domains/": {
+            "get": {
+                "operationId": "domains_list",
+                "description": "List the domains declared by organizations through the domains service. Requires 'Authorization: Bearer <DOMAINS_API_KEY>'.",
+                "tags": [
+                    "domains"
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DomainExport"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/entitlements/": {
+            "get": {
+                "operationId": "entitlements_retrieve",
+                "description": "Get entitlements.",
+                "tags": [
+                    "entitlements"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No response body"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "entitlements_create",
+                "description": "Get entitlements, exactly like GET (same query params, same response).\n\nAdditionally accepts an optional JSON body:\n{\"usage_metrics\": [<items in the usage_metrics_endpoint format>]}\nPushed items are stored as if they had been scraped, and suppress the\nHTTP scrape back to the service for each account type they cover\n(the query param account_type and/or \"organization\"). Scopes not\ncovered by the body are still scraped as usual.",
+                "tags": [
+                    "entitlements"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/EntitlementUsageMetricsPushRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Same response as GET."
+                    }
+                }
+            }
+        },
+        "/api/v1.0/entitlements/{id}/": {
+            "get": {
+                "operationId": "entitlements_retrieve_2",
+                "description": "ViewSet for SubscriptionEntitlement model.\n\nGET /api/v1.0/entitlements/<entitlement_id>/\n    Get the entitlement for the given entitlement id.\n\nPATCH /api/v1.0/entitlements/<entitlement_id>/\n    Partially update the entitlement for the given entitlement id.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "entitlements"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Entitlement"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "put": {
+                "operationId": "entitlements_update",
+                "description": "ViewSet for SubscriptionEntitlement model.\n\nGET /api/v1.0/entitlements/<entitlement_id>/\n    Get the entitlement for the given entitlement id.\n\nPATCH /api/v1.0/entitlements/<entitlement_id>/\n    Partially update the entitlement for the given entitlement id.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "entitlements"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/EntitlementRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Entitlement"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "entitlements_partial_update",
+                "description": "ViewSet for SubscriptionEntitlement model.\n\nGET /api/v1.0/entitlements/<entitlement_id>/\n    Get the entitlement for the given entitlement id.\n\nPATCH /api/v1.0/entitlements/<entitlement_id>/\n    Partially update the entitlement for the given entitlement id.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "entitlements"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedEntitlementRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Entitlement"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/lagaufre/services/": {
+            "get": {
+                "operationId": "lagaufre_services_retrieve",
+                "description": "Return a list of services with their subscription status for an organization.\n\nQuery parameters:\n- operator: Operator ID (required)\n- siret: SIRET code (14 digits, optional)\n- siren: SIREN code (9 digits, optional)\n- insee: INSEE code (5 digits, optional)\n\nIf no organization identifier is provided, returns all services without\nsubscription information (organization-less mode).\n\nReturns services ordered by subscription status (subscribed first) when\norganization is provided, or by name when no organization is provided.",
+                "tags": [
+                    "lagaufre"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    },
+                    {}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/metrics/subscriptions-by-service/": {
+            "get": {
+                "operationId": "metrics_subscriptions_by_service_retrieve",
+                "description": "List distinct SIRETs with active subscriptions for a service.",
+                "tags": [
+                    "metrics"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/operators/": {
+            "get": {
+                "operationId": "operators_list",
+                "description": "ViewSet for Operator model.\n\nGET /api/v1.0/operators/\n    Return the list of operators based on the user's permissions.\n\nGET /api/v1.0/operators/<operator_id>\n    Return the operator with the given id based on the user's permissions.\n\nGET /api/v1.0/operators/<operator_id>/services/\n    Return the list of services configured for this operator.",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "required": false,
+                        "in": "query",
+                        "description": "A page number within the paginated result set.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "page_size",
+                        "required": false,
+                        "in": "query",
+                        "description": "Number of results to return per page.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "tags": [
+                    "operators"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PaginatedOperatorList"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/operators/{operator_id}/organizations/": {
+            "get": {
+                "operationId": "operators_organizations_list",
+                "description": "ViewSet for Organization model nested in Operator model.\n\nGET /api/v1.0/operators/<operator_id>/organizations/\n    Return the list of organizations for the given operator based on the user's permissions.\n    Supports both user authentication and external API key authentication.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "operator_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    },
+                    {
+                        "name": "ordering",
+                        "required": false,
+                        "in": "query",
+                        "description": "Which field to use when ordering the results.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "page",
+                        "required": false,
+                        "in": "query",
+                        "description": "A page number within the paginated result set.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "tags": [
+                    "operators"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PaginatedOrganizationList"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/operators/{operator_id}/organizations/{organization_id}/accounts/": {
+            "get": {
+                "operationId": "operators_organizations_accounts_list",
+                "description": "ViewSet for OrganizationAccounts model.\n\nPOST /api/v1.0/operators/<operator_id>/organizations/<organization_id>/accounts/\n    Create the accounts for the given organization.\n\nGET /api/v1.0/operators/<operator_id>/organizations/<organization_id>/accounts/\n    Get the accounts for the given organization.\n    Supports filtering by type, role, and search by email/external_id.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "operator_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    },
+                    {
+                        "name": "ordering",
+                        "required": false,
+                        "in": "query",
+                        "description": "Which field to use when ordering the results.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "path",
+                        "name": "organization_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    },
+                    {
+                        "name": "page",
+                        "required": false,
+                        "in": "query",
+                        "description": "A page number within the paginated result set.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "role",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "search",
+                        "required": false,
+                        "in": "query",
+                        "description": "A search term.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "type",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "operators"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PaginatedAccountList"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "post": {
+                "operationId": "operators_organizations_accounts_create",
+                "description": "Create or update an account (upsert via find_by_identifiers).\n\nIf an existing account is found by external_id or email fallback,\nits roles are updated instead of creating a duplicate.\nReturns 201 on creation, 200 on update.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "operator_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "organization_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "operators"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AccountRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Account"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/operators/{operator_id}/organizations/{organization_id}/domains-check/": {
+            "post": {
+                "operationId": "domains_check",
+                "description": "Check the DNS delegation and the RPNT 1.2 conformance of a list of domains for an organization.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "operator_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "organization_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "domains"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DomainCheckRequestRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DomainCheck"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/operators/{operator_id}/organizations/{organization_id}/services/": {
+            "get": {
+                "operationId": "operators_organizations_services_list",
+                "description": "ViewSet for OrganizationService model.\n\nGET /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/\n    Return the list of services including the subscription for the given organization\n    based on the user's permissions.\n\nSupports both user authentication and external API key authentication.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "operator_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "organization_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    },
+                    {
+                        "name": "page",
+                        "required": false,
+                        "in": "query",
+                        "description": "A page number within the paginated result set.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "tags": [
+                    "operators"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PaginatedOrganizationServiceList"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/operators/{operator_id}/organizations/{organization_id}/services/{id}/": {
+            "get": {
+                "operationId": "operators_organizations_services_retrieve",
+                "description": "ViewSet for OrganizationService model.\n\nGET /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/\n    Return the list of services including the subscription for the given organization\n    based on the user's permissions.\n\nSupports both user authentication and external API key authentication.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "integer",
+                            "description": "primary key for the record as numeric ID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "operator_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "organization_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "operators"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/OrganizationService"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/operators/{operator_id}/organizations/{organization_id}/services/{service_id}/subscription/": {
+            "get": {
+                "operationId": "operators_organizations_services_subscription_retrieve",
+                "description": "Return the subscription for the operator-organization-service triple.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "operator_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "organization_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "service_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "operators"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServiceSubscription"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "operators_organizations_services_subscription_partial_update",
+                "description": "Partially update or create the subscription for the operator-organization-service triple.\nCreates the subscription if it doesn't exist (upsert behavior).",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "operator_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "organization_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "service_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "operators"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedServiceSubscriptionRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServiceSubscription"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "operators_organizations_services_subscription_destroy",
+                "description": "Delete the subscription for the operator-organization-service triple.\n\nAtomic so that a failed ProConnect domains push (fired on delete) rolls back\nthe deletion instead of drifting from the provider.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "operator_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "organization_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "service_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "operators"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/operators/{operator_id}/organizations/{organization_id}/services/{service_id}/subscription/entitlements/": {
+            "get": {
+                "operationId": "operators_organizations_services_subscription_entitlements_list",
+                "description": "ViewSet for OrganizationServiceSubscriptionEntitlement model.\n\nGET /api/v1.0/operators/<operator_id>/organizations/<organization_id>/services/<service_id>/subscription/entitlements/\n    Get the entitlements for the given organization and service.\n    Supports filtering.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "account__external_id",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "account__id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "account_type",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "in": "path",
+                        "name": "operator_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "organization_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    },
+                    {
+                        "name": "page",
+                        "required": false,
+                        "in": "query",
+                        "description": "A page number within the paginated result set.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "path",
+                        "name": "service_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "type",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "operators"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PaginatedEntitlementList"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/operators/{operator_id}/organizations/{id}/": {
+            "get": {
+                "operationId": "operators_organizations_retrieve",
+                "description": "ViewSet for Organization model nested in Operator model.\n\nGET /api/v1.0/operators/<operator_id>/organizations/\n    Return the list of organizations for the given operator based on the user's permissions.\n    Supports both user authentication and external API key authentication.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "operator_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "operators"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Organization"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/operators/{operator_id}/organizations/{id}/operator-role/": {
+            "patch": {
+                "operationId": "operators_organizations_operator_role_partial_update",
+                "description": "Update the OperatorOrganizationRole settings for this org+operator.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "operator_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "operators"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Organization"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/operators/{operator_id}/organizations/{id}/proconnect-domains/": {
+            "patch": {
+                "operationId": "operators_organizations_proconnect_domains_partial_update",
+                "description": "Update the organization's ProConnect domain buckets.\n\nBody may contain \"manual\", \"requested\" and/or \"discarded\" lists (partial):\n- \"requested\": any operator member — domains requested for a superuser to\n  validate (i.e. move to \"manual\").\n- \"manual\" / \"discarded\": superuser only.\n\nThe system-managed buckets (\"dpnt\", \"candidates\") are preserved.\nEach change is recorded as an admin LogEntry on the organization.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "operator_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "operators"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedProConnectDomainsUpdateRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProConnectDomains"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/operators/{id}/": {
+            "get": {
+                "operationId": "operators_retrieve",
+                "description": "ViewSet for Operator model.\n\nGET /api/v1.0/operators/\n    Return the list of operators based on the user's permissions.\n\nGET /api/v1.0/operators/<operator_id>\n    Return the operator with the given id based on the user's permissions.\n\nGET /api/v1.0/operators/<operator_id>/services/\n    Return the list of services configured for this operator.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "operators"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Operator"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/operators/{id}/services/": {
+            "get": {
+                "operationId": "operators_services_retrieve",
+                "description": "Return the list of services configured for this operator.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "operators"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Operator"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/proconnect/oidc_providers.yaml": {
+            "get": {
+                "operationId": "proconnect_oidc_providers_retrieve",
+                "description": "Return the ProConnect api-partenaires oidc_providers allowlist, generated from DB data, as text/plain YAML. Requires 'Authorization: Bearer <key>' when PROCONNECT_ALLOWLIST_VIEW_API_KEY is set.",
+                "tags": [
+                    "proconnect"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The oidc_providers allowlist as text/plain YAML."
+                    },
+                    "403": {
+                        "description": "Missing or invalid allowlist API key."
+                    }
+                }
+            }
+        },
+        "/api/v1.0/servicelogo/": {
+            "get": {
+                "operationId": "servicelogo_retrieve",
+                "description": "Public ViewSet for serving service logos as SVG files.",
+                "tags": [
+                    "servicelogo"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    },
+                    {}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/servicelogo/{id}/": {
+            "get": {
+                "operationId": "servicelogo_retrieve_2",
+                "description": "Serve the service logo as an SVG file with proper headers.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "integer",
+                            "description": "primary key for the record as numeric ID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "servicelogo"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    },
+                    {}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/users/{id}/": {
+            "put": {
+                "operationId": "users_update",
+                "description": "ViewSet for User model.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "users"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UserRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/User"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "users_partial_update",
+                "description": "ViewSet for User model.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "primary key for the record as UUID"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "users"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedUserRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/User"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/users/me/": {
+            "get": {
+                "operationId": "users_me_retrieve",
+                "description": "Return information on currently logged user",
+                "tags": [
+                    "users"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/User"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "Account": {
+                "type": "object",
+                "description": "Serialize accounts.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "description": "Email address of the account",
+                        "maxLength": 255
+                    },
+                    "external_id": {
+                        "type": "string",
+                        "description": "External ID of the account",
+                        "maxLength": 255
+                    },
+                    "type": {
+                        "type": "string",
+                        "title": "Account type",
+                        "description": "Type of account",
+                        "maxLength": 50
+                    },
+                    "roles": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "maxLength": 100
+                        }
+                    },
+                    "service_links": {
+                        "type": "string",
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "id",
+                    "service_links"
+                ]
+            },
+            "AccountRequest": {
+                "type": "object",
+                "description": "Serialize accounts.",
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "description": "Email address of the account",
+                        "maxLength": 255
+                    },
+                    "external_id": {
+                        "type": "string",
+                        "description": "External ID of the account",
+                        "maxLength": 255
+                    },
+                    "type": {
+                        "type": "string",
+                        "title": "Account type",
+                        "description": "Type of account",
+                        "maxLength": 50
+                    },
+                    "roles": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                        }
+                    }
+                }
+            },
+            "DomainCheck": {
+                "type": "object",
+                "description": "The domains check payload. Documentation/schema only.",
+                "properties": {
+                    "expected_nameservers": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "modes_with_target": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/DomainCheckEntry"
+                        }
+                    }
+                },
+                "required": [
+                    "expected_nameservers",
+                    "modes_with_target",
+                    "results"
+                ]
+            },
+            "DomainCheckEntry": {
+                "type": "object",
+                "description": "One checked domain. Documentation/schema only.",
+                "properties": {
+                    "domain": {
+                        "type": "string"
+                    },
+                    "nameservers": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "nameservers_valid": {
+                        "type": "boolean"
+                    },
+                    "error": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "rpnt_1_2_valid": {
+                        "type": "boolean"
+                    },
+                    "extension": {
+                        "type": "string"
+                    },
+                    "allowed_modes": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "default_mode": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "allowed_modes",
+                    "default_mode",
+                    "domain",
+                    "error",
+                    "extension",
+                    "nameservers",
+                    "nameservers_valid",
+                    "rpnt_1_2_valid"
+                ]
+            },
+            "DomainCheckRequestRequest": {
+                "type": "object",
+                "description": "The domains to check.",
+                "properties": {
+                    "domains": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "maxItems": 100
+                    }
+                },
+                "required": [
+                    "domains"
+                ]
+            },
+            "DomainExport": {
+                "type": "object",
+                "description": "The domains export payload. Documentation/schema only.",
+                "properties": {
+                    "count": {
+                        "type": "integer"
+                    },
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/DomainExportEntry"
+                        }
+                    }
+                },
+                "required": [
+                    "count",
+                    "results"
+                ]
+            },
+            "DomainExportEntry": {
+                "type": "object",
+                "description": "One exported domain. Documentation/schema only.",
+                "properties": {
+                    "domain": {
+                        "type": "string"
+                    },
+                    "website": {
+                        "type": "object",
+                        "additionalProperties": {}
+                    },
+                    "records": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/DomainRecord"
+                        }
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "organization": {
+                        "type": "object",
+                        "additionalProperties": {}
+                    },
+                    "operator": {
+                        "type": "object",
+                        "additionalProperties": {}
+                    }
+                },
+                "required": [
+                    "domain",
+                    "operator",
+                    "organization",
+                    "records",
+                    "updated_at",
+                    "website"
+                ]
+            },
+            "DomainRecord": {
+                "type": "object",
+                "description": "One DNS record to publish. Documentation/schema only.",
+                "properties": {
+                    "prefix": {
+                        "type": "string"
+                    },
+                    "type": {
+                        "type": "string"
+                    },
+                    "value": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "prefix",
+                    "type",
+                    "value"
+                ]
+            },
+            "Entitlement": {
+                "type": "object",
+                "description": "Serialize entitlements.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "type": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "Type of entitlement"
+                    },
+                    "config": {
+                        "nullable": true,
+                        "title": "Configuration",
+                        "description": "Base configuration data for metrics scraping and service operation"
+                    },
+                    "account_type": {
+                        "type": "string",
+                        "description": "Type of account",
+                        "maxLength": 50
+                    },
+                    "account": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Account this entitlement is associated with",
+                        "nullable": true
+                    }
+                },
+                "required": [
+                    "id",
+                    "type"
+                ]
+            },
+            "EntitlementConfigInput": {
+                "type": "object",
+                "description": "Serializer for entitlement config input when creating/updating subscriptions.\n\nThis is a read-only serializer used only for validation of entitlement config input.",
+                "properties": {
+                    "type": {
+                        "type": "string"
+                    },
+                    "account_type": {
+                        "type": "string"
+                    },
+                    "config": {
+                        "type": "object",
+                        "additionalProperties": {}
+                    }
+                },
+                "required": [
+                    "account_type",
+                    "config",
+                    "type"
+                ]
+            },
+            "EntitlementConfigInputRequest": {
+                "type": "object",
+                "description": "Serializer for entitlement config input when creating/updating subscriptions.\n\nThis is a read-only serializer used only for validation of entitlement config input.",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "account_type": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "config": {
+                        "type": "object",
+                        "additionalProperties": {}
+                    }
+                },
+                "required": [
+                    "account_type",
+                    "config",
+                    "type"
+                ]
+            },
+            "EntitlementRequest": {
+                "type": "object",
+                "description": "Serialize entitlements.",
+                "properties": {
+                    "config": {
+                        "nullable": true,
+                        "title": "Configuration",
+                        "description": "Base configuration data for metrics scraping and service operation"
+                    },
+                    "account_type": {
+                        "type": "string",
+                        "description": "Type of account",
+                        "maxLength": 50
+                    },
+                    "account": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Account this entitlement is associated with",
+                        "nullable": true
+                    }
+                }
+            },
+            "EntitlementUsageMetricsPushRequest": {
+                "type": "object",
+                "description": "Optional POST body: usage metric items in the same format as the\nservice's usage_metrics_endpoint results, passed through unchanged\nto store_service_metrics.",
+                "properties": {
+                    "usage_metrics": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": {}
+                        }
+                    }
+                }
+            },
+            "LanguageEnum": {
+                "enum": [
+                    "fr-fr"
+                ],
+                "type": "string",
+                "description": "* `fr-fr` - Français"
+            },
+            "MaturityEnum": {
+                "enum": [
+                    "alpha",
+                    "beta",
+                    "stable",
+                    "deprecated"
+                ],
+                "type": "string",
+                "description": "* `alpha` - Alpha\n* `beta` - Beta\n* `stable` - Stable\n* `deprecated` - Deprecated"
+            },
+            "Operator": {
+                "type": "object",
+                "description": "Serialize operators.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "readOnly": true,
+                        "title": "Nom",
+                        "description": "Name of the operator organization"
+                    },
+                    "siret": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "SIRET number of the operator organization"
+                    },
+                    "url": {
+                        "type": "string",
+                        "format": "uri",
+                        "readOnly": true,
+                        "nullable": true,
+                        "title": "Homepage",
+                        "description": "Homepage URL of the operator"
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "readOnly": true,
+                        "title": "Actif",
+                        "description": "Whether this operator is currently active"
+                    },
+                    "user_role": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "config": {
+                        "type": "string",
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "config",
+                    "id",
+                    "is_active",
+                    "name",
+                    "siret",
+                    "url",
+                    "user_role"
+                ]
+            },
+            "Organization": {
+                "type": "object",
+                "description": "Serialize organizations.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "readOnly": true,
+                        "title": "Nom",
+                        "description": "Official name of the collectivité"
+                    },
+                    "type": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "Type of collectivité (commune, epci, departement, region)"
+                    },
+                    "siret": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "SIRET code of the main establishment"
+                    },
+                    "siren": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "SIREN code of the organization"
+                    },
+                    "code_postal": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "title": "Postal code",
+                        "description": "Postal code of the collectivité"
+                    },
+                    "code_insee": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "title": "INSEE code",
+                        "description": "INSEE administrative code"
+                    },
+                    "population": {
+                        "type": "integer",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Population count from latest INSEE data"
+                    },
+                    "epci_libelle": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "title": "EPCI name",
+                        "description": "Name of the EPCI the commune belongs to"
+                    },
+                    "epci_siren": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "SIREN code of the EPCI"
+                    },
+                    "epci_population": {
+                        "type": "integer",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Population of the EPCI"
+                    },
+                    "departement_code_insee": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "title": "Department code INSEE",
+                        "description": "INSEE department code"
+                    },
+                    "region_code_insee": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "INSEE region code"
+                    },
+                    "adresse_messagerie": {
+                        "type": "string",
+                        "format": "email",
+                        "readOnly": true,
+                        "nullable": true,
+                        "title": "Adresse électronique",
+                        "description": "Official email address from Service-Public.fr"
+                    },
+                    "site_internet": {
+                        "type": "string",
+                        "format": "uri",
+                        "readOnly": true,
+                        "nullable": true,
+                        "title": "Website",
+                        "description": "Official website URL from Service-Public.fr"
+                    },
+                    "telephone": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "title": "Phone",
+                        "description": "Official phone number from Service-Public.fr"
+                    },
+                    "rpnt": {
+                        "readOnly": true,
+                        "nullable": true,
+                        "title": "RPNT criteria",
+                        "description": "List of valid RPNT criteria and meta-criteria"
+                    },
+                    "service_public_url": {
+                        "type": "string",
+                        "format": "uri",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "URL of the associated page on Service-Public.fr"
+                    },
+                    "proconnect_domains": {
+                        "type": "object",
+                        "description": "The org's ProConnect domains by provenance (dpnt/candidates/manual) and status (requested/discarded).",
+                        "properties": {
+                            "requested": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            "manual": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            "dpnt": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            "candidates": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            "discarded": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "readOnly": true
+                    },
+                    "proconnect_routable": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "The domains the org may route to a ProConnect provider — the buckets with the discard rules applied. The UI offers exactly these.",
+                        "readOnly": true
+                    },
+                    "proconnect_prevalidated": {
+                        "type": "object",
+                        "nullable": true,
+                        "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "description": "Per idp with a known deployed allowlist, the org domains already in it. Null when no allowlist is known (pre-validation unknown).",
+                        "readOnly": true
+                    },
+                    "service_subscriptions": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ServiceSubscriptionWithService"
+                        },
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "adresse_messagerie",
+                    "code_insee",
+                    "code_postal",
+                    "departement_code_insee",
+                    "epci_libelle",
+                    "epci_population",
+                    "epci_siren",
+                    "id",
+                    "name",
+                    "population",
+                    "proconnect_domains",
+                    "proconnect_prevalidated",
+                    "proconnect_routable",
+                    "region_code_insee",
+                    "rpnt",
+                    "service_public_url",
+                    "service_subscriptions",
+                    "siren",
+                    "siret",
+                    "site_internet",
+                    "telephone",
+                    "type"
+                ]
+            },
+            "OrganizationService": {
+                "type": "object",
+                "description": "Serialize services for an organization. It contains the subscription for the given organization.",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true,
+                        "description": "primary key for the record as numeric ID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "readOnly": true,
+                        "title": "Nom",
+                        "description": "Human-readable name of the service"
+                    },
+                    "instance_name": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Name of the instance of the service"
+                    },
+                    "type": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "Type of service (activates custom implementation code)"
+                    },
+                    "url": {
+                        "type": "string",
+                        "format": "uri",
+                        "readOnly": true,
+                        "description": "URL where the service can be accessed"
+                    },
+                    "description": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Description of what this service provides"
+                    },
+                    "maturity": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/MaturityEnum"
+                            }
+                        ],
+                        "readOnly": true,
+                        "description": "Maturity level of the service\n\n* `alpha` - Alpha\n* `beta` - Beta\n* `stable` - Stable\n* `deprecated` - Deprecated"
+                    },
+                    "launch_date": {
+                        "type": "string",
+                        "format": "date",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Date of the launch of the service (out of beta)"
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "readOnly": true,
+                        "title": "Actif",
+                        "description": "Whether this service is currently available for subscription"
+                    },
+                    "hidden": {
+                        "type": "boolean",
+                        "readOnly": true,
+                        "description": "Whether this service should be hidden from frontend listings"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "logo": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "config": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "entitlement_defaults": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "subscription": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "operator_config": {
+                        "type": "string",
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "config",
+                    "created_at",
+                    "description",
+                    "entitlement_defaults",
+                    "hidden",
+                    "id",
+                    "instance_name",
+                    "is_active",
+                    "launch_date",
+                    "logo",
+                    "maturity",
+                    "name",
+                    "operator_config",
+                    "subscription",
+                    "type",
+                    "url"
+                ]
+            },
+            "PaginatedAccountList": {
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "example": 123
+                    },
+                    "next": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=4"
+                    },
+                    "previous": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=2"
+                    },
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Account"
+                        }
+                    }
+                }
+            },
+            "PaginatedEntitlementList": {
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "example": 123
+                    },
+                    "next": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=4"
+                    },
+                    "previous": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=2"
+                    },
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Entitlement"
+                        }
+                    }
+                }
+            },
+            "PaginatedOperatorList": {
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "example": 123
+                    },
+                    "next": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=4"
+                    },
+                    "previous": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=2"
+                    },
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Operator"
+                        }
+                    }
+                }
+            },
+            "PaginatedOrganizationList": {
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "example": 123
+                    },
+                    "next": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=4"
+                    },
+                    "previous": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=2"
+                    },
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Organization"
+                        }
+                    }
+                }
+            },
+            "PaginatedOrganizationServiceList": {
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "example": 123
+                    },
+                    "next": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=4"
+                    },
+                    "previous": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=2"
+                    },
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/OrganizationService"
+                        }
+                    }
+                }
+            },
+            "PatchedAccountRequest": {
+                "type": "object",
+                "description": "Serialize accounts.",
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "description": "Email address of the account",
+                        "maxLength": 255
+                    },
+                    "external_id": {
+                        "type": "string",
+                        "description": "External ID of the account",
+                        "maxLength": 255
+                    },
+                    "type": {
+                        "type": "string",
+                        "title": "Account type",
+                        "description": "Type of account",
+                        "maxLength": 50
+                    },
+                    "roles": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                        }
+                    }
+                }
+            },
+            "PatchedEntitlementRequest": {
+                "type": "object",
+                "description": "Serialize entitlements.",
+                "properties": {
+                    "config": {
+                        "nullable": true,
+                        "title": "Configuration",
+                        "description": "Base configuration data for metrics scraping and service operation"
+                    },
+                    "account_type": {
+                        "type": "string",
+                        "description": "Type of account",
+                        "maxLength": 50
+                    },
+                    "account": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Account this entitlement is associated with",
+                        "nullable": true
+                    }
+                }
+            },
+            "PatchedProConnectDomainsUpdateRequest": {
+                "type": "object",
+                "description": "Body of the ``proconnect-domains`` PATCH action.\n\nDocumentation/schema only — the action validates and normalizes the buckets\nitself (each key is optional; an omitted bucket is left untouched).",
+                "properties": {
+                    "manual": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1
+                        }
+                    },
+                    "requested": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1
+                        }
+                    },
+                    "discarded": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1
+                        }
+                    }
+                }
+            },
+            "PatchedServiceSubscriptionRequest": {
+                "type": "object",
+                "description": "Serialize service subscriptions.",
+                "properties": {
+                    "metadata": {
+                        "description": "Additional metadata for this subscription"
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "title": "Actif",
+                        "description": "Whether this subscription is currently active"
+                    },
+                    "entitlements_input": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/EntitlementConfigInputRequest"
+                        },
+                        "writeOnly": true
+                    }
+                }
+            },
+            "PatchedUserRequest": {
+                "type": "object",
+                "description": "Serialize users.",
+                "properties": {
+                    "language": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/LanguageEnum"
+                            }
+                        ],
+                        "description": "The language in which the user wants to see the interface.\n\n* `fr-fr` - Français"
+                    }
+                }
+            },
+            "ProConnectDomains": {
+                "type": "object",
+                "description": "The normalized domain buckets returned by the ``proconnect-domains`` action.\n\nDocumentation/schema only — the action returns the dict built by the service\nlayer, not a serialized model.",
+                "properties": {
+                    "requested": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "manual": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "dpnt": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "candidates": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "discarded": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "required": [
+                    "candidates",
+                    "discarded",
+                    "dpnt",
+                    "manual",
+                    "requested"
+                ]
+            },
+            "Service": {
+                "type": "object",
+                "description": "Serialize services.",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true,
+                        "description": "primary key for the record as numeric ID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "readOnly": true,
+                        "title": "Nom",
+                        "description": "Human-readable name of the service"
+                    },
+                    "instance_name": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Name of the instance of the service"
+                    },
+                    "type": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "Type of service (activates custom implementation code)"
+                    },
+                    "url": {
+                        "type": "string",
+                        "format": "uri",
+                        "readOnly": true,
+                        "description": "URL where the service can be accessed"
+                    },
+                    "description": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Description of what this service provides"
+                    },
+                    "maturity": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/MaturityEnum"
+                            }
+                        ],
+                        "readOnly": true,
+                        "description": "Maturity level of the service\n\n* `alpha` - Alpha\n* `beta` - Beta\n* `stable` - Stable\n* `deprecated` - Deprecated"
+                    },
+                    "launch_date": {
+                        "type": "string",
+                        "format": "date",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Date of the launch of the service (out of beta)"
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "readOnly": true,
+                        "title": "Actif",
+                        "description": "Whether this service is currently available for subscription"
+                    },
+                    "hidden": {
+                        "type": "boolean",
+                        "readOnly": true,
+                        "description": "Whether this service should be hidden from frontend listings"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "logo": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "config": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "entitlement_defaults": {
+                        "type": "string",
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "config",
+                    "created_at",
+                    "description",
+                    "entitlement_defaults",
+                    "hidden",
+                    "id",
+                    "instance_name",
+                    "is_active",
+                    "launch_date",
+                    "logo",
+                    "maturity",
+                    "name",
+                    "type",
+                    "url"
+                ]
+            },
+            "ServiceSubscription": {
+                "type": "object",
+                "description": "Serialize service subscriptions.",
+                "properties": {
+                    "metadata": {
+                        "description": "Additional metadata for this subscription"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "title": "Actif",
+                        "description": "Whether this subscription is currently active"
+                    },
+                    "entitlements": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Entitlement"
+                        },
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "entitlements",
+                    "updated_at"
+                ]
+            },
+            "ServiceSubscriptionWithService": {
+                "type": "object",
+                "description": "Serialize service subscriptions with the service.",
+                "properties": {
+                    "metadata": {
+                        "description": "Additional metadata for this subscription"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "readOnly": true,
+                        "title": "Actif",
+                        "description": "Whether this subscription is currently active"
+                    },
+                    "entitlements": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Entitlement"
+                        },
+                        "readOnly": true
+                    },
+                    "service": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/Service"
+                            }
+                        ],
+                        "readOnly": true
+                    },
+                    "operator": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/Operator"
+                            }
+                        ],
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "entitlements",
+                    "is_active",
+                    "operator",
+                    "service",
+                    "updated_at"
+                ]
+            },
+            "ServiceSubscriptionWithServiceRequest": {
+                "type": "object",
+                "description": "Serialize service subscriptions with the service.",
+                "properties": {
+                    "metadata": {
+                        "description": "Additional metadata for this subscription"
+                    },
+                    "entitlements_input": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/EntitlementConfigInputRequest"
+                        },
+                        "writeOnly": true
+                    }
+                }
+            },
+            "User": {
+                "type": "object",
+                "description": "Serialize users.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "readOnly": true,
+                        "nullable": true,
+                        "title": "Identity email address"
+                    },
+                    "full_name": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "language": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/LanguageEnum"
+                            }
+                        ],
+                        "description": "The language in which the user wants to see the interface.\n\n* `fr-fr` - Français"
+                    },
+                    "is_superuser": {
+                        "type": "boolean",
+                        "readOnly": true,
+                        "title": "Statut super-utilisateur",
+                        "description": "Précise que l’utilisateur possède toutes les permissions sans les assigner explicitement."
+                    }
+                },
+                "required": [
+                    "email",
+                    "full_name",
+                    "id",
+                    "is_superuser"
+                ]
+            },
+            "UserRequest": {
+                "type": "object",
+                "description": "Serialize users.",
+                "properties": {
+                    "language": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/LanguageEnum"
+                            }
+                        ],
+                        "description": "The language in which the user wants to see the interface.\n\n* `fr-fr` - Français"
+                    }
+                }
+            }
+        },
+        "securitySchemes": {
+            "cookieAuth": {
+                "type": "apiKey",
+                "in": "cookie",
+                "name": "sessionid"
+            }
+        }
+    }
+}

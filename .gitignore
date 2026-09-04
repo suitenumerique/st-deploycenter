@@ -87,3 +87,6 @@ CLAUDE.md
 
 # Various
 .turbo
+
+# Local clones for analysis (e.g. api-partenaires), not part of this repo
+/tmp/

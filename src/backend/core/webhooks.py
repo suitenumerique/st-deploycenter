@@ -3,12 +3,14 @@ Webhook library for sending HTTP requests to configured endpoints.
 Handles ServiceSubscription lifecycle events with configurable templates and content types.
 """
 
+import json
 import logging
 import re
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
+from django.conf import settings
 from django.utils import timezone
 
 import requests
@@ -487,6 +489,12 @@ class WebhookClient:
 
         return self._dispatch_webhooks(event_type, context_data)
 
+    def send_custom_event(
+        self, event_type: str, context_data: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Dispatch an arbitrary (non-subscription) event to the configured webhooks."""
+        return self._dispatch_webhooks(event_type, context_data)
+
     def _dispatch_webhooks(
         self, event_type: str, context_data: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
@@ -618,3 +626,89 @@ class WebhookClient:
                 "Unexpected error sending webhook to %s: %s", webhook_config.url, str(e)
             )
             raise WebhookError(f"Unexpected error: {e}") from e
+
+
+DOMAIN_REQUESTED_EVENT = "domain.requested"
+
+
+def get_requested_domain_webhook_configs() -> List[Dict[str, Any]]:
+    """Return the statically-configured webhooks for domain-request notifications.
+
+    Configured via the ``PROCONNECT_REQUESTED_DOMAIN_WEBHOOKS`` setting, using the same
+    config format as service webhooks. Accepts either a list (Python config) or a
+    JSON string (environment variable).
+    """
+    configs = settings.PROCONNECT_REQUESTED_DOMAIN_WEBHOOKS or []
+    if isinstance(configs, str):
+        try:
+            configs = json.loads(configs or "[]")
+        except json.JSONDecodeError:
+            logger.error("Invalid PROCONNECT_REQUESTED_DOMAIN_WEBHOOKS JSON; ignoring.")
+            return []
+    if not isinstance(configs, list):
+        # Silently returning [] here would look exactly like "no webhook
+        # configured"; name what was thrown away.
+        logger.warning(
+            "PROCONNECT_REQUESTED_DOMAIN_WEBHOOKS is not a list; ignoring %r", configs
+        )
+        return []
+    return configs
+
+
+def send_domain_requested_webhooks(organization, operator, user, requested_domains):
+    """Notify configured endpoints that domain(s) were requested for an organization.
+
+    Reuses the service-webhook config format/templating; endpoints are configured
+    statically in settings (there is no natural per-org/per-service DB home for a
+    domain-request notification).
+    """
+    configs = get_requested_domain_webhook_configs()
+    if not configs:
+        return []
+
+    # Local import to avoid an import cycle at module load.
+    from core.services.proconnect import (  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+        domain_bucket,
+    )
+
+    context_data = {
+        "event_type": DOMAIN_REQUESTED_EVENT,
+        "timestamp": timezone.now().isoformat(),
+        "requested_domains": ",".join(requested_domains),
+        "all_requested_domains": ",".join(domain_bucket(organization, "requested")),
+        # Organization data
+        "organization_id": str(organization.id),
+        "organization_name": organization.name,
+        "organization_type": organization.type,
+        "organization_siret": organization.siret,
+        "organization_siren": organization.siren,
+        "organization_code_insee": organization.code_insee,
+        "organization_mail_domain": organization.mail_domain,
+        # Operator (context in which the request was made)
+        "operator_id": str(operator.id) if operator else "",
+        "operator_name": operator.name if operator else "",
+        # User who requested (if available)
+        "user_id": str(user.id) if user else "",
+        "user_email": user.email if user else "",
+        "user_name": user.full_name if user else "",
+    }
+
+    client = WebhookClient(configs)
+    results = client.send_custom_event(DOMAIN_REQUESTED_EVENT, context_data)
+
+    # Same treatment as the subscription webhooks in signals.py: a failed endpoint
+    # is otherwise invisible (the caller ignores the returned list).
+    for result in results:
+        if result["success"]:
+            logger.info(
+                "Domain-requested webhook sent successfully to %s (status: %s)",
+                result["url"],
+                result["status_code"],
+            )
+        else:
+            logger.error(
+                "Domain-requested webhook failed to %s: %s",
+                result["url"],
+                result["error"],
+            )
+    return results

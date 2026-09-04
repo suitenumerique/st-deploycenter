@@ -3,7 +3,9 @@
     "translation": {
       "common": {
         "cancel": "Annuler",
-        "save": "Valider"
+        "save": "Valider",
+        "copy": "Copier",
+        "copied": "Copié"
       },
       "app_title": "Espace Opérateur",
       "home": {
@@ -16,7 +18,6 @@
       },
       "login": "Connexion",
       "logout": "Déconnexion",
-      "my_account": "Mon compte",
       "operators": {
         "title": "Opérateurs",
         "subtitle": "Choisissez l'opérateur afin de pouvoir accéder aux collectivités",
@@ -85,6 +86,54 @@
                 }
               }
             },
+            "domains": {
+              "domains": {
+                "label": "Domaines",
+                "empty": "Aucun"
+              },
+              "warning": "Vous devez déclarer au moins un domaine avant de pouvoir activer ce service.",
+              "modal": {
+                "title": "Domaines",
+                "description": "Déclarez les noms de domaine de la collectivité et choisissez ce qui sert leur site internet.",
+                "no_domains": "Aucun domaine déclaré",
+                "add_placeholder": "Ajouter un domaine (ex. : exemple.fr)",
+                "add_button": "Ajouter",
+                "delete_label": "Supprimer",
+                "invalid": "Saisissez un nom de domaine valide (ex. : exemple.fr).",
+                "duplicate": "Ce domaine est déjà dans la liste.",
+                "nameservers": "Pour ces domaines, vous devez configurer ces serveurs DNS chez votre bureau d'enregistrement :",
+                "checks": {
+                  "pending": "Vérification en cours…",
+                  "dns_valid": "Configuration valide",
+                  "dns_mismatch": "Serveurs DNS actuels : {{nameservers}}",
+                  "dns_error": {
+                    "nxdomain": "Ce domaine n'est pas enregistré",
+                    "not_delegated": "Ce domaine n'est délégué à aucun serveur DNS",
+                    "timeout": "Vérification impossible : les serveurs DNS n'ont pas répondu",
+                    "error": "Vérification impossible"
+                  },
+                  "rpnt_valid": "Conforme au critère 1.2 du RPNT",
+                  "rpnt_invalid": "Non conforme au critère 1.2 du RPNT",
+                  "rpnt_link": "Consulter le critère 1.2 du référentiel",
+                  "batch_failed": "La vérification des domaines a échoué.",
+                  "retry": "Réessayer"
+                },
+                "website": {
+                  "label": "Site internet",
+                  "target_addresses": "Adresses IP",
+                  "target_addresses_placeholder": "192.0.2.1, 2001:db8::1",
+                  "target_cname": "Domaine cible",
+                  "target_redirect": "URL de destination (https)"
+                },
+                "modes": {
+                  "parking": "Page de parking",
+                  "dns_a": "Enregistrements \"A\" / \"AAAA\"",
+                  "dns_cname": "Enregistrement \"CNAME\"",
+                  "redirect_301": "Redirection permanente (301)",
+                  "redirect_302": "Redirection temporaire (302)"
+                }
+              }
+            },
             "messages": {
               "domains": {
                 "label": "Domaines email",
@@ -93,7 +142,6 @@
                 "modal": {
                   "title": "Domaines email",
                   "description": "Domaines email configurés pour ce service.",
-                  "suggested": "(suggéré)",
                   "no_domains": "Aucun domaine disponible. Vous devez d'abord activer ProConnect.",
                   "add_placeholder": "exemple.fr",
                   "add_button": "Ajouter",
@@ -121,6 +169,50 @@
                       "zero_value": "Illimité"
                     }
                   }
+                }
+              }
+            },
+            "proconnect": {
+              "domains": {
+                "label": "Domaines",
+                "empty": "Aucun"
+              },
+              "modal": {
+                "title": "Domaines ({{instance}})",
+                "description": "Cochez les domaines à router vers ce fournisseur d’identité. Les domaines pré-validés seront routés immédiatement. Les autres sont soumis à un délai de validation d’environ une semaine.",
+                "empty": "Aucun domaine connu pour cette collectivité",
+                "ask_placeholder": "Demander l’ajout d’un nouveau domaine (ex. : exemple.fr)",
+                "ask_button": "Demander",
+                "invalid": "Saisissez un nom de domaine valide (ex. : exemple.fr).",
+                "duplicate": "Ce domaine est déjà dans la liste.",
+                "already_asked": "Ce domaine a déjà été demandé.",
+                "actions": {
+                  "restore": "Rétablir",
+                  "validate": "Valider",
+                  "reject": "Rejeter",
+                  "delete": "Supprimer",
+                  "discard": "Écarter cette suggestion",
+                  "unroute_before_delete": "Retirez ce domaine du routage avant de le supprimer",
+                  "unroute_before_discard": "Retirez ce domaine du routage avant de l’écarter"
+                },
+                "sources": {
+                  "routed_online": "Routé (en ligne)",
+                  "routed_offline": "Sera routé après activation",
+                  "dpnt": "DILA (service-public.gouv.fr)",
+                  "candidates": "Suggéré",
+                  "manual": "Demandé",
+                  "requested": "Demande en cours de traitement",
+                  "discarded": "Écarté"
+                },
+                "prevalidation": {
+                  "prevalidated": "Pré-validé",
+                  "not_yet": "Pas encore pré-validé",
+                  "not_yet_title": "Pré-validation par l’équipe ProConnect en cours (peut prendre jusqu’à une semaine)",
+                  "unknown": "Pré-validation inconnue"
+                },
+                "dila_declaration": {
+                  "label": "Déclaration sur service-public.gouv.fr à faire",
+                  "title": "Ce domaine routé n’est pas déclaré sur service-public.gouv.fr (conformité RPNT)."
                 }
               }
             }
@@ -215,16 +307,14 @@
           "email": "Email",
           "external_id": "ID externe",
           "type": "Type",
-          "roles": "Rôles globaux",
-          "roles_help": "Séparés par des virgules (ex: admin, member)"
+          "roles": "Rôles globaux"
         },
         "add_modal": {
           "title": "Ajouter des rôles à un compte"
         },
         "delete_confirmation": "Êtes-vous sûr de vouloir supprimer ce compte ?",
         "edit_modal": {
-          "title": "Modifier le compte",
-          "service_roles": "Rôles par service"
+          "title": "Modifier le compte"
         },
         "roles": {
           "global_title": "Global",

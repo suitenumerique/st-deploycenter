@@ -19,7 +19,7 @@ from core.authentication import (
     OperatorExternalManagementApiKeyAuthentication,
     ServiceExternalManagementApiKeyAuthentication,
 )
-from core.signals import request_user_context
+from core.signals import request_user_context, suppress_proconnect_sync
 
 from .. import permissions, serializers
 
@@ -206,7 +206,13 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
         Partially update or create the subscription for the operator-organization-service triple.
         Creates the subscription if it doesn't exist (upsert behavior).
         """
-        with request_user_context(request.user):
+        # Suppress the per-save ProConnect push so we can fire it exactly ONCE, as
+        # the LAST operation before commit (after entitlement writes). Otherwise the
+        # push happens at .save()/.create() time and a later entitlement-write
+        # failure would roll back the DB while the provider already has the new
+        # domains — drift. Still inside @transaction.atomic, so a push failure rolls
+        # back the whole subscription + entitlement change and returns 502.
+        with request_user_context(request.user), suppress_proconnect_sync():
             queryset = self.get_queryset()
             subscription = queryset.first()
 
@@ -223,32 +229,43 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
             serializer.is_valid(raise_exception=True)
 
             if subscription:
-                # Update existing subscription
-                serializer.save()
-                return Response(serializer.data, status=status.HTTP_200_OK)
+                created = False
+                serializer.save()  # runs apply_entitlement_configs (push suppressed)
+            else:
+                created = True
+                is_active = serializer.validated_data.get("is_active", False)
+                metadata = serializer.validated_data.get("metadata", {})
+                subscription = models.ServiceSubscription.objects.create(
+                    organization=organization,
+                    service=service,
+                    operator=operator,
+                    is_active=is_active,
+                    metadata=metadata,
+                )
+                serializer.instance = subscription
+                serializer.apply_entitlement_configs(subscription)
 
-            # Create new subscription with provided data, using defaults for missing fields
-            is_active = serializer.validated_data.get("is_active", False)
-            metadata = serializer.validated_data.get("metadata", {})
-            subscription = models.ServiceSubscription.objects.create(
-                organization=organization,
-                service=service,
-                operator=operator,
-                is_active=is_active,
-                metadata=metadata,
+        # Push last. Reuse the change-detection flag set by the pre_save signal
+        # (True on create) so an unrelated edit doesn't push needlessly.
+        if service.type == "proconnect" and getattr(
+            subscription, "_proconnect_needs_sync", True
+        ):
+            from core.services.proconnect import (  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+                sync_proconnect_provider_for_subscription,
             )
 
-            # Apply entitlement configs if provided
-            serializer.instance = subscription
-            serializer.apply_entitlement_configs(subscription)
+            sync_proconnect_provider_for_subscription(subscription, raise_on_error=True)
 
-            return Response(
-                self.get_serializer(subscription).data, status=status.HTTP_201_CREATED
-            )
+        status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        return Response(self.get_serializer(subscription).data, status=status_code)
 
+    @transaction.atomic
     def destroy(self, request, *args, **kwargs):
         """
         Delete the subscription for the operator-organization-service triple.
+
+        Atomic so that a failed ProConnect domains push (fired on delete) rolls back
+        the deletion instead of drifting from the provider.
         """
         with request_user_context(request.user):
             subscription = self.get_object()

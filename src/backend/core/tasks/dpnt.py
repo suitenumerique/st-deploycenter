@@ -24,6 +24,7 @@ from ..models import (
     ServiceSubscription,
 )
 from ..services import get_service_handler
+from ..services.proconnect import org_rpnt_valid_domains, update_proconnect_domains
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +68,16 @@ def import_dpnt_dataset(self, force_update: bool = True, max_rows: int = None): 
         "errors_details": [],
     }
 
-    with transaction.atomic():
-        for item in data:
+    # One transaction per organization, NOT one for the whole import:
+    # update_proconnect_domains() takes select_for_update() on the row it merges,
+    # and a single outer transaction would hold those locks on every organization
+    # it touched until the import ends — minutes during which the superuser
+    # domain-edit endpoint (which locks the same row) blocks.
+    for item in data:
+        # Parsing lives inside the try too: `data` is a downloaded document, so a
+        # row that is not a dict (AttributeError) or is missing "type" (KeyError)
+        # is bad input, not a bug — it must cost one row, not the whole import.
+        try:
             # Limit rows if max_rows is specified for this type
             if max_rows is not None:
                 if row_count_by_type[item["type"]] >= max_rows:
@@ -100,14 +109,29 @@ def import_dpnt_dataset(self, force_update: bool = True, max_rows: int = None): 
 
             if not org_data.get("siret"):
                 logger.info(
-                    "Skipped organization without SIRET: %s", org_data["code_insee"]
+                    "Skipped organization without SIRET: %s", org_data.get("code_insee")
                 )
                 continue
 
             # Remove None values
             org_data = {k: v for k, v in org_data.items() if v is not None}
 
-            try:
+            with transaction.atomic():
+                # Cache the DILA/RPNT-valid domains in the "dpnt" bucket. Computed
+                # from a transient instance so it reflects this import's
+                # rpnt/website/email. Inside the try: an adresse_messagerie with no
+                # "@" raises IndexError, and one malformed row must not abort the
+                # whole import.
+                dpnt_domains = sorted(
+                    org_rpnt_valid_domains(
+                        Organization(
+                            rpnt=org_data.get("rpnt"),
+                            site_internet=org_data.get("site_internet"),
+                            adresse_messagerie=org_data.get("adresse_messagerie"),
+                        )
+                    )
+                )
+
                 # Try to find existing organization by INSEE code or SIREN
                 existing_org = None
                 if org_data.get("code_insee") and org_data["type"] == "commune":
@@ -120,15 +144,22 @@ def import_dpnt_dataset(self, force_update: bool = True, max_rows: int = None): 
                     ).first()
 
                 if existing_org and force_update:
-                    # Update existing organization
+                    # Update existing organization. Save the DPNT fields, then merge
+                    # the "dpnt" bucket via a row-locked update so a concurrent
+                    # superuser edit of another bucket is not clobbered.
                     for field, value in org_data.items():
                         setattr(existing_org, field, value)
-                    existing_org.save()
+                    existing_org.save(
+                        update_fields=list(org_data.keys()) + ["updated_at"]
+                    )
+                    update_proconnect_domains(existing_org, dpnt=dpnt_domains)
                     stats["updated"] += 1
                     logger.debug("Updated organization: %s", existing_org.name)
                 elif not existing_org:
                     # Create new organization
-                    Organization.objects.create(**org_data)
+                    Organization.objects.create(
+                        **org_data, proconnect_domains={"dpnt": dpnt_domains}
+                    )
                     stats["created"] += 1
                     logger.debug("Created organization: %s", org_data["name"])
                 else:
@@ -137,16 +168,31 @@ def import_dpnt_dataset(self, force_update: bool = True, max_rows: int = None): 
 
                 stats["total_processed"] += 1
 
-            except (ValueError, KeyError, TypeError, ValidationError) as e:
-                error_msg = f"Error processing organization {item.get('siret', 'Unknown')}: {str(e)}"
-                logger.error(
-                    "Error processing organization %s: %s",
-                    item.get("siret", "Unknown"),
-                    str(e),
-                )
-                stats["errors"] += 1
-                stats["errors_details"].append(error_msg)
+        except (
+            ValueError,
+            KeyError,
+            IndexError,
+            TypeError,
+            AttributeError,
+            ValidationError,
+        ) as e:
+            # `item` is why we are here, so it may not be a dict: reading a siret
+            # off it must not raise a second time out of the handler.
+            siret = (
+                item.get("siret", "Unknown") if isinstance(item, dict) else "Unknown"
+            )
+            error_msg = f"Error processing organization {siret}: {str(e)}"
+            logger.error(
+                "Error processing organization %s: %s",
+                siret,
+                str(e),
+            )
+            stats["errors"] += 1
+            stats["errors_details"].append(error_msg)
 
+    # Its own transaction, for the same reason: it must not hold the row locks of
+    # every organization the loop above merged.
+    with transaction.atomic():
         stats["auto_join"] = _process_auto_join()
 
     logger.info("DPNT import completed. Stats: %s", stats)
@@ -179,6 +225,13 @@ def _create_service_subscriptions(operator, service_id, org_ids, valid_services)
         service_id=service_id, organization_id__in=org_ids
     ).count()
 
+    # NOTE: bulk_create emits no post_save signal, so it bypasses the synchronous
+    # ProConnect domains push (see core/signals.py::_sync_proconnect). That is fine
+    # here because this only seeds subscription rows, with no metadata["domains"] to
+    # contribute; the provider is reconciled by the `proconnect_sync` command, which
+    # is NOT currently scheduled in cron.json. If this ever creates *active*
+    # proconnect subscriptions with routed domains, call sync_proconnect_provider()
+    # for the affected idps afterwards or the provider will silently drift.
     ServiceSubscription.objects.bulk_create(new_sub_objects, ignore_conflicts=True)
 
     count_after = ServiceSubscription.objects.filter(

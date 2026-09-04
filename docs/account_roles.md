@@ -12,27 +12,50 @@ The following 2 levels can be set in the frontend, in each Organization page "Ro
 
 Each account has a `roles` JSON array (e.g. `["admin"]`, `["member"]`). These are organization-wide roles that apply across all services.
 
-### Service-level roles (`AccountServiceLink.roles`)
+### Service-level role (`AccountServiceLink.role`)
 
-An account can have per-service roles via `AccountServiceLink`. These allow finer-grained control (e.g. admin on one service but not another).
+An account can have one role per service via `AccountServiceLink.role` — a single
+string, not an array (unlike `Account.roles`). This allows finer-grained control
+(e.g. admin on one service but not another). The link also carries a `scope` JSON
+object, which the Messages resolver uses to restrict an admin to specific mail
+domains.
 
 ## Admin Entitlement Resolution
 
 When a service calls the entitlements API, the system resolves whether the account is an admin. The resolution follows a chain of checks that stops at the first match.
 
+Which resolver runs depends on the service type (`TYPE_TO_ADMIN_RESOLVER` in
+`core/entitlements/resolvers/__init__.py`):
+
+| Service type | Resolver |
+|---|---|
+| `adc`, `esd` | `ExtendedAdminEntitlementResolver` (below) |
+| `meet` | `NoopAdminEntitlementResolver` — returns `{}`, no admin entitlement at all |
+| `messages` | `MessagesAdminEntitlementResolver` — returns `can_admin_maildomains` (a list of mail domains) instead of `is_admin` |
+| anything else | `AdminEntitlementResolver` |
+
 ### Default `AdminEntitlementResolver`
 
-Used by most service types. Checks:
+Used by every service type without an entry above. Checks, in order:
 
 1. **Organization role**: `"admin"` in `account.roles` -> `is_admin: True`, level: `"organization"`
-2. **Service-link role**: `"admin"` in the account's service link roles -> `is_admin: True`, level: `"service"`
-3. If neither matches -> `is_admin: False`
+2. **Service-link role**: an `AccountServiceLink` for this service with `role="admin"` -> `is_admin: True`, level: `"service"`
+3. **Operator admin passthrough**: needs no `Account` at all — granted when the
+   organization has an `OperatorOrganizationRole` with `role="admin"` **and**
+   `operator_admins_have_admin_role=True`, that operator has a `UserOperatorRole`
+   with `role="admin"` for a user whose email matches the request's
+   `account_email`, and the organization has an *active* subscription to the
+   queried service -> `is_admin: True`, level: `"operator"`
+4. If none match -> `is_admin: False`
 
 ### `ExtendedAdminEntitlementResolver` (ADC/ESD services)
 
-Used by `adc` and `esd` service types. Extends the default resolver with three additional resolution levels:
+Used by `adc` and `esd` service types. It runs the default resolver first and
+returns immediately if that already granted admin, then adds three levels of its
+own. The extra levels are skipped entirely (falling back to the base result) when
+the organization has no `siret`.
 
-1. **Explicit role** (inherited from base): Organization or service-link admin role -> `is_admin: True`
+1. **Base resolution** (inherited): organization role, service-link role, or the operator admin passthrough -> `is_admin: True`
 2. **Email contact**: Account email matches the organization's `adresse_messagerie` -> `is_admin: True`, level: `"email_contact"`
 3. **Auto-admin metadata**: Explicit operator choice stored in `subscription.metadata["auto_admin"]`:
    - `"all"` -> `is_admin: True`, level: `"auto_admin"` (bypasses population check)
@@ -42,7 +65,8 @@ Used by `adc` and `esd` service types. Extends the default resolver with three a
 ### Resolution priority order
 
 ```
-explicit role > email contact > auto_admin metadata > population fallback
+organization role > service-link role > operator passthrough
+  > email contact > auto_admin metadata > population fallback
 ```
 
 When `auto_admin` is explicitly set (either value), the population check is bypassed entirely. The population check only runs as the default when no choice has been made yet.

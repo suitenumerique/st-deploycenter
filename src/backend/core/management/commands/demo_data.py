@@ -45,6 +45,11 @@ SERVICE_TYPES = [
         "name": "Visio",
         "url": "https://meet.example.fr",
     },
+    {
+        "type": "domains",
+        "name": "Domaines",
+        "url": "https://domaines.example.fr",
+    },
 ]
 
 
