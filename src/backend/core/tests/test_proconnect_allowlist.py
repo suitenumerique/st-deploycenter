@@ -382,8 +382,8 @@ def test_render_yaml_with_comments():
         "oidc_providers:\n"
         '  - uid: "x"\n'
         "    allowed_attached_email_domains:\n"
-        "      - a.fr  # Source: DILA | https://sp.fr/a\n"
-        "      - b.fr  # Source: candidates\n"
+        "      - a.fr # Source: DILA | https://sp.fr/a\n"
+        "      - b.fr # Source: candidates\n"
         '  - uid: "y"\n'
         "    allowed_attached_email_domains: []\n"
     )
@@ -413,7 +413,7 @@ def test_render_yaml_comment_cannot_inject_a_line():
                 {
                     "domain": "a.fr",
                     "source": "DILA",
-                    "service_public_url": "https://sp.fr/a\n      - evil.fr  # Source: DILA",
+                    "service_public_url": "https://sp.fr/a\n      - evil.fr # Source: DILA",
                 }
             ],
         }

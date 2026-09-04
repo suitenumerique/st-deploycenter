@@ -158,7 +158,7 @@ def load_allowlist(path):
 def load_allowlist_comments(path):
     """Map ``fqdn -> "Source: ... | <url>"`` from the inline YAML comments.
 
-    Our generator emits ``- domain  # Source: <src> | <Service-Public URL>``;
+    Our generator emits ``- domain # Source: <src> | <Service-Public URL>``;
     yaml.safe_load drops those, so we read them line-by-line to surface the
     Service-Public link (the collectivité's page) in the report.
     """

@@ -902,5 +902,7 @@ def render_proconnect_allowlist_yaml(entries: list[dict]) -> str:
                 comment += f" | {_yaml_comment_text(item['service_public_url'])}"
             # The domain itself is safe by construction: only normalize_domains()
             # values reach a bucket, and none of them can hold a space or a newline.
-            lines.append(f"      - {item['domain']}  # {comment}")
+            # One space before the ``#``: prettier reformats two down to one, so
+            # emitting two makes every generated file a diff against itself.
+            lines.append(f"      - {item['domain']} # {comment}")
     return "\n".join(lines) + "\n"
