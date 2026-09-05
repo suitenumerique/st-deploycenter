@@ -23,7 +23,7 @@ if docker network inspect bridge >/dev/null 2>&1; then
   NET_MODE=bridge
   STUB_BIND=0.0.0.0
   RUN_FLAGS=(-p 8080:8080 --add-host=host.docker.internal:host-gateway
-    -e DEPLOYCENTER_FRONTEND_BACKEND_SERVER=host.docker.internal:8000)
+    -e DEPLOYCENTER_BACKEND_SERVER=host.docker.internal:8000)
 else
   NET_MODE=host
   STUB_BIND=127.0.0.1
@@ -149,7 +149,7 @@ echo "ok: client IP detected ($CLIENT_CIDR, $NET_MODE mode)"
 stop_container
 
 # Allowlist without the client IP -> admin 403, the rest stays open.
-start_container -e 'DJANGO_ADMIN_IP_ALLOWLIST=192.0.2.0/24'
+start_container -e 'DEPLOYCENTER_ADMIN_IP_ALLOWLIST=192.0.2.0/24'
 assert_code 403 "admin denied" "$BASE/admin/"
 assert_code 403 "admin denied (no slash)" "$BASE/admin"
 assert_code 200 "SPA root still open" "$BASE/"
@@ -158,14 +158,14 @@ assert_code 403 "spoofed XFF ignored" -H 'X-Forwarded-For: 192.0.2.10' "$BASE/ad
 stop_container
 
 # Allowlist contains the client IP -> admin passes through.
-start_container -e "DJANGO_ADMIN_IP_ALLOWLIST=$CLIENT_CIDR"
+start_container -e "DEPLOYCENTER_ADMIN_IP_ALLOWLIST=$CLIENT_CIDR"
 assert_code 200 "admin allowed for client IP" "$BASE/admin/"
 stop_container
 
 # Trusted proxy: XFF from a trusted peer sets client_ip.
 start_container \
-  -e "DEPLOYCENTER_FRONTEND_TRUSTED_PROXIES=$CLIENT_CIDR" \
-  -e 'DJANGO_ADMIN_IP_ALLOWLIST=192.0.2.0/24'
+  -e "DEPLOYCENTER_TRUSTED_PROXIES=$CLIENT_CIDR" \
+  -e 'DEPLOYCENTER_ADMIN_IP_ALLOWLIST=192.0.2.0/24'
 assert_code 200 "trusted proxy: XFF accepted" -H 'X-Forwarded-For: 192.0.2.10' "$BASE/admin/"
 # trusted_proxies_strict: the rightmost untrusted address wins, so a
 # client-appended allowlisted prefix stays ineffective.
@@ -177,8 +177,8 @@ stop_container
 # private_ranges is the documented Scalingo value; the client IP is a
 # loopback or private bridge address in both modes, so it is trusted.
 start_container \
-  -e 'DEPLOYCENTER_FRONTEND_TRUSTED_PROXIES=private_ranges' \
-  -e 'DJANGO_ADMIN_IP_ALLOWLIST=192.0.2.0/24'
+  -e 'DEPLOYCENTER_TRUSTED_PROXIES=private_ranges' \
+  -e 'DEPLOYCENTER_ADMIN_IP_ALLOWLIST=192.0.2.0/24'
 assert_code 200 "private_ranges: XFF accepted" -H 'X-Forwarded-For: 192.0.2.10' "$BASE/admin/"
 stop_container
 

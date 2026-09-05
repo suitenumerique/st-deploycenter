@@ -270,7 +270,7 @@ services:
       dockerfile: Dockerfile
       target: ${FRONTEND_PROD_TARGET:-runtime-distroless-prod}
     environment:
-      - DEPLOYCENTER_FRONTEND_BACKEND_SERVER=backend-prod:8000
+      - DEPLOYCENTER_BACKEND_SERVER=backend-prod:8000
     ports:
       - "8970:8080"
     depends_on:

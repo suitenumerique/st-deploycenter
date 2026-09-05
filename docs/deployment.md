@@ -22,10 +22,10 @@ debugging.
 
 | Image | Dockerfile target | Base |
 |-------|-------------------|------|
-| `st-deploycenter-back-distroless` | `runtime-distroless-prod` | `gcr.io/distroless/cc-debian13` |
-| `st-deploycenter-back-all` | `runtime-prod` | `python:3.13-slim-trixie` |
-| `st-deploycenter-front-distroless` | `runtime-distroless-prod` | `gcr.io/distroless/static-debian13` |
-| `st-deploycenter-front-all` | `runtime-prod` | `debian:trixie-slim` |
+| `st-deploycenter-backend-distroless` | `runtime-distroless-prod` | `gcr.io/distroless/cc-debian13` |
+| `st-deploycenter-backend-all` | `runtime-prod` | `python:3.13-slim-trixie` |
+| `st-deploycenter-frontend-distroless` | `runtime-distroless-prod` | `gcr.io/distroless/static-debian13` |
+| `st-deploycenter-frontend-all` | `runtime-prod` | `debian:trixie-slim` |
 
 ```shellscript
 # build the four images
@@ -40,7 +40,7 @@ $ make stop-prod
 ```
 
 The frontend image listens on 8080 and proxies to
-`$DEPLOYCENTER_FRONTEND_BACKEND_SERVER`, which points at the backend container
+`$DEPLOYCENTER_BACKEND_SERVER`, which points at the backend container
 (`backend-prod:8000` in `compose.yaml`). The backend image listens on 8000 and
 serves its own static files with whitenoise. Both carry a `HEALTHCHECK`: an
 HTTP probe on `/__lbheartbeat__` for the frontend, a TCP connect for the
@@ -61,27 +61,27 @@ $ docker compose --profile prod run --rm --build backend-prod python manage.py m
 |----------|---------|-------------|
 | `PORT` | `8080` in the images, set by the platform on Scalingo | Port Caddy listens on. Do not change it in the images: their `HEALTHCHECK` hardcodes 8080. |
 | `DEPLOYCENTER_FRONTEND_ROOT` | `/app` in the images, `/app/build/frontend-out` on Scalingo | Directory of the built frontend files that Caddy serves. |
-| `DEPLOYCENTER_FRONTEND_BACKEND_SERVER` | `localhost:8000` | `host:port` of the Django backend. |
-| `DEPLOYCENTER_FRONTEND_ADMIN_PATH` | `admin` | Admin path proxied to Django, without the surrounding slashes. `bin/scalingo_run_web` derives it from `DJANGO_ADMIN_URL`, so on Scalingo set that one instead. Never set it to an empty value: Caddy only falls back to the default when a variable is unset, and an empty one turns the admin matchers into `/` and `//*`. |
-| `DJANGO_ADMIN_IP_ALLOWLIST` | `0.0.0.0/0 ::/0` | Space-separated CIDR list of client IPs allowed on the Django admin URL. The default allows all (no filtering). Caddy answers 403 to denied requests. |
-| `DEPLOYCENTER_FRONTEND_TRUSTED_PROXIES` | _(empty)_ | Space-separated CIDR list of upstream proxies whose `X-Forwarded-For` sets the client IP. Empty = trust no proxy, the client IP is then the TCP peer. Caddy walks the header from right to left and takes the first address that is not a trusted proxy. |
+| `DEPLOYCENTER_BACKEND_SERVER` | `localhost:8000` | `host:port` of the Django backend. |
+| `DEPLOYCENTER_ADMIN` | `admin` | Admin path proxied to Django, without the surrounding slashes. `bin/scalingo_run_web` derives it from `DJANGO_ADMIN_URL`, so on Scalingo set that one instead. Never set it to an empty value: Caddy only falls back to the default when a variable is unset, and an empty one turns the admin matchers into `/` and `//*`. |
+| `DEPLOYCENTER_ADMIN_IP_ALLOWLIST` | `0.0.0.0/0 ::/0` | Space-separated CIDR list of client IPs allowed on the Django admin URL. The default allows all (no filtering). Caddy answers 403 to denied requests. |
+| `DEPLOYCENTER_TRUSTED_PROXIES` | _(empty)_ | Space-separated CIDR list of upstream proxies whose `X-Forwarded-For` sets the client IP. Empty = trust no proxy, the client IP is then the TCP peer. Caddy walks the header from right to left and takes the first address that is not a trusted proxy. |
 
 ## Restricting the Django admin to a set of IPs
 
-Set `DJANGO_ADMIN_IP_ALLOWLIST` to the allowed CIDRs, and
-`DEPLOYCENTER_FRONTEND_TRUSTED_PROXIES` to the proxies in front of Caddy,
+Set `DEPLOYCENTER_ADMIN_IP_ALLOWLIST` to the allowed CIDRs, and
+`DEPLOYCENTER_TRUSTED_PROXIES` to the proxies in front of Caddy,
 otherwise the allowlist is compared against the proxy address instead of the
 client one.
 
 On Scalingo, the routers set `X-Forwarded-For` and the container port is only
 reachable through them, but their IP ranges are not published. Set
-`DEPLOYCENTER_FRONTEND_TRUSTED_PROXIES=private_ranges` there: the Caddy keyword
+`DEPLOYCENTER_TRUSTED_PROXIES=private_ranges` there: the Caddy keyword
 covers the private ranges the routers use. Do not use `private_ranges` when
 untrusted machines share the private network with Caddy.
 
-To turn the filter off, leave `DJANGO_ADMIN_IP_ALLOWLIST` unset. Do not set it
+To turn the filter off, leave `DEPLOYCENTER_ADMIN_IP_ALLOWLIST` unset. Do not set it
 to an empty value: an empty list matches no client IP, so Caddy answers 403 to
 every admin request.
 
-`bin/smoke-test-front <image>` covers this on a built frontend image: the
+`bin/smoke_test_front <image>` covers this on a built frontend image: the
 allowlist, spoofed `X-Forwarded-For` headers, and the trusted proxy modes.

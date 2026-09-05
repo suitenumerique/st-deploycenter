@@ -1,13 +1,13 @@
 #!/bin/bash
 
 # Django wants a trailing slash on its admin URL, the Caddyfile must not have
-# one: it builds the path as /{$DEPLOYCENTER_FRONTEND_ADMIN_PATH}/*
-DEPLOYCENTER_FRONTEND_ADMIN_PATH="${DJANGO_ADMIN_URL:-admin/}"
-DEPLOYCENTER_FRONTEND_ADMIN_PATH="${DEPLOYCENTER_FRONTEND_ADMIN_PATH%/}"
+# one: it builds the path as /{$DEPLOYCENTER_ADMIN}/*
+DEPLOYCENTER_ADMIN="${DJANGO_ADMIN_URL:-admin/}"
+DEPLOYCENTER_ADMIN="${DEPLOYCENTER_ADMIN%/}"
 # Never export it empty: Caddy only falls back to the {$VAR:default} value when
 # the variable is unset, so an empty one turns the admin matchers into / and
 # //*, which would 403 the whole site and make the redirect below loop.
-export DEPLOYCENTER_FRONTEND_ADMIN_PATH="${DEPLOYCENTER_FRONTEND_ADMIN_PATH:-admin}"
+export DEPLOYCENTER_ADMIN="${DEPLOYCENTER_ADMIN:-admin}"
 
 # Start the Django backend server
 gunicorn -b :8000 deploycenter.wsgi:application --log-file - &
