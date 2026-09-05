@@ -2196,14 +2196,14 @@ files = [
 
 [[package]]
 name = "recursive-resolver"
-version = "0.1.0"
+version = "0.2.0"
 description = "Pure-Python iterative DNS resolver: resolves from the root servers with DNSSEC validation"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "recursive_resolver-0.1.0-py3-none-any.whl", hash = "sha256:57b02936c9afb3c07a2e72f0a06982f558d1805e784ff202fcab2e5da0a6645e"},
-    {file = "recursive_resolver-0.1.0.tar.gz", hash = "sha256:f252ceec5ba7a34df5a4ea97c69c8d0832195b70096b0ee10db7184d8b2900ec"},
+    {file = "recursive_resolver-0.2.0-py3-none-any.whl", hash = "sha256:8305c86a75eab5fd6ccae943993f800f9361ab54c604afcf8eee6843c9ca27b2"},
+    {file = "recursive_resolver-0.2.0.tar.gz", hash = "sha256:58e8f8f086915dfdc142b254163c739d5adac51ccf746d73f3fe318e084cfef8"},
 ]
 
 [package.dependencies]
@@ -2710,4 +2710,4 @@ dev = ["django-debug-toolbar", "django-extensions", "drf-spectacular-sidecar", "
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<4.0"
-content-hash = "15925262eb2758938cceb05aeef2da87a18b3dc94b2ea054212c25ea1e0a2855"
+content-hash = "20f20aeb541dbf604e53959135b1c3033413b74396ea7e787f0b6594fc9243b2"

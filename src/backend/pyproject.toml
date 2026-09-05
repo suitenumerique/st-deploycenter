@@ -45,7 +45,7 @@ dependencies = [
     "PyJWT==2.10.1",
     "PySocks==1.7.1",  # pinned: pulled in by requests[socks]
     # Iterative DNS resolution from the root, for the domains service delegation check.
-    "recursive-resolver==0.1.0",
+    "recursive-resolver==0.2.0",
     "redis==5.2.1",
     # [socks]: ProConnectPartnersClient can route through a SOCKS5 proxy.
     "requests[socks]==2.32.5",
