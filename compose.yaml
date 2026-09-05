@@ -24,6 +24,7 @@ services:
     build:
       context: ./src/frontend
       dockerfile: Dockerfile
+      target: frontend-dev
     env_file:
       - env.d/development/frontend.defaults
       - env.d/development/frontend.local
@@ -40,6 +41,7 @@ services:
     build:
       context: ./src/frontend
       dockerfile: Dockerfile
+      target: frontend-dev
     volumes:
       - ./src/frontend/:/home/frontend/
 
@@ -235,6 +237,45 @@ services:
       - lasuite
     depends_on:
       - postgresql
+
+  # Production images run locally: `make run-prod`, on http://localhost:8970.
+  # Caddy serves the static export and proxies /api/, /static/ and the admin
+  # URL to the backend container. Set BACKEND_PROD_TARGET/FRONTEND_PROD_TARGET
+  # to runtime-prod to run the full images instead of the distroless ones.
+  backend-prod:
+    profiles:
+      - prod
+    build:
+      context: src/backend
+      target: ${BACKEND_PROD_TARGET:-runtime-distroless-prod}
+    environment:
+      - DJANGO_CONFIGURATION=Production
+    env_file:
+      - env.d/development/backend.defaults
+      - env.d/development/backend.local
+    depends_on:
+      postgresql:
+        condition: service_healthy
+        restart: true
+      redis:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+
+  frontend-prod:
+    profiles:
+      - prod
+    build:
+      context: ./src/frontend
+      dockerfile: Dockerfile
+      target: ${FRONTEND_PROD_TARGET:-runtime-distroless-prod}
+    environment:
+      - DEPLOYCENTER_FRONTEND_BACKEND_SERVER=backend-prod:8000
+    ports:
+      - "8970:8080"
+    depends_on:
+      backend-prod:
+        condition: service_healthy
 
 networks:
   default: {}

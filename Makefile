@@ -51,6 +51,16 @@ COMPOSE_RUN_CROWDIN = $(COMPOSE_RUN) crowdin crowdin
 MANAGE              = $(COMPOSE_RUN_APP) python manage.py
 MANAGE_DB           = $(COMPOSE_RUN_APP_DB) python manage.py
 
+# -- Production images
+# Smoke test run inside a backend production image: the app and its compiled
+# dependencies import, the timezone database is there, and collectstatic
+# output landed at the expected path.
+BACK_IMAGE_CHECK = import django, gunicorn, psycopg, ssl, sys, whitenoise, zoneinfo; \
+	from pathlib import Path; \
+	zoneinfo.ZoneInfo('Europe/Paris'); \
+	assert Path('/data/static/admin/css/base.css').is_file(), 'collected static files are missing'; \
+	print(f'OK: Python {sys.version.split()[0]}, Django {django.__version__}, {ssl.OPENSSL_VERSION}')
+
 
 # ==============================================================================
 # RULES
@@ -127,6 +137,65 @@ update:  ## Update the project with latest changes
 build: ## build the project containers
 	@$(COMPOSE) build
 .PHONY: build
+
+# -- Production images
+# Each side ships two flavours: "distroless" (what production runs) and "all",
+# the same content on a base that has a shell, for debugging.
+build-back-all: ## build the backend production image (with a shell)
+	@docker build --target runtime-prod -t st-deploycenter-back-all src/backend/
+.PHONY: build-back-all
+
+build-back-distroless: ## build the distroless backend production image
+	@docker build --target runtime-distroless-prod -t st-deploycenter-back-distroless src/backend/
+.PHONY: build-back-distroless
+
+build-front-all: ## build the frontend production image (with a shell)
+	@docker build --target runtime-prod -t st-deploycenter-front-all src/frontend/
+.PHONY: build-front-all
+
+build-front-distroless: ## build the distroless frontend production image
+	@docker build --target runtime-distroless-prod -t st-deploycenter-front-distroless src/frontend/
+.PHONY: build-front-distroless
+
+build-prod-images: ## build the four production images
+build-prod-images: \
+	build-back-all \
+	build-back-distroless \
+	build-front-all \
+	build-front-distroless
+.PHONY: build-prod-images
+
+run-prod: ## run the production images locally, on http://localhost:8970
+	@$(COMPOSE) --profile prod up --build -d backend-prod frontend-prod
+.PHONY: run-prod
+
+stop-prod: ## stop the production images running locally
+	@$(COMPOSE) --profile prod stop backend-prod frontend-prod
+.PHONY: stop-prod
+
+test-back-all: build-back-all ## build and smoke-test the backend production image
+	@docker run --rm st-deploycenter-back-all python -c "$(BACK_IMAGE_CHECK)"
+.PHONY: test-back-all
+
+test-back-distroless: build-back-distroless ## build and smoke-test the distroless backend production image
+	@docker run --rm st-deploycenter-back-distroless python -c "$(BACK_IMAGE_CHECK)"
+.PHONY: test-back-distroless
+
+test-front-all: build-front-all ## build and smoke-test the frontend production image
+	@bin/smoke-test-front st-deploycenter-front-all
+.PHONY: test-front-all
+
+test-front-distroless: build-front-distroless ## build and smoke-test the distroless frontend production image
+	@bin/smoke-test-front st-deploycenter-front-distroless
+.PHONY: test-front-distroless
+
+test-prod-images: ## build and smoke-test the four production images
+test-prod-images: \
+	test-back-all \
+	test-back-distroless \
+	test-front-all \
+	test-front-distroless
+.PHONY: test-prod-images
 
 down: ## stop and remove containers, networks, images, and volumes
 	@$(COMPOSE) down

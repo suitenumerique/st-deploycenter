@@ -5,11 +5,26 @@ set -o pipefail   # don't ignore exit codes when piping output
 
 echo "-----> Running post-frontend script"
 
-# Move the frontend build to the nginx root and clean up
+# Move the frontend build to the web server root and clean up
 mkdir -p build/
 mv src/frontend/out build/frontend-out
 
 mv src/backend/* ./
-mv src/nginx/* ./
+
+# Download the Caddy binary (the container images pin the same version, see
+# src/frontend/Dockerfile)
+CADDY_VERSION="2.11.4"
+# When upgrading, run
+# curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.tar.gz" | sha256sum
+# and update the checksum accordingly
+CADDY_SHA256_AMD64="527fbf917c39189a1e3b31d34fa955601680b2d5c8055d2a87b8b9588dec7bb9"
+curl -fsSL -o /tmp/caddy.tar.gz "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.tar.gz"
+echo "${CADDY_SHA256_AMD64}  /tmp/caddy.tar.gz" | sha256sum -c -
+tar -xzf /tmp/caddy.tar.gz -C bin/ caddy
+rm /tmp/caddy.tar.gz
+chmod +x bin/caddy
+
+# Copy the Caddyfile (uses {$ENV} vars natively, no ERB needed)
+cp src/frontend/caddy/Caddyfile ./Caddyfile
 
 echo "3.13" > .python-version

@@ -1,0 +1,113 @@
+# Production web server: serves the Next.js static export and proxies the
+# Django backend. Used by both deployment targets, Scalingo (started by
+# bin/scalingo_run_web, backend in the same container) and the frontend images
+# (src/frontend/Dockerfile, backend in another container). The variables it
+# reads are documented in docs/deployment.md.
+{
+	auto_https off
+	admin off
+	servers {
+		trusted_proxies static {$DEPLOYCENTER_FRONTEND_TRUSTED_PROXIES}
+		# Walk X-Forwarded-For right to left and take the first address
+		# that is not a trusted proxy. Without this, the leftmost entry
+		# wins and a client-appended prefix defeats the admin allowlist.
+		trusted_proxies_strict
+	}
+}
+
+:{$PORT} {
+	root * {$DEPLOYCENTER_FRONTEND_ROOT:/app/build/frontend-out}
+
+	# Security headers for everything this site serves (static export and
+	# proxied API/admin — `header` replaces, so it does not duplicate
+	# Django's own X-Frame-Options).
+	header {
+		-Server
+		# Clickjacking: the UI must never be framable. frame-ancestors is
+		# the modern control; X-Frame-Options covers older browsers.
+		X-Frame-Options "DENY"
+		Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+	}
+
+	route {
+		# Health check
+		respond /__lbheartbeat__ 200
+		respond /__lbheartbeat__/ 200
+
+		# Django REST framework
+		reverse_proxy /api/* {$DEPLOYCENTER_FRONTEND_BACKEND_SERVER:localhost:8000} {
+			header_up X-Forwarded-Proto https
+			header_up X-Forwarded-For {client_ip}
+		}
+
+		# Django admin IP allowlist. The default allows all (no filtering).
+		# client_ip uses X-Forwarded-For only from the proxies listed in
+		# DEPLOYCENTER_FRONTEND_TRUSTED_PROXIES, the TCP peer otherwise.
+		@admin_denied {
+			path /{$DEPLOYCENTER_FRONTEND_ADMIN_PATH:admin} /{$DEPLOYCENTER_FRONTEND_ADMIN_PATH:admin}/*
+			not client_ip {$DJANGO_ADMIN_IP_ALLOWLIST:0.0.0.0/0 ::/0}
+		}
+		respond @admin_denied 403
+
+		redir /{$DEPLOYCENTER_FRONTEND_ADMIN_PATH:admin} /{$DEPLOYCENTER_FRONTEND_ADMIN_PATH:admin}/ 301
+
+		# Django admin
+		reverse_proxy /{$DEPLOYCENTER_FRONTEND_ADMIN_PATH:admin}/* {$DEPLOYCENTER_FRONTEND_BACKEND_SERVER:localhost:8000} {
+			header_up X-Forwarded-Proto https
+			header_up X-Forwarded-For {client_ip}
+		}
+
+		# Django static files, served by whitenoise (admin assets, DRF UI)
+		reverse_proxy /static/* {$DEPLOYCENTER_FRONTEND_BACKEND_SERVER:localhost:8000} {
+			header_up X-Forwarded-Proto https
+			header_up X-Forwarded-For {client_ip}
+		}
+
+		# --- Cache policy for the static export ---
+		# Next fingerprints everything under /_next/static, so a given URL's
+		# bytes never change: cache it forever. A new build emits new URLs.
+		@immutable path /_next/static/*
+		header @immutable Cache-Control "public, max-age=31536000, immutable"
+		# The HTML pages and other non-fingerprinted files (images, favicon)
+		# must revalidate every load, or a deploy's new asset hashes only
+		# show up after a manual hard refresh.
+		@revalidate not path /_next/static/*
+		header @revalidate Cache-Control "no-cache"
+
+		# --- Next.js static export ---
+		# The export has no trailing slash in its routes: normalize before
+		# matching them. Everything proxied above is already handled, so
+		# this never touches /api/, the admin URL or /static/.
+		@trailing_slash path_regexp trailing ^(/.+)/$
+		redir @trailing_slash {re.trailing.1} 308
+
+		# The export writes one HTML file per route, and names the files of
+		# dynamic routes after their parameters, so those paths need an
+		# explicit rewrite. Static routes are handled by try_files below.
+		#
+		# ROUTES HERE!
+
+		@operator path_regexp ^/operators/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+		rewrite @operator "/operators/[operator_id].html"
+
+		@operator_organizations path_regexp ^/operators/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/organizations$
+		rewrite @operator_organizations "/operators/[operator_id]/organizations.html"
+
+		@operator_organization path_regexp ^/operators/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/organizations/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+		rewrite @operator_organization "/operators/[operator_id]/organizations/[id].html"
+
+		# Static routes: /operators -> operators.html, / -> index.html
+		try_files {path} {path}.html
+		file_server
+	}
+
+	handle_errors {
+		@not_found expression `{err.status_code} == 404`
+		handle @not_found {
+			rewrite * /404.html
+			file_server
+		}
+	}
+}

@@ -1,0 +1,18 @@
+# Build context for src/backend/Dockerfile
+__pycache__
+**/__pycache__
+*.pyc
+**/*.pyc
+.pytest_cache
+.mypy_cache
+.pylint.d
+.ruff_cache
+venv
+.venv
+
+data
+db.sqlite3
+*.log
+
+.DS_Store
+**/.DS_Store
