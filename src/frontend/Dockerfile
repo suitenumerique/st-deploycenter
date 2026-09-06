@@ -93,7 +93,9 @@ COPY caddy/Caddyfile /etc/caddy/Caddyfile
 ENV PORT=8080
 ENV DEPLOYCENTER_FRONTEND_ROOT=/app
 ENV DEPLOYCENTER_BACKEND_SERVER=localhost:8000
-ENV DEPLOYCENTER_ADMIN=admin
+# DJANGO_ADMIN_URL is not declared here: the Caddyfile defaults it to "admin".
+# Set it (without a trailing slash) on this container and on the backend one
+# when the Django admin URL is not the default.
 # Caddy stores its state under XDG_DATA_HOME; the unprivileged user below has
 # no writable home directory.
 ENV XDG_DATA_HOME=/tmp
@@ -120,7 +122,9 @@ COPY caddy/Caddyfile /etc/caddy/Caddyfile
 ENV PORT=8080
 ENV DEPLOYCENTER_FRONTEND_ROOT=/app
 ENV DEPLOYCENTER_BACKEND_SERVER=localhost:8000
-ENV DEPLOYCENTER_ADMIN=admin
+# DJANGO_ADMIN_URL is not declared here: the Caddyfile defaults it to "admin".
+# Set it (without a trailing slash) on this container and on the backend one
+# when the Django admin URL is not the default.
 ENV XDG_DATA_HOME=/tmp
 ENV XDG_CONFIG_HOME=/tmp
 

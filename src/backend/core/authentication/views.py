@@ -1,7 +1,9 @@
 """Authentication Views for the People core app."""
 
+import json
 from urllib.parse import urlencode
 
+from django.conf import settings
 from django.contrib import auth
 from django.core.exceptions import SuspiciousOperation
 from django.http import HttpResponseRedirect
@@ -12,8 +14,41 @@ from mozilla_django_oidc.utils import (
     absolutify,
 )
 from mozilla_django_oidc.views import (
+    OIDCAuthenticationRequestView as MozillaOIDCAuthenticationRequestView,
+)
+from mozilla_django_oidc.views import (
     OIDCLogoutView as MozillaOIDCOIDCLogoutView,
 )
+
+
+class OIDCAuthenticationRequestView(MozillaOIDCAuthenticationRequestView):
+    """Custom authentication request view.
+
+    Asks the provider for multi-factor authentication when OIDC_REQUIRE_MFA is
+    on. The request alone does not enforce anything: the acr value that comes
+    back is checked by the authentication backend.
+    """
+
+    def get_extra_params(self, request):
+        """Add the essential "acr" claim request expected by ProConnect."""
+
+        # Copied: the parent returns the OIDC_AUTH_REQUEST_EXTRA_PARAMS setting
+        # itself, and writing to it would leak into every later request.
+        extra_params = dict(super().get_extra_params(request))
+
+        if settings.OIDC_REQUIRE_MFA:
+            extra_params["claims"] = json.dumps(
+                {
+                    "id_token": {
+                        "acr": {
+                            "essential": True,
+                            "values": settings.OIDC_MFA_ACR_VALUES,
+                        }
+                    }
+                }
+            )
+
+        return extra_params
 
 
 class OIDCLogoutView(MozillaOIDCOIDCLogoutView):

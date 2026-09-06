@@ -1,5 +1,6 @@
 """Unit tests for the Authentication Views."""
 
+import json
 from unittest import mock
 from urllib.parse import parse_qs, urlparse
 
@@ -18,6 +19,43 @@ from core import factories
 from core.authentication.views import OIDCLogoutCallbackView, OIDCLogoutView
 
 pytestmark = pytest.mark.django_db
+
+
+@override_settings(
+    OIDC_REQUIRE_MFA=True,
+    OIDC_OP_AUTHORIZATION_ENDPOINT="https://oidc.example.com/authorize",
+)
+def test_view_authenticate_requires_mfa():
+    """
+    With OIDC_REQUIRE_MFA on, the authorization request asks for an essential
+    acr claim restricted to the values that carry a second factor.
+    """
+
+    response = APIClient().get(reverse("oidc_authentication_init"))
+
+    assert response.status_code == 302
+    params = parse_qs(urlparse(response.url).query)
+    assert json.loads(params["claims"][0]) == {
+        "id_token": {
+            "acr": {
+                "essential": True,
+                "values": ["eidas0-mfa", "eidas1-mfa", "eidas2", "eidas3"],
+            }
+        }
+    }
+
+
+@override_settings(
+    OIDC_REQUIRE_MFA=False,
+    OIDC_OP_AUTHORIZATION_ENDPOINT="https://oidc.example.com/authorize",
+)
+def test_view_authenticate_without_mfa():
+    """With the setting off, no acr claim is requested."""
+
+    response = APIClient().get(reverse("oidc_authentication_init"))
+
+    assert response.status_code == 302
+    assert "claims" not in parse_qs(urlparse(response.url).query)
 
 
 @override_settings(LOGOUT_REDIRECT_URL="/example-logout")

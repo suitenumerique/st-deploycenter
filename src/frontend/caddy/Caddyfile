@@ -45,16 +45,19 @@
 		# Django admin IP allowlist. The default allows all (no filtering).
 		# client_ip uses X-Forwarded-For only from the proxies listed in
 		# DEPLOYCENTER_TRUSTED_PROXIES, the TCP peer otherwise.
+		# DJANGO_ADMIN_URL must have no trailing slash here (Django strips it
+		# itself, see deploycenter/urls.py): a trailing one would build /x//*
+		# and stop this matcher from covering the admin sub-paths.
 		@admin_denied {
-			path /{$DEPLOYCENTER_ADMIN:admin} /{$DEPLOYCENTER_ADMIN:admin}/*
+			path /{$DJANGO_ADMIN_URL:admin} /{$DJANGO_ADMIN_URL:admin}/*
 			not client_ip {$DEPLOYCENTER_ADMIN_IP_ALLOWLIST:0.0.0.0/0 ::/0}
 		}
 		respond @admin_denied 403
 
-		redir /{$DEPLOYCENTER_ADMIN:admin} /{$DEPLOYCENTER_ADMIN:admin}/ 301
+		redir /{$DJANGO_ADMIN_URL:admin} /{$DJANGO_ADMIN_URL:admin}/ 301
 
 		# Django admin
-		reverse_proxy /{$DEPLOYCENTER_ADMIN:admin}/* {$DEPLOYCENTER_BACKEND_SERVER:localhost:8000} {
+		reverse_proxy /{$DJANGO_ADMIN_URL:admin}/* {$DEPLOYCENTER_BACKEND_SERVER:localhost:8000} {
 			header_up X-Forwarded-Proto https
 			header_up X-Forwarded-For {client_ip}
 		}

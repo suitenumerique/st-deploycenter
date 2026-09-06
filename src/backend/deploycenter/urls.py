@@ -13,7 +13,10 @@ from drf_spectacular.views import (
 )
 
 urlpatterns = [
-    path(settings.ADMIN_URL, admin.site.urls),
+    # Normalized: Django needs the trailing slash, the Caddy proxy in front
+    # needs the bare path (see src/frontend/caddy/Caddyfile), so DJANGO_ADMIN_URL
+    # can be set to either form and both ends agree.
+    path(f"{settings.ADMIN_URL.strip('/')}/", admin.site.urls),
     path("", include("core.urls")),
 ]
 

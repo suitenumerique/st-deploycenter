@@ -1405,7 +1405,7 @@
         "/api/v1.0/proconnect/oidc_providers.yaml": {
             "get": {
                 "operationId": "proconnect_oidc_providers_retrieve",
-                "description": "Return the ProConnect api-partenaires oidc_providers allowlist, generated from DB data, as text/plain YAML. Requires 'Authorization: Bearer <key>' when PROCONNECT_ALLOWLIST_VIEW_API_KEY is set.",
+                "description": "Return the ProConnect api-partenaires oidc_providers allowlist, generated from DB data, as text/plain YAML. Requires 'Authorization: Bearer <PROCONNECT_ALLOWLIST_VIEW_API_KEY>'; the route is closed while that setting is empty.",
                 "tags": [
                     "proconnect"
                 ],
@@ -2198,7 +2198,7 @@
                                 "type": "string"
                             }
                         },
-                        "description": "Per idp with a known deployed allowlist, the org domains already in it. Null when no allowlist is known (pre-validation unknown).",
+                        "description": "Per operator idp, the org domains already in the deployed allowlist (empty for an idp the allowlist does not cover). Null when no allowlist has been fetched at all (pre-validation unknown).",
                         "readOnly": true
                     },
                     "service_subscriptions": {

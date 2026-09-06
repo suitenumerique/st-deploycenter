@@ -62,7 +62,7 @@ $ docker compose --profile prod run --rm --build backend-prod python manage.py m
 | `PORT` | `8080` in the images, set by the platform on Scalingo | Port Caddy listens on. Do not change it in the images: their `HEALTHCHECK` hardcodes 8080. |
 | `DEPLOYCENTER_FRONTEND_ROOT` | `/app` in the images, `/app/build/frontend-out` on Scalingo | Directory of the built frontend files that Caddy serves. |
 | `DEPLOYCENTER_BACKEND_SERVER` | `localhost:8000` | `host:port` of the Django backend. |
-| `DEPLOYCENTER_ADMIN` | `admin` | Admin path proxied to Django, without the surrounding slashes. `bin/scalingo_run_web` derives it from `DJANGO_ADMIN_URL`, so on Scalingo set that one instead. Never set it to an empty value: Caddy only falls back to the default when a variable is unset, and an empty one turns the admin matchers into `/` and `//*`. |
+| `DJANGO_ADMIN_URL` | `admin` | Django's admin URL, which Caddy proxies and filters. The same value goes to the backend and to the frontend: Django adds the trailing slash it needs itself (`deploycenter/urls.py`), so write it without one. Never set it empty: Caddy only falls back to the default when a variable is unset, and an empty one turns the admin matchers into `/` and `//*`. |
 | `DEPLOYCENTER_ADMIN_IP_ALLOWLIST` | `0.0.0.0/0 ::/0` | Space-separated CIDR list of client IPs allowed on the Django admin URL. The default allows all (no filtering). Caddy answers 403 to denied requests. |
 | `DEPLOYCENTER_TRUSTED_PROXIES` | _(empty)_ | Space-separated CIDR list of upstream proxies whose `X-Forwarded-For` sets the client IP. Empty = trust no proxy, the client IP is then the TCP peer. Caddy walks the header from right to left and takes the first address that is not a trusted proxy. |
 

@@ -162,6 +162,14 @@ start_container -e "DEPLOYCENTER_ADMIN_IP_ALLOWLIST=$CLIENT_CIDR"
 assert_code 200 "admin allowed for client IP" "$BASE/admin/"
 stop_container
 
+# A non-default admin URL takes the same DJANGO_ADMIN_URL value as the backend
+# container, and the allowlist follows it.
+start_container -e 'DJANGO_ADMIN_URL=sekret' -e 'DEPLOYCENTER_ADMIN_IP_ALLOWLIST=192.0.2.0/24'
+assert_code 403 "custom admin URL denied" "$BASE/sekret/"
+assert_code 403 "custom admin URL sub-path denied" "$BASE/sekret/login/"
+assert_code 404 "default admin URL no longer proxied" -L "$BASE/admin/"
+stop_container
+
 # Trusted proxy: XFF from a trusted peer sets client_ip.
 start_container \
   -e "DEPLOYCENTER_TRUSTED_PROXIES=$CLIENT_CIDR" \
