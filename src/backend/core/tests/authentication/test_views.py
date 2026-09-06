@@ -131,16 +131,23 @@ def test_view_authenticate_keeps_other_id_token_claims():
     }
 
 
-@override_settings(
-    OIDC_REQUIRE_MFA=True,
-    OIDC_AUTH_REQUEST_EXTRA_PARAMS={"claims": "not json at all"},
-    OIDC_OP_AUTHORIZATION_ENDPOINT="https://oidc.example.com/authorize",
+@pytest.mark.parametrize(
+    "configured", ["not json at all", "[]", "null", "3", '"a string"']
 )
-def test_view_authenticate_with_unparsable_claims():
-    """Broken claims configuration is dropped, the acr request still goes out."""
+def test_view_authenticate_with_unusable_claims(configured):
+    """
+    Claims configuration that is not a JSON object is dropped and the acr
+    request still goes out, rather than breaking the login route.
+    """
 
-    response = APIClient().get(reverse("oidc_authentication_init"))
+    with override_settings(
+        OIDC_REQUIRE_MFA=True,
+        OIDC_AUTH_REQUEST_EXTRA_PARAMS={"claims": configured},
+        OIDC_OP_AUTHORIZATION_ENDPOINT="https://oidc.example.com/authorize",
+    ):
+        response = APIClient().get(reverse("oidc_authentication_init"))
 
+    assert response.status_code == 302
     claims = json.loads(parse_qs(urlparse(response.url).query)["claims"][0])
     assert claims == {
         "id_token": {

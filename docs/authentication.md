@@ -61,7 +61,7 @@ it.** The development Keycloak returns its own `acr` values, so every login is
 refused until `OIDC_MFA_ACR_VALUES` matches what it sends. A refused login logs
 the value received:
 
-```
+```text
 Authentication refused, acr claim 'eidas1' is not one of ['eidas0-mfa', ...]
 ```
 

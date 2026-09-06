@@ -61,11 +61,18 @@ class OIDCAuthenticationRequestView(MozillaOIDCAuthenticationRequestView):
 
         if isinstance(configured, str):
             try:
-                claims = json.loads(configured)
+                decoded = json.loads(configured)
             except ValueError:
+                decoded = None
+
+            # Anything that is not a JSON object ("[]", "null", a number) is
+            # unusable here, and would break the login route further down.
+            if isinstance(decoded, dict):
+                claims = decoded
+            else:
                 logger.error(
                     "Ignoring the claims of OIDC_AUTH_REQUEST_EXTRA_PARAMS, "
-                    "not valid JSON"
+                    "not a JSON object"
                 )
 
         id_token_claims = claims.get("id_token")
