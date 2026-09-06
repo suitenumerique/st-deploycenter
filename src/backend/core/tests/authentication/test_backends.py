@@ -111,6 +111,42 @@ def test_authentication_mfa_required_stores_acr_in_session(monkeypatch):
     assert request.session[MFA_ACR_SESSION_KEY] == "eidas2"
 
 
+def test_authentication_marker_does_not_outlive_the_setting(monkeypatch):
+    """
+    Turning MFA off, logging in again, then turning it back on: the second
+    login was not checked, so the marker of the first one must be gone or it
+    would keep the session alive past the moment the setting comes back.
+    """
+
+    klass = OIDCAuthenticationBackend()
+    db_user = UserFactory()
+
+    def get_userinfo_mocked(*args):
+        return {"sub": db_user.sub}
+
+    monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
+
+    request = RequestFactory().get("/")
+    SessionMiddleware(get_response=lambda x: x).process_request(request)
+    klass.request = request
+
+    # A first login, with the setting on.
+    with override_settings(OIDC_REQUIRE_MFA=True):
+        klass.get_or_create_user(
+            access_token="test-token", id_token=None, payload={"acr": "eidas2"}
+        )
+    assert request.session[MFA_ACR_SESSION_KEY] == "eidas2"
+
+    # The setting is turned off and the same user logs in again. Django keeps
+    # the session content in that case, so the marker has to be dropped here.
+    with override_settings(OIDC_REQUIRE_MFA=False):
+        klass.get_or_create_user(
+            access_token="test-token", id_token=None, payload={"acr": "eidas1"}
+        )
+
+    assert MFA_ACR_SESSION_KEY not in request.session
+
+
 @override_settings(OIDC_REQUIRE_MFA=True)
 def test_authentication_mfa_required_without_id_token(monkeypatch):
     """

@@ -1,6 +1,7 @@
 """Authentication Views for the People core app."""
 
 import json
+import logging
 from urllib.parse import urlencode
 
 from django.conf import settings
@@ -19,6 +20,8 @@ from mozilla_django_oidc.views import (
 from mozilla_django_oidc.views import (
     OIDCLogoutView as MozillaOIDCOIDCLogoutView,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class OIDCAuthenticationRequestView(MozillaOIDCAuthenticationRequestView):
@@ -42,18 +45,43 @@ class OIDCAuthenticationRequestView(MozillaOIDCAuthenticationRequestView):
             # honours is up to it. The claim is what ProConnect documents for
             # 2FA, so it is the one we keep.
             extra_params.pop("acr_values", None)
-            extra_params["claims"] = json.dumps(
-                {
-                    "id_token": {
-                        "acr": {
-                            "essential": True,
-                            "values": settings.OIDC_MFA_ACR_VALUES,
-                        }
-                    }
-                }
-            )
+            extra_params["claims"] = self.build_claims_param(extra_params.get("claims"))
 
         return extra_params
+
+    @staticmethod
+    def build_claims_param(configured):
+        """Add the acr claim request to the claims already configured, if any.
+
+        A claims parameter set in OIDC_AUTH_REQUEST_EXTRA_PARAMS asks the
+        provider for other claims; only the acr entry is ours to add.
+        """
+
+        claims = configured if isinstance(configured, dict) else {}
+
+        if isinstance(configured, str):
+            try:
+                claims = json.loads(configured)
+            except ValueError:
+                logger.error(
+                    "Ignoring the claims of OIDC_AUTH_REQUEST_EXTRA_PARAMS, "
+                    "not valid JSON"
+                )
+
+        id_token_claims = claims.get("id_token")
+
+        return json.dumps(
+            {
+                **claims,
+                "id_token": {
+                    **(id_token_claims if isinstance(id_token_claims, dict) else {}),
+                    "acr": {
+                        "essential": True,
+                        "values": settings.OIDC_MFA_ACR_VALUES,
+                    },
+                },
+            }
+        )
 
 
 class OIDCLogoutView(MozillaOIDCOIDCLogoutView):

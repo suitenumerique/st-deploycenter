@@ -83,6 +83,75 @@ def test_view_authenticate_drops_contradicting_acr_values():
     }
 
 
+@pytest.mark.parametrize(
+    "configured",
+    [
+        '{"userinfo": {"siret": null}}',
+        {"userinfo": {"siret": None}},
+    ],
+)
+def test_view_authenticate_keeps_configured_claims(configured):
+    """Claims requested for something else survive next to the acr one."""
+
+    with override_settings(
+        OIDC_REQUIRE_MFA=True,
+        OIDC_AUTH_REQUEST_EXTRA_PARAMS={"claims": configured},
+        OIDC_OP_AUTHORIZATION_ENDPOINT="https://oidc.example.com/authorize",
+    ):
+        response = APIClient().get(reverse("oidc_authentication_init"))
+
+    params = parse_qs(urlparse(response.url).query)
+    assert json.loads(params["claims"][0]) == {
+        "userinfo": {"siret": None},
+        "id_token": {
+            "acr": {
+                "essential": True,
+                "values": ["eidas0-mfa", "eidas1-mfa", "eidas2", "eidas3"],
+            }
+        },
+    }
+
+
+@override_settings(
+    OIDC_REQUIRE_MFA=True,
+    OIDC_AUTH_REQUEST_EXTRA_PARAMS={"claims": '{"id_token": {"amr": null}}'},
+    OIDC_OP_AUTHORIZATION_ENDPOINT="https://oidc.example.com/authorize",
+)
+def test_view_authenticate_keeps_other_id_token_claims():
+    """Other id_token claims are kept, only the acr entry is ours."""
+
+    response = APIClient().get(reverse("oidc_authentication_init"))
+
+    claims = json.loads(parse_qs(urlparse(response.url).query)["claims"][0])
+    assert claims["id_token"]["amr"] is None
+    assert claims["id_token"]["acr"]["essential"] is True
+    # The setting is left as configured for the next request.
+    assert settings.OIDC_AUTH_REQUEST_EXTRA_PARAMS == {
+        "claims": '{"id_token": {"amr": null}}'
+    }
+
+
+@override_settings(
+    OIDC_REQUIRE_MFA=True,
+    OIDC_AUTH_REQUEST_EXTRA_PARAMS={"claims": "not json at all"},
+    OIDC_OP_AUTHORIZATION_ENDPOINT="https://oidc.example.com/authorize",
+)
+def test_view_authenticate_with_unparsable_claims():
+    """Broken claims configuration is dropped, the acr request still goes out."""
+
+    response = APIClient().get(reverse("oidc_authentication_init"))
+
+    claims = json.loads(parse_qs(urlparse(response.url).query)["claims"][0])
+    assert claims == {
+        "id_token": {
+            "acr": {
+                "essential": True,
+                "values": ["eidas0-mfa", "eidas1-mfa", "eidas2", "eidas3"],
+            }
+        }
+    }
+
+
 @override_settings(
     OIDC_REQUIRE_MFA=False,
     OIDC_AUTH_REQUEST_EXTRA_PARAMS={"acr_values": "eidas1"},

@@ -97,7 +97,14 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
         API key (see docs/authentication.md), but a caller holding only an
         access token proves nothing about a second factor and is refused.
         """
+        session = getattr(getattr(self, "request", None), "session", None)
+
         if not settings.OIDC_REQUIRE_MFA:
+            # A marker must not outlive the setting: Django keeps the session
+            # content when the same user logs in again, so one left by an
+            # earlier login would vouch for this one, which was not checked.
+            if session is not None:
+                session.pop(MFA_ACR_SESSION_KEY, None)
             return
 
         if payload is None:
@@ -125,9 +132,8 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
         # login, RequireMFAMiddleware relies on this to close the sessions that
         # were opened before the setting was turned on. auth.login() cycles the
         # session key after this but keeps its content.
-        request = getattr(self, "request", None)
-        if request is not None and hasattr(request, "session"):
-            request.session[MFA_ACR_SESSION_KEY] = acr
+        if session is not None:
+            session[MFA_ACR_SESSION_KEY] = acr
 
     def get_or_create_user(self, access_token, id_token, payload):
         """Return a User based on userinfo. Create a new user if no match is found."""
