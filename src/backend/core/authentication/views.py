@@ -37,6 +37,11 @@ class OIDCAuthenticationRequestView(MozillaOIDCAuthenticationRequestView):
         extra_params = dict(super().get_extra_params(request))
 
         if settings.OIDC_REQUIRE_MFA:
+            # An acr_values asking for a level without a second factor
+            # contradicts the essential claim below, and which one the provider
+            # honours is up to it. The claim is what ProConnect documents for
+            # 2FA, so it is the one we keep.
+            extra_params.pop("acr_values", None)
             extra_params["claims"] = json.dumps(
                 {
                     "id_token": {

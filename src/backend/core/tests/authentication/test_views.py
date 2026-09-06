@@ -4,6 +4,7 @@ import json
 from unittest import mock
 from urllib.parse import parse_qs, urlparse
 
+from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.core.exceptions import SuspiciousOperation
@@ -56,6 +57,43 @@ def test_view_authenticate_without_mfa():
 
     assert response.status_code == 302
     assert "claims" not in parse_qs(urlparse(response.url).query)
+
+
+@override_settings(
+    OIDC_REQUIRE_MFA=True,
+    OIDC_AUTH_REQUEST_EXTRA_PARAMS={"acr_values": "eidas1", "foo": "bar"},
+    OIDC_OP_AUTHORIZATION_ENDPOINT="https://oidc.example.com/authorize",
+)
+def test_view_authenticate_drops_contradicting_acr_values():
+    """
+    An acr_values asking for a level without a second factor contradicts the
+    essential claim, so it is left out of the request. Other extra params stay.
+    """
+
+    response = APIClient().get(reverse("oidc_authentication_init"))
+
+    params = parse_qs(urlparse(response.url).query)
+    assert "acr_values" not in params
+    assert "claims" in params
+    assert params["foo"] == ["bar"]
+    # The setting itself is untouched: it is read again on the next request.
+    assert settings.OIDC_AUTH_REQUEST_EXTRA_PARAMS == {
+        "acr_values": "eidas1",
+        "foo": "bar",
+    }
+
+
+@override_settings(
+    OIDC_REQUIRE_MFA=False,
+    OIDC_AUTH_REQUEST_EXTRA_PARAMS={"acr_values": "eidas1"},
+    OIDC_OP_AUTHORIZATION_ENDPOINT="https://oidc.example.com/authorize",
+)
+def test_view_authenticate_keeps_acr_values_without_mfa():
+    """With the setting off, the configured acr_values is sent as before."""
+
+    response = APIClient().get(reverse("oidc_authentication_init"))
+
+    assert parse_qs(urlparse(response.url).query)["acr_values"] == ["eidas1"]
 
 
 @override_settings(LOGOUT_REDIRECT_URL="/example-logout")

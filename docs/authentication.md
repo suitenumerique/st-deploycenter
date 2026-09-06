@@ -50,16 +50,20 @@ that carry a factor: `eidas0-mfa`, `eidas1-mfa` (weak second factor), `eidas2`
 and `eidas3` (strong). Narrow it to `["eidas2", "eidas3"]` to demand a strong
 one. The values are provider-specific: another provider means another list.
 
-Two things to know before turning it on:
+While the setting is on, `OIDC_MFA_ACR_VALUES` is the only thing that sets the
+assurance level: an `acr_values` in `OIDC_AUTH_REQUEST_EXTRA_PARAMS` (the
+development defaults ask for `eidas1`) contradicts the essential claim, so it
+is left out of the authorization request. Nothing to change when turning the
+setting on or off, in either direction.
 
-- **Set it on a provider that supports it.** The development Keycloak returns
-  its own `acr` values, so every login is refused until `OIDC_MFA_ACR_VALUES`
-  matches what it sends.
-- **Drop any `acr_values` from `OIDC_AUTH_REQUEST_EXTRA_PARAMS`** (the
-  development defaults ask for `eidas1`). The essential claim above is what
-  governs, and a leftover `acr_values` asking for a level without a factor
-  contradicts it. The login still fails closed if the provider follows the
-  weaker one, but the error is confusing.
+One thing to know before turning it on: **set it on a provider that supports
+it.** The development Keycloak returns its own `acr` values, so every login is
+refused until `OIDC_MFA_ACR_VALUES` matches what it sends. A refused login logs
+the value received:
+
+```
+Authentication refused, acr claim 'eidas1' is not one of ['eidas0-mfa', ...]
+```
 
 ## What the setting covers
 
