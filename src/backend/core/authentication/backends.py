@@ -92,19 +92,15 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
         claim returned in the id_token is what proves it happened, so it has to
         be checked here.
 
-        The payload is the verified id_token claims. It is None when the token
-        did not come from the code flow, i.e. for the bearer tokens accepted by
-        the DRF authentication class: those are refused outright, see below.
+        The payload is the verified id_token claims. Nothing calls this method
+        without one today, the API authenticates with a session cookie or an
+        API key (see docs/authentication.md), but a caller holding only an
+        access token proves nothing about a second factor and is refused.
         """
         if not settings.OIDC_REQUIRE_MFA:
             return
 
         if payload is None:
-            # A bearer token is validated by calling the userinfo endpoint,
-            # which says nothing about how the user authenticated, and carries
-            # no acr claim to check. It could have been issued to any other
-            # service of the federation, at any assurance level, so accepting
-            # it here would be a way around the requirement.
             logger.error(
                 "Authentication refused, a token with no id_token cannot prove "
                 "multi-factor authentication"
