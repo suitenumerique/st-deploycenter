@@ -1,10 +1,21 @@
 #!/bin/bash
 
+# The Caddyfile builds the admin path as /{$DJANGO_ADMIN_URL}/*, so it must
+# carry no slash of its own; Django strips the same ones and adds its trailing
+# one back (deploycenter/urls.py), so both ends agree on any spelling.
+# Never leave it empty either: Caddy only falls back to the {$VAR:default} value
+# when the variable is unset, so an empty one turns the admin matchers into /
+# and //*, which would 403 the whole site and make the redirect below loop.
+shopt -s extglob
+DJANGO_ADMIN_URL="${DJANGO_ADMIN_URL##+(/)}"
+DJANGO_ADMIN_URL="${DJANGO_ADMIN_URL%%+(/)}"
+export DJANGO_ADMIN_URL="${DJANGO_ADMIN_URL:-admin}"
+
 # Start the Django backend server
 gunicorn -b :8000 deploycenter.wsgi:application --log-file - &
 
-# Start the Nginx server
-bin/run &
+# Start the Caddy server
+bin/caddy run --config Caddyfile --adapter caddyfile &
 
 # if the current shell is killed, also terminate all its children     
 trap "pkill SIGTERM -P $$" SIGTERM                            

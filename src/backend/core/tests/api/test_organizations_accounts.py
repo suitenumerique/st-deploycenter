@@ -152,7 +152,9 @@ def test_api_organizations_accounts_create_not_allowed_wrong_key(account_test_se
         format="json",
     )
     assert response.status_code == 401
-    assert response.json() == {"detail": "Token verification failed"}
+    assert response.json() == {
+        "detail": "Informations d'authentification non fournies."
+    }
 
 
 @pytest.mark.parametrize("auth_method", ["user", "external_api_key"])
@@ -449,7 +451,9 @@ def test_api_organizations_accounts_get_operator_do_not_exists(account_test_setu
 
     response = client.get(f"/api/v1.0/accounts/{account.id}/")
     assert response.status_code == 401
-    assert response.json() == {"detail": "Token verification failed"}
+    assert response.json() == {
+        "detail": "Informations d'authentification non fournies."
+    }
 
 
 @pytest.mark.parametrize("auth_method", ["user", "external_api_key"])
@@ -562,7 +566,9 @@ def test_api_organizations_accounts_patch_account_operator_do_not_exists(
         format="json",
     )
     assert response.status_code == 401
-    assert response.json() == {"detail": "Token verification failed"}
+    assert response.json() == {
+        "detail": "Informations d'authentification non fournies."
+    }
 
 
 ##

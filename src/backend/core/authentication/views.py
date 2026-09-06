@@ -1,7 +1,10 @@
 """Authentication Views for the People core app."""
 
+import json
+import logging
 from urllib.parse import urlencode
 
+from django.conf import settings
 from django.contrib import auth
 from django.core.exceptions import SuspiciousOperation
 from django.http import HttpResponseRedirect
@@ -12,8 +15,80 @@ from mozilla_django_oidc.utils import (
     absolutify,
 )
 from mozilla_django_oidc.views import (
+    OIDCAuthenticationRequestView as MozillaOIDCAuthenticationRequestView,
+)
+from mozilla_django_oidc.views import (
     OIDCLogoutView as MozillaOIDCOIDCLogoutView,
 )
+
+logger = logging.getLogger(__name__)
+
+
+class OIDCAuthenticationRequestView(MozillaOIDCAuthenticationRequestView):
+    """Custom authentication request view.
+
+    Asks the provider for multi-factor authentication when OIDC_REQUIRE_MFA is
+    on. The request alone does not enforce anything: the acr value that comes
+    back is checked by the authentication backend.
+    """
+
+    def get_extra_params(self, request):
+        """Add the essential "acr" claim request expected by ProConnect."""
+
+        # Copied: the parent returns the OIDC_AUTH_REQUEST_EXTRA_PARAMS setting
+        # itself, and writing to it would leak into every later request.
+        extra_params = dict(super().get_extra_params(request))
+
+        if settings.OIDC_REQUIRE_MFA:
+            # An acr_values asking for a level without a second factor
+            # contradicts the essential claim below, and which one the provider
+            # honours is up to it. The claim is what ProConnect documents for
+            # 2FA, so it is the one we keep.
+            extra_params.pop("acr_values", None)
+            extra_params["claims"] = self.build_claims_param(extra_params.get("claims"))
+
+        return extra_params
+
+    @staticmethod
+    def build_claims_param(configured):
+        """Add the acr claim request to the claims already configured, if any.
+
+        A claims parameter set in OIDC_AUTH_REQUEST_EXTRA_PARAMS asks the
+        provider for other claims; only the acr entry is ours to add.
+        """
+
+        claims = configured if isinstance(configured, dict) else {}
+
+        if isinstance(configured, str):
+            try:
+                decoded = json.loads(configured)
+            except ValueError:
+                decoded = None
+
+            # Anything that is not a JSON object ("[]", "null", a number) is
+            # unusable here, and would break the login route further down.
+            if isinstance(decoded, dict):
+                claims = decoded
+            else:
+                logger.error(
+                    "Ignoring the claims of OIDC_AUTH_REQUEST_EXTRA_PARAMS, "
+                    "not a JSON object"
+                )
+
+        id_token_claims = claims.get("id_token")
+
+        return json.dumps(
+            {
+                **claims,
+                "id_token": {
+                    **(id_token_claims if isinstance(id_token_claims, dict) else {}),
+                    "acr": {
+                        "essential": True,
+                        "values": settings.OIDC_MFA_ACR_VALUES,
+                    },
+                },
+            }
+        )
 
 
 class OIDCLogoutView(MozillaOIDCOIDCLogoutView):

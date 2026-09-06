@@ -18,6 +18,11 @@ from core.models import (
 
 logger = logging.getLogger(__name__)
 
+# Session key holding the acr claim a session was authenticated with, so that
+# RequireMFAMiddleware can tell an already opened session apart from one that
+# went through a second factor.
+MFA_ACR_SESSION_KEY = "oidc_mfa_acr"
+
 
 class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
     """Custom OpenID Connect (OIDC) Authentication Backend.
@@ -80,8 +85,60 @@ class OIDCAuthenticationBackend(MozillaOIDCAuthenticationBackend):
 
         return True
 
+    def verify_mfa(self, payload):
+        """Check that the provider actually performed multi-factor authentication.
+
+        Asking for it in the authorization request is only a request: the "acr"
+        claim returned in the id_token is what proves it happened, so it has to
+        be checked here.
+
+        The payload is the verified id_token claims. Nothing calls this method
+        without one today, the API authenticates with a session cookie or an
+        API key (see docs/authentication.md), but a caller holding only an
+        access token proves nothing about a second factor and is refused.
+        """
+        session = getattr(getattr(self, "request", None), "session", None)
+
+        if not settings.OIDC_REQUIRE_MFA:
+            # A marker must not outlive the setting: Django keeps the session
+            # content when the same user logs in again, so one left by an
+            # earlier login would vouch for this one, which was not checked.
+            if session is not None:
+                session.pop(MFA_ACR_SESSION_KEY, None)
+            return
+
+        if payload is None:
+            logger.error(
+                "Authentication refused, a token with no id_token cannot prove "
+                "multi-factor authentication"
+            )
+            raise SuspiciousOperation(
+                _("Multi-factor authentication is required to access this service.")
+            )
+
+        acr = payload.get("acr")
+
+        if acr not in settings.OIDC_MFA_ACR_VALUES:
+            logger.error(
+                "Authentication refused, acr claim %r is not one of %s",
+                acr,
+                settings.OIDC_MFA_ACR_VALUES,
+            )
+            raise SuspiciousOperation(
+                _("Multi-factor authentication is required to access this service.")
+            )
+
+        # Remember it for the whole session: the check above only happens on
+        # login, RequireMFAMiddleware relies on this to close the sessions that
+        # were opened before the setting was turned on. auth.login() cycles the
+        # session key after this but keeps its content.
+        if session is not None:
+            session[MFA_ACR_SESSION_KEY] = acr
+
     def get_or_create_user(self, access_token, id_token, payload):
         """Return a User based on userinfo. Create a new user if no match is found."""
+
+        self.verify_mfa(payload)
 
         user_info = self.get_userinfo(access_token, id_token, payload)
 

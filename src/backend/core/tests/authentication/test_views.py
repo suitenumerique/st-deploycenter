@@ -1,8 +1,10 @@
 """Unit tests for the Authentication Views."""
 
+import json
 from unittest import mock
 from urllib.parse import parse_qs, urlparse
 
+from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.core.exceptions import SuspiciousOperation
@@ -18,6 +20,156 @@ from core import factories
 from core.authentication.views import OIDCLogoutCallbackView, OIDCLogoutView
 
 pytestmark = pytest.mark.django_db
+
+
+@override_settings(
+    OIDC_REQUIRE_MFA=True,
+    OIDC_OP_AUTHORIZATION_ENDPOINT="https://oidc.example.com/authorize",
+)
+def test_view_authenticate_requires_mfa():
+    """
+    With OIDC_REQUIRE_MFA on, the authorization request asks for an essential
+    acr claim restricted to the values that carry a second factor.
+    """
+
+    response = APIClient().get(reverse("oidc_authentication_init"))
+
+    assert response.status_code == 302
+    params = parse_qs(urlparse(response.url).query)
+    assert json.loads(params["claims"][0]) == {
+        "id_token": {
+            "acr": {
+                "essential": True,
+                "values": ["eidas0-mfa", "eidas1-mfa", "eidas2", "eidas3"],
+            }
+        }
+    }
+
+
+@override_settings(
+    OIDC_REQUIRE_MFA=False,
+    OIDC_OP_AUTHORIZATION_ENDPOINT="https://oidc.example.com/authorize",
+)
+def test_view_authenticate_without_mfa():
+    """With the setting off, no acr claim is requested."""
+
+    response = APIClient().get(reverse("oidc_authentication_init"))
+
+    assert response.status_code == 302
+    assert "claims" not in parse_qs(urlparse(response.url).query)
+
+
+@override_settings(
+    OIDC_REQUIRE_MFA=True,
+    OIDC_AUTH_REQUEST_EXTRA_PARAMS={"acr_values": "eidas1", "foo": "bar"},
+    OIDC_OP_AUTHORIZATION_ENDPOINT="https://oidc.example.com/authorize",
+)
+def test_view_authenticate_drops_contradicting_acr_values():
+    """
+    An acr_values asking for a level without a second factor contradicts the
+    essential claim, so it is left out of the request. Other extra params stay.
+    """
+
+    response = APIClient().get(reverse("oidc_authentication_init"))
+
+    params = parse_qs(urlparse(response.url).query)
+    assert "acr_values" not in params
+    assert "claims" in params
+    assert params["foo"] == ["bar"]
+    # The setting itself is untouched: it is read again on the next request.
+    assert settings.OIDC_AUTH_REQUEST_EXTRA_PARAMS == {
+        "acr_values": "eidas1",
+        "foo": "bar",
+    }
+
+
+@pytest.mark.parametrize(
+    "configured",
+    [
+        '{"userinfo": {"siret": null}}',
+        {"userinfo": {"siret": None}},
+    ],
+)
+def test_view_authenticate_keeps_configured_claims(configured):
+    """Claims requested for something else survive next to the acr one."""
+
+    with override_settings(
+        OIDC_REQUIRE_MFA=True,
+        OIDC_AUTH_REQUEST_EXTRA_PARAMS={"claims": configured},
+        OIDC_OP_AUTHORIZATION_ENDPOINT="https://oidc.example.com/authorize",
+    ):
+        response = APIClient().get(reverse("oidc_authentication_init"))
+
+    params = parse_qs(urlparse(response.url).query)
+    assert json.loads(params["claims"][0]) == {
+        "userinfo": {"siret": None},
+        "id_token": {
+            "acr": {
+                "essential": True,
+                "values": ["eidas0-mfa", "eidas1-mfa", "eidas2", "eidas3"],
+            }
+        },
+    }
+
+
+@override_settings(
+    OIDC_REQUIRE_MFA=True,
+    OIDC_AUTH_REQUEST_EXTRA_PARAMS={"claims": '{"id_token": {"amr": null}}'},
+    OIDC_OP_AUTHORIZATION_ENDPOINT="https://oidc.example.com/authorize",
+)
+def test_view_authenticate_keeps_other_id_token_claims():
+    """Other id_token claims are kept, only the acr entry is ours."""
+
+    response = APIClient().get(reverse("oidc_authentication_init"))
+
+    claims = json.loads(parse_qs(urlparse(response.url).query)["claims"][0])
+    assert claims["id_token"]["amr"] is None
+    assert claims["id_token"]["acr"]["essential"] is True
+    # The setting is left as configured for the next request.
+    assert settings.OIDC_AUTH_REQUEST_EXTRA_PARAMS == {
+        "claims": '{"id_token": {"amr": null}}'
+    }
+
+
+@pytest.mark.parametrize(
+    "configured", ["not json at all", "[]", "null", "3", '"a string"']
+)
+def test_view_authenticate_with_unusable_claims(configured):
+    """
+    Claims configuration that is not a JSON object is dropped and the acr
+    request still goes out, rather than breaking the login route.
+    """
+
+    with override_settings(
+        OIDC_REQUIRE_MFA=True,
+        OIDC_AUTH_REQUEST_EXTRA_PARAMS={"claims": configured},
+        OIDC_OP_AUTHORIZATION_ENDPOINT="https://oidc.example.com/authorize",
+    ):
+        response = APIClient().get(reverse("oidc_authentication_init"))
+
+    assert response.status_code == 302
+    claims = json.loads(parse_qs(urlparse(response.url).query)["claims"][0])
+    assert claims == {
+        "id_token": {
+            "acr": {
+                "essential": True,
+                "values": ["eidas0-mfa", "eidas1-mfa", "eidas2", "eidas3"],
+            }
+        }
+    }
+
+
+@override_settings(
+    OIDC_REQUIRE_MFA=False,
+    OIDC_AUTH_REQUEST_EXTRA_PARAMS={"acr_values": "eidas1"},
+    OIDC_OP_AUTHORIZATION_ENDPOINT="https://oidc.example.com/authorize",
+)
+def test_view_authenticate_keeps_acr_values_without_mfa():
+    """With the setting off, the configured acr_values is sent as before."""
+
+    response = APIClient().get(reverse("oidc_authentication_init"))
+
+    assert parse_qs(urlparse(response.url).query)["acr_values"] == ["eidas1"]
 
 
 @override_settings(LOGOUT_REDIRECT_URL="/example-logout")

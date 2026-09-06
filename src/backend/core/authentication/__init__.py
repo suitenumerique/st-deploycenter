@@ -4,10 +4,38 @@ import secrets
 
 from django.conf import settings
 
+from drf_spectacular.authentication import SessionScheme as DRFSessionScheme
 from rest_framework.authentication import BaseAuthentication
+from rest_framework.authentication import (
+    SessionAuthentication as DRFSessionAuthentication,
+)
 from rest_framework.exceptions import AuthenticationFailed
 
 from core import models
+
+
+class SessionAuthentication(DRFSessionAuthentication):
+    """Session authentication that keeps unauthenticated requests on 401.
+
+    DRF answers 403 instead of 401 unless one of the authenticators advertises
+    a WWW-Authenticate header, and the frontend only redirects to the login
+    page on 401 (see fetchApi.ts). The OIDC bearer authentication class used to
+    provide that header; it was removed, so it is declared here.
+    """
+
+    def authenticate_header(self, request):
+        """Advertise a challenge so that DRF keeps answering 401."""
+        return 'Session realm="api"'
+
+
+class SessionScheme(DRFSessionScheme):
+    """Keep the session cookie documented in the API schema.
+
+    drf-spectacular matches its built-in scheme on the exact class path, so it
+    does not recognize the subclass above.
+    """
+
+    target_class = SessionAuthentication
 
 
 class ServerToServerAuthentication(BaseAuthentication):

@@ -5,17 +5,188 @@ import re
 from logging import Logger
 from unittest import mock
 
+from django.contrib.sessions.middleware import SessionMiddleware
 from django.core.exceptions import SuspiciousOperation
+from django.test import RequestFactory
 from django.test.utils import override_settings
 
 import pytest
 import responses
 
 from core import models
-from core.authentication.backends import OIDCAuthenticationBackend
+from core.authentication.backends import (
+    MFA_ACR_SESSION_KEY,
+    OIDCAuthenticationBackend,
+)
 from core.factories import UserFactory
 
 pytestmark = pytest.mark.django_db
+
+
+@override_settings(OIDC_REQUIRE_MFA=True)
+@pytest.mark.parametrize("acr", ["eidas0-mfa", "eidas1-mfa", "eidas2", "eidas3"])
+def test_authentication_mfa_required_acr_accepted(acr, monkeypatch):
+    """An acr claim carrying a second factor lets the authentication through."""
+
+    klass = OIDCAuthenticationBackend()
+    db_user = UserFactory()
+
+    def get_userinfo_mocked(*args):
+        return {"sub": db_user.sub}
+
+    monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
+
+    user = klass.get_or_create_user(
+        access_token="test-token", id_token=None, payload={"acr": acr}
+    )
+
+    assert user == db_user
+
+
+@override_settings(OIDC_REQUIRE_MFA=True)
+@pytest.mark.parametrize("payload", [{"acr": "eidas1"}, {"acr": "eidas0"}, {}])
+def test_authentication_mfa_required_acr_refused(payload, monkeypatch):
+    """An acr claim without a second factor, or none at all, refuses the login."""
+
+    klass = OIDCAuthenticationBackend()
+    db_user = UserFactory()
+
+    def get_userinfo_mocked(*args):
+        return {"sub": db_user.sub}
+
+    monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
+
+    with pytest.raises(
+        SuspiciousOperation,
+        match="Multi-factor authentication is required to access this service.",
+    ):
+        klass.get_or_create_user(
+            access_token="test-token", id_token=None, payload=payload
+        )
+
+
+@override_settings(OIDC_REQUIRE_MFA=False)
+def test_authentication_mfa_not_required_ignores_acr(monkeypatch):
+    """With the setting off, the acr claim is not looked at."""
+
+    klass = OIDCAuthenticationBackend()
+    db_user = UserFactory()
+
+    def get_userinfo_mocked(*args):
+        return {"sub": db_user.sub}
+
+    monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
+
+    user = klass.get_or_create_user(
+        access_token="test-token", id_token=None, payload={"acr": "eidas1"}
+    )
+
+    assert user == db_user
+
+
+@override_settings(OIDC_REQUIRE_MFA=True)
+def test_authentication_mfa_required_stores_acr_in_session(monkeypatch):
+    """
+    The acr is kept in the session: it is what tells RequireMFAMiddleware that
+    this session went through a second factor.
+    """
+
+    klass = OIDCAuthenticationBackend()
+    db_user = UserFactory()
+
+    def get_userinfo_mocked(*args):
+        return {"sub": db_user.sub}
+
+    monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
+
+    request = RequestFactory().get("/")
+    SessionMiddleware(get_response=lambda x: x).process_request(request)
+    klass.request = request
+
+    user = klass.get_or_create_user(
+        access_token="test-token", id_token=None, payload={"acr": "eidas2"}
+    )
+
+    assert user == db_user
+    assert request.session[MFA_ACR_SESSION_KEY] == "eidas2"
+
+
+def test_authentication_marker_does_not_outlive_the_setting(monkeypatch):
+    """
+    Turning MFA off, logging in again, then turning it back on: the second
+    login was not checked, so the marker of the first one must be gone or it
+    would keep the session alive past the moment the setting comes back.
+    """
+
+    klass = OIDCAuthenticationBackend()
+    db_user = UserFactory()
+
+    def get_userinfo_mocked(*args):
+        return {"sub": db_user.sub}
+
+    monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
+
+    request = RequestFactory().get("/")
+    SessionMiddleware(get_response=lambda x: x).process_request(request)
+    klass.request = request
+
+    # A first login, with the setting on.
+    with override_settings(OIDC_REQUIRE_MFA=True):
+        klass.get_or_create_user(
+            access_token="test-token", id_token=None, payload={"acr": "eidas2"}
+        )
+    assert request.session[MFA_ACR_SESSION_KEY] == "eidas2"
+
+    # The setting is turned off and the same user logs in again. Django keeps
+    # the session content in that case, so the marker has to be dropped here.
+    with override_settings(OIDC_REQUIRE_MFA=False):
+        klass.get_or_create_user(
+            access_token="test-token", id_token=None, payload={"acr": "eidas1"}
+        )
+
+    assert MFA_ACR_SESSION_KEY not in request.session
+
+
+@override_settings(OIDC_REQUIRE_MFA=True)
+def test_authentication_mfa_required_without_id_token(monkeypatch):
+    """
+    Bearer tokens presented to the API carry no id_token, so nothing proves a
+    second factor and they are refused: they could have been issued to another
+    service of the federation, at any assurance level.
+    """
+
+    klass = OIDCAuthenticationBackend()
+    db_user = UserFactory()
+
+    def get_userinfo_mocked(*args):
+        return {"sub": db_user.sub}
+
+    monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
+
+    with pytest.raises(
+        SuspiciousOperation,
+        match="Multi-factor authentication is required to access this service.",
+    ):
+        klass.get_or_create_user(access_token="test-token", id_token=None, payload=None)
+
+
+@override_settings(OIDC_REQUIRE_MFA=False)
+def test_authentication_mfa_not_required_without_id_token(monkeypatch):
+    """With the setting off, bearer tokens keep working as before."""
+
+    klass = OIDCAuthenticationBackend()
+    db_user = UserFactory()
+
+    def get_userinfo_mocked(*args):
+        return {"sub": db_user.sub}
+
+    monkeypatch.setattr(OIDCAuthenticationBackend, "get_userinfo", get_userinfo_mocked)
+
+    user = klass.get_or_create_user(
+        access_token="test-token", id_token=None, payload=None
+    )
+
+    assert user == db_user
 
 
 def test_authentication_getter_existing_user_no_email(monkeypatch):

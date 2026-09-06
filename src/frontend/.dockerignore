@@ -1,0 +1,9 @@
+# Build context for src/frontend/Dockerfile: keep host build artifacts out, the
+# production build regenerates them inside the image.
+node_modules
+out
+.next
+*.tsbuildinfo
+
+.DS_Store
+**/.DS_Store

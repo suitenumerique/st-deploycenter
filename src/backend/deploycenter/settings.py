@@ -63,7 +63,7 @@ class Base(Configuration):
     API_VERSION = "v1.0"
 
     # Admin URL configuration
-    ADMIN_URL = values.Value("admin/")
+    ADMIN_URL = values.Value("admin")
 
     # Security
     ALLOWED_HOSTS = values.ListValue([])
@@ -179,6 +179,9 @@ class Base(Configuration):
         "django.middleware.common.CommonMiddleware",
         "django.middleware.csrf.CsrfViewMiddleware",
         "django.contrib.auth.middleware.AuthenticationMiddleware",
+        # After AuthenticationMiddleware: it logs sessions out (see
+        # OIDC_REQUIRE_MFA) and needs the session and user on the request.
+        "core.authentication.middleware.RequireMFAMiddleware",
         "django.contrib.messages.middleware.MessageMiddleware",
     ]
 
@@ -232,9 +235,11 @@ class Base(Configuration):
     }
 
     REST_FRAMEWORK = {
+        # The UI authenticates with its session cookie, partners with the API
+        # keys their viewsets declare. No OIDC bearer class, see
+        # docs/authentication.md.
         "DEFAULT_AUTHENTICATION_CLASSES": (
-            "mozilla_django_oidc.contrib.drf.OIDCAuthentication",
-            "rest_framework.authentication.SessionAuthentication",
+            "core.authentication.SessionAuthentication",
         ),
         "DEFAULT_PARSER_CLASSES": [
             "rest_framework.parsers.JSONParser",
@@ -388,6 +393,21 @@ class Base(Configuration):
     )
     OIDC_RP_SCOPES = values.Value(
         "openid email", environ_name="OIDC_RP_SCOPES", environ_prefix=None
+    )
+    # Require multi-factor authentication for every OIDC login. Off by default.
+    # When on, the authorization request asks for an essential "acr" claim and
+    # the value returned in the id_token is checked back, as ProConnect requires:
+    # https://partenaires.proconnect.gouv.fr/docs/fournisseur-service/double_authentification
+    OIDC_REQUIRE_MFA = values.BooleanValue(
+        default=False, environ_name="OIDC_REQUIRE_MFA", environ_prefix=None
+    )
+    # ProConnect ACR values that include a second factor. eidas0-mfa and
+    # eidas1-mfa are a weak second factor, eidas2 and eidas3 a strong one:
+    # https://partenaires.proconnect.gouv.fr/docs/fournisseur-service/niveaux-eidas
+    OIDC_MFA_ACR_VALUES = values.ListValue(
+        default=["eidas0-mfa", "eidas1-mfa", "eidas2", "eidas3"],
+        environ_name="OIDC_MFA_ACR_VALUES",
+        environ_prefix=None,
     )
     LOGIN_REDIRECT_URL = values.Value(
         None, environ_name="LOGIN_REDIRECT_URL", environ_prefix=None
