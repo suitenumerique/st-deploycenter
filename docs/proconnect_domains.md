@@ -100,6 +100,78 @@ and rolled back. That verdict comes from the cache above, so it lags it by up to
 hour: right after an allowlist PR lands, run `proconnect_fetch_prevalidated` rather
 than waiting for the next tick.
 
+## What keeps `wanadoo.fr` out of the allowlist, and what does not
+
+Routing a domain to a provider says "everyone at this domain authenticates as this
+collectivité". So the question ProConnect asks about any allowlist entry is not
+"does this domain exist" but "does this one organization own it". Today the answer
+comes from four layers, and only the last of them is a real check.
+
+**1. RPNT 2.2, on the email side only.** The `dpnt` bucket takes the org's email
+domain when criteria 2.1 *and* 2.2 hold, and [2.2](https://suiteterritoriale.anct.gouv.fr/conformite/referentiel#2.2)
+is precisely "the address must not use a generic domain". That is the layer that
+keeps `wanadoo.fr` and `orange.fr` out, and it works: they are the top two domains
+in the whole DILA directory, declared by 10 800 and 8 601 distinct SIREN.
+
+It is a hand-maintained list of 50 names, though (`GENERIC_EMAIL_DOMAINS` in
+[st-home](https://github.com/suitenumerique/st-home/blob/main/data/tasks/defs.py)),
+so it holds exactly the names somebody thought to type. `gmail.com` is on it,
+`gmail.fr` is not, and `gmail.fr` reached the first api-partenaires PR. So did
+`aol.com`, `mailo.com`, `online.fr` and `9online.fr`.
+
+**2. Nothing at all, on the website side.** `rpnt_valid_site_domain` requires
+criterion 1.1 only ("a website is declared on service-public.gouv.fr"). 2.2 is a
+*mail* criterion and never applies to the website domain, and 1.2 (sovereign
+extension) is not required either. Whatever a commune wrote in its `site_internet`
+field lands in `dpnt`, becomes routable, and is published as `# Source: DILA`.
+
+That is how the first PR ended up proposing `intramuros.org` (declared by 249
+organizations), `lapagelocale.fr` (102), `facebook.com` (49), `espace-citoyens.net`
+(29), `sites.google.com` (27) and `padlet.com`, plus 75 names under `wixsite.com`,
+59 under `e-monsite.com`, 56 under `jimdofree.com`, 50 under `free.fr`, 39 under
+`wordpress.com` and 21 under `blogspot.com`. None of these belong to a
+collectivité, and a commune whose website is a Wix page has no mailbox on
+`wixsite.com` to route.
+
+**3. `claimed_domains()`, for candidates.** Candidate domains are guesses derived
+from the commune's name, and the only filter on them is that another *collectivité*
+does not provably own the name. That filter cannot see a domain owned by anyone
+else, so the generator proposed `ens.fr` to the commune of Ens (65), `vogue.fr` to
+Vogüé (07), `lancome.fr` to Lancôme (41), `lapeyre.fr` to Lapeyre (65) and
+`lamontagne.fr` to La Montagne (70). It also proposed the same name to two or three
+homonymous communes 1 689 times.
+
+Nor does it ask whether the name exists: 94 % of the candidates in the first PR
+(128 785 of 137 208 `.fr` names) are not registered. Pre-authorizing an unregistered
+name hands the routing to whoever registers it first, for the price of a domain.
+
+**4. The review script.** `scripts/validate_proconnect_allowlist.py` runs on the
+api-partenaires PR and puts every domain of the new file into exactly one of five
+categories, tried in order, so the counts always add up to the size of the file.
+Its own docstring is the reference; the short version is:
+
+| | |
+|---|---|
+| `not_allowed` | on the deny list in the script, or under a domain that is. An error whatever else is true, which is why it is tested first: `orange.fr` is a perfect reconstruction of the name of the commune of Orange, and `vogue.fr` of Vogüé. |
+| `reconstructible` | the suggest rules could have built it from the collectivité's name. A guess, not evidence. |
+| `previous_allowlist` | already deployed, so this PR is not granting it. |
+| `dila_ok` | declared on service-public.gouv.fr by *exactly one* collectivité, and that declaration passes RPNT 1.2, 2.2 and 2.3. |
+| `to_be_validated` | everything else. A human decides. |
+
+The deny list is hand-maintained, and deliberately narrower than st-home's
+`GENERIC_EMAIL_DOMAINS`: that one also holds mutualised *public* domains, which are
+not one commune's own but are not an error either (`selonnet.fr` is on it, and is
+the official site of the commune of Selonnet). What replaces the list for
+everything else is the "exactly one collectivité" test in `dila_ok`, which needs
+nothing maintained: `facebook.com` is declared by 49 collectivités,
+`intramuros.org` by 249, `wanadoo.fr` by 10 800, while `abbeville.fr` is declared
+by one.
+
+The gap this leaves is that layer 4 runs on *their* side, at review time, on a PR
+built from data layers 1 to 3 already let through. Closing it here means teaching
+the generator the same rules: apply the deny list and the "exactly one
+collectivité" test to the website domain as well as the email one.
+
 ## Pushing
 
 Any change to an active ProConnect subscription's domains pushes the provider's full
