@@ -1,5 +1,5 @@
 import { Auth } from "@/features/auth/Auth";
-import { MainLayout } from "@gouvfr-lasuite/ui-kit";
+import { MainLayout } from "@gouvfr-lasuite/ui-components";
 import { HeaderRight } from "./header/Header";
 import { HeaderIcon } from "./header/Header";
 import { LeftPanel } from "./left-panel/LeftPanel";
@@ -27,19 +27,32 @@ export const GlobalExplorerLayout = ({
 }: {
   children: React.ReactNode;
 }) => {
+  const router = useRouter();
+  // The panel only holds operator-scoped navigation, so on the operator picker
+  // it would be an empty column. Read it off the route pattern and not off
+  // query.operator_id, which is undefined until the router is ready and would
+  // shift the layout after hydration.
+  const isOperatorScoped = router.pathname.startsWith("/operators/[operator_id]");
+
   return (
     <GlobalLayout>
       <OperatorContextProvider>
-        <MainLayout
-          leftPanelContent={<LeftPanel />}
-          enableResize
-          icon={<HeaderIcon />}
-          rightHeaderContent={<HeaderRight />}
-        >
-          {children}
-          <Toaster />
-          <FeedbackWidget />
-        </MainLayout>
+        {/* hideLeftPanelOnDesktop only covers desktop: the kit always renders
+            the mobile drawer and its burger. The class hides those two, and
+            display:contents keeps the wrapper out of the layout. */}
+        <div className={isOperatorScoped ? undefined : "dc__no-left-panel"}>
+          <MainLayout
+            leftPanelContent={<LeftPanel />}
+            hideLeftPanelOnDesktop={!isOperatorScoped}
+            enableResize
+            icon={<HeaderIcon />}
+            rightHeaderContent={<HeaderRight />}
+          >
+            {children}
+            <Toaster />
+            <FeedbackWidget />
+          </MainLayout>
+        </div>
       </OperatorContextProvider>
     </GlobalLayout>
   );

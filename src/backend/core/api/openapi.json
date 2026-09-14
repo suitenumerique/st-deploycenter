@@ -559,6 +559,66 @@
                 }
             }
         },
+        "/api/v1.0/operators/{operator_id}/metrics/": {
+            "get": {
+                "operationId": "operators_metrics_retrieve",
+                "description": "List metrics with filtering and optional aggregation.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "operator_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "operators"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/operators/{operator_id}/metrics/keys/": {
+            "get": {
+                "operationId": "operators_metrics_keys_retrieve",
+                "description": "List the metric keys that have data for this operator.\n\nThe dashboard populates its key filter from this rather than from a\nhardcoded list, so it only ever offers keys that resolve to a chart.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "operator_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "operators"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
         "/api/v1.0/operators/{operator_id}/organizations/": {
             "get": {
                 "operationId": "operators_organizations_list",
@@ -2940,7 +3000,7 @@
             "cookieAuth": {
                 "type": "apiKey",
                 "in": "cookie",
-                "name": "sessionid"
+                "name": "st_deploycenter_sessionid"
             }
         }
     }

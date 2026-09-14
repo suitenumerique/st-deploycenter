@@ -5,10 +5,10 @@ import {
   Modal,
   ModalSize,
   Select,
-} from "@openfun/cunningham-react";
+} from "@gouvfr-lasuite/ui-components";
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Spinner } from "@gouvfr-lasuite/ui-components";
 import { Account, Service, SERVICE_TYPE_MESSAGES } from "@/features/api/Repository";
 import {
   useMutationCreateAccount,
@@ -341,7 +341,7 @@ export const AccountModal = ({
           <Button
             type="button"
             onClick={onClose}
-            color="secondary"
+            variant="secondary"
             disabled={isLoading}
           >
             {t("common.cancel")}

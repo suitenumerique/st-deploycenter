@@ -1,4 +1,4 @@
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Spinner } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import { useRouter } from "next/router";
 import { Operator } from "@/features/api/Repository";

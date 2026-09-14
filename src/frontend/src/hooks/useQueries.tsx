@@ -16,11 +16,13 @@ import {
   checkDomains,
   DomainCheck,
   getOperatorMetrics,
+  getOperatorMetricKeys,
   MetricsParams,
 } from "@/features/api/Repository";
 import { getOrganization } from "@/features/api/Repository";
 import { useEffect, useState } from "react";
 import {
+  keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
@@ -63,6 +65,10 @@ export const useOperatorOrganizations = (
     ],
     queryFn: () => getOperatorOrganizations(operatorId, params),
     enabled: enabled && !!operatorId,
+    // Searching and paging change the key. Without this the data drops to
+    // undefined for the length of the request, which blanks the list being
+    // read and, in the metrics dropdown, unmounts the search box mid-word.
+    placeholderData: keepPreviousData,
   });
 };
 
@@ -438,6 +444,17 @@ export const useOperatorMetrics = (
     queryKey: ["operators", operatorId, "metrics", JSON.stringify(params)],
     queryFn: () => getOperatorMetrics(operatorId, params!),
     enabled: !!operatorId && !!params?.key && !!params?.service,
+  });
+};
+
+export const useOperatorMetricKeys = (
+  operatorId: string,
+  serviceId: string,
+) => {
+  return useQuery({
+    queryKey: ["operators", operatorId, "metrics", "keys", serviceId],
+    queryFn: () => getOperatorMetricKeys(operatorId, serviceId),
+    enabled: !!operatorId && !!serviceId,
   });
 };
 

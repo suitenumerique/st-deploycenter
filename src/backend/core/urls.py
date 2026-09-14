@@ -15,7 +15,7 @@ from .api.viewsets.config import ConfigView
 from .api.viewsets.domains import DomainCheckView, DomainListView
 from .api.viewsets.entitlements import EntitlementView
 from .api.viewsets.lagaufre import LagaufreViewSet
-from .api.viewsets.metrics import SubscriptionsByServiceView
+from .api.viewsets.metrics import OperatorMetricsViewSet, SubscriptionsByServiceView
 from .api.viewsets.operator import OperatorViewSet
 from .api.viewsets.organization import OperatorOrganizationViewSet
 from .api.viewsets.proconnect import ProConnectAllowlistView
@@ -26,7 +26,6 @@ from .api.viewsets.service import (
     ServiceLogoViewSet,
     SubscriptionEntitlementViewSet,
 )
-from .api.viewsets.metrics import OperatorMetricsViewSet
 from .api.viewsets.user import UserViewSet
 
 # Create router and register viewsets
@@ -95,6 +94,11 @@ urlpatterns = [
                     include(
                         [
                             *operator_organization_router.urls,
+                            path(
+                                "metrics/keys/",
+                                OperatorMetricsViewSet.as_view({"get": "keys"}),
+                                name="operator-metrics-keys",
+                            ),
                             path(
                                 "metrics/",
                                 OperatorMetricsViewSet.as_view({"get": "list"}),

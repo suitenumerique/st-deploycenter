@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Icon, Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Button, Input, Modal, ModalSize } from "@openfun/cunningham-react";
+import { Icon, Spinner } from "@gouvfr-lasuite/ui-components";
+import { Button, Input, Modal, ModalSize } from "@gouvfr-lasuite/ui-components";
 import { MutateOptions } from "@tanstack/react-query";
 import { Organization } from "@/features/api/Repository";
 import { errorToString } from "@/features/api/APIError";
@@ -276,7 +276,7 @@ export const DomainMultiSelectModal = (props: DomainMultiSelectModalProps) => {
         <Button
           type="button"
           size="small"
-          color="secondary"
+          variant="secondary"
           className="dc__domain-selector__item__delete"
           icon={<Icon name="undo" />}
           title={t(`${PREFIX}.actions.restore`)}
@@ -299,7 +299,7 @@ export const DomainMultiSelectModal = (props: DomainMultiSelectModalProps) => {
           <Button
             type="button"
             size="small"
-            color="secondary"
+            variant="secondary"
             icon={<Icon name="delete" />}
             title={t(`${PREFIX}.actions.reject`)}
             disabled={isBucketPending}
@@ -313,7 +313,7 @@ export const DomainMultiSelectModal = (props: DomainMultiSelectModalProps) => {
         <Button
           type="button"
           size="small"
-          color="secondary"
+          variant="secondary"
           className="dc__domain-selector__item__delete"
           icon={<Icon name="delete" />}
           title={t(
@@ -332,7 +332,7 @@ export const DomainMultiSelectModal = (props: DomainMultiSelectModalProps) => {
         <Button
           type="button"
           size="small"
-          color="secondary"
+          variant="secondary"
           className="dc__domain-selector__item__delete"
           icon={<Icon name="close" />}
           title={t(
@@ -361,7 +361,7 @@ export const DomainMultiSelectModal = (props: DomainMultiSelectModalProps) => {
           <Button
             type="button"
             onClick={props.onClose}
-            color="secondary"
+            variant="secondary"
             disabled={isPending}
           >
             {t("common.cancel")}
@@ -515,7 +515,7 @@ export const DomainMultiSelectModal = (props: DomainMultiSelectModalProps) => {
               />
               <Button
                 type="button"
-                color="secondary"
+                variant="secondary"
                 onClick={handleAsk}
                 disabled={isBucketPending || !newDomain.trim().includes(".")}
               >

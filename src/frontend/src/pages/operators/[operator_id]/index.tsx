@@ -12,8 +12,8 @@ import {
   SortModel,
   Tooltip,
   usePagination,
-} from "@openfun/cunningham-react";
-import { Badge, Icon } from "@gouvfr-lasuite/ui-kit";
+} from "@gouvfr-lasuite/ui-components";
+import { Badge, Icon } from "@gouvfr-lasuite/ui-components";
 import { RpntBadge } from "@/features/ui/components/organization/RpntBadge";
 import Link from "next/link";
 import { useOperatorOrganizations, useOperatorServices } from "@/hooks/useQueries";
@@ -194,7 +194,7 @@ export default function Operator() {
               return (
                 <>
                   {params.row.type === "commune" ? (<>
-                  {params.row.departement_code_insee}・{params.row.epci_libelle}
+                  {params.row.departement_code_insee}·{params.row.epci_libelle}
                   </>
                   ) : (params.row.type === "region" ? "" : (
                     <>

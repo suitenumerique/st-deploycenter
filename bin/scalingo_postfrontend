@@ -27,4 +27,7 @@ chmod +x bin/caddy
 # Copy the Caddyfile (uses {$ENV} vars natively, no ERB needed)
 cp src/frontend/caddy/Caddyfile ./Caddyfile
 
-echo "3.13" > .python-version
+# The Scalingo Python buildpack detects the app from uv.lock (moved to the root
+# by the mv above) and requires .python-version to pick the interpreter. Keep
+# this in step with requires-python in src/backend/pyproject.toml.
+echo "3.14.7" > .python-version

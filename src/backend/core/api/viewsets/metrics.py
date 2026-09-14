@@ -1,24 +1,22 @@
-"""Metrics API viewsets."""
 """
 API endpoints for Metrics model.
 """
 
+import uuid
+
 from django.db.models import Avg, Sum
 
-from rest_framework import status, viewsets
-from rest_framework.settings import api_settings
-
-from core import models
-from core.authentication import ExternalManagementApiKeyAuthentication
-
-from .. import permissions, serializers as core_serializers
-
-from rest_framework import serializers
+from rest_framework import serializers, status, viewsets
 from rest_framework.response import Response
+from rest_framework.settings import api_settings
 from rest_framework.views import APIView
 
 from core import models
-from core.api import permissions
+from core.authentication import OperatorExternalManagementApiKeyAuthentication
+
+from .. import permissions
+from .. import serializers as core_serializers
+from . import Pagination
 
 
 # pylint: disable=abstract-method
@@ -76,6 +74,60 @@ class SubscriptionsByServiceView(APIView):
             }
         )
 
+
+def _parse_uuid_list(value):
+    """Parse a comma-separated list of UUIDs, naming the one that is malformed."""
+    parsed = []
+    for raw in value.split(","):
+        candidate = raw.strip()
+        if not candidate:
+            continue
+        try:
+            parsed.append(uuid.UUID(candidate))
+        except ValueError as exc:
+            raise serializers.ValidationError(
+                f"'{candidate}' is not a valid UUID."
+            ) from exc
+    return parsed
+
+
+class OperatorMetricsQuerySerializer(serializers.Serializer):
+    """Validate query params for the operator metrics endpoint.
+
+    Everything the view reads goes through here, so a malformed value comes back
+    as a 400 naming the parameter instead of reaching the ORM.
+    """
+
+    key = serializers.CharField()
+    service = serializers.IntegerField()
+    organizations = serializers.CharField(required=False, allow_blank=True)
+    accounts = serializers.CharField(required=False, allow_blank=True)
+    account_type = serializers.CharField(required=False, allow_blank=True)
+    agg = serializers.ChoiceField(
+        choices=["sum", "avg"], required=False, allow_blank=True
+    )
+    group_by = serializers.ChoiceField(
+        choices=["organization"], required=False, allow_blank=True
+    )
+    order_by = serializers.ChoiceField(
+        choices=["organization", "value", "-value"], required=False, allow_blank=True
+    )
+
+    def validate_organizations(self, value):
+        """Turn the comma-separated param into a list of UUIDs."""
+        return _parse_uuid_list(value)
+
+    def validate_accounts(self, value):
+        """Turn the comma-separated param into a list of UUIDs."""
+        return _parse_uuid_list(value)
+
+
+class OperatorMetricKeysQuerySerializer(serializers.Serializer):
+    """Validate query params for the operator metric keys endpoint."""
+
+    service = serializers.IntegerField(required=False)
+
+
 class OperatorMetricsViewSet(viewsets.ViewSet):
     """ViewSet for Metrics model nested under Operator.
 
@@ -83,6 +135,9 @@ class OperatorMetricsViewSet(viewsets.ViewSet):
         Return the list of metrics for the given operator based on filters.
         Supports filtering by key, service, organizations, accounts, account_type.
         Supports aggregation via agg=sum|avg query param.
+
+    GET /api/v1.0/operators/<operator_id>/metrics/keys/
+        Return the metric keys that have data for this operator.
 
     Required query params:
         - key: Metric key to filter on (single value)
@@ -94,111 +149,94 @@ class OperatorMetricsViewSet(viewsets.ViewSet):
         - account_type: Filter by account type (e.g., "user", "mailbox").
         - agg: Aggregation type (sum|avg). If provided, returns aggregated value.
         - group_by: Group results by 'organization'. Returns sum per organization.
+        - page / page_size: Paginate the listed and grouped results.
     """
 
+    # A list literal, not list(...): the class also defines a "list" method below,
+    # and reading the builtin by that name here is a trap for the next reader.
     authentication_classes = [
-        ExternalManagementApiKeyAuthentication,
-    ] + list(api_settings.DEFAULT_AUTHENTICATION_CLASSES)
+        OperatorExternalManagementApiKeyAuthentication,
+        *api_settings.DEFAULT_AUTHENTICATION_CLASSES,
+    ]
     permission_classes = [
         permissions.IsAuthenticatedWithAnyMethod,
         permissions.OperatorAccessPermission,
     ]
 
-    def _get_operator_organizations(self, operator_id):
-        """Get all organization IDs that the operator has access to."""
-        return models.Organization.objects.filter(
-            operator_roles__operator_id=operator_id
-        ).values_list("id", flat=True)
+    def _operator_metrics(self, operator_id):
+        """Metrics of every organization the operator has a role in.
 
-    def _parse_comma_separated_ids(self, param_value):
-        """Parse comma-separated IDs from query param."""
-        if not param_value:
-            return None
-        return [id.strip() for id in param_value.split(",") if id.strip()]
+        The join cannot duplicate a metric: OperatorOrganizationRole is unique per
+        (operator, organization). Filtering through it beats fetching the operator's
+        organization IDs and passing them back as an IN clause, which costs a
+        second query and grows with the operator (~300ms against 36k organizations,
+        against ~2ms here).
+        """
+        return models.Metric.objects.filter(
+            organization__operator_roles__operator_id=operator_id
+        )
+
+    @staticmethod
+    def _paginated_response(paginator, results, **extra):
+        """The standard paginated payload, plus endpoint-specific keys."""
+        return Response(
+            {
+                "count": paginator.page.paginator.count,
+                "next": paginator.get_next_link(),
+                "previous": paginator.get_previous_link(),
+                "results": results,
+                **extra,
+            }
+        )
 
     def list(self, request, operator_id=None):
         """List metrics with filtering and optional aggregation."""
-        # Validate required params
-        key = request.query_params.get("key")
-        service_id = request.query_params.get("service")
+        query = OperatorMetricsQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        params = query.validated_data
 
-        if not key:
-            return Response(
-                {"error": "Query parameter 'key' is required."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if not service_id:
-            return Response(
-                {"error": "Query parameter 'service' is required."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Validate service exists
         try:
-            service = models.Service.objects.get(id=service_id)
+            service = models.Service.objects.get(id=params["service"])
         except models.Service.DoesNotExist:
             return Response(
-                {"error": f"Service with id '{service_id}' not found."},
+                {"error": f"Service with id '{params['service']}' not found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Get allowed organizations for this operator (convert UUIDs to strings for comparison)
-        allowed_org_ids = set(
-            str(org_id) for org_id in self._get_operator_organizations(operator_id)
+        queryset = self._operator_metrics(operator_id).filter(
+            key=params["key"],
+            service=service,
         )
 
-        # Parse optional organization filter
-        org_ids_param = request.query_params.get("organizations")
-        if org_ids_param:
-            requested_org_ids = set(self._parse_comma_separated_ids(org_ids_param))
-            # Filter to only allowed organizations
-            org_ids = list(requested_org_ids & allowed_org_ids)
-            if not org_ids:
+        # Requested organizations are kept only where the operator has a role, so a
+        # foreign ID cannot widen the scope. All of them being foreign is a mistake
+        # worth reporting rather than answering with an empty chart.
+        organizations = params.get("organizations")
+        if organizations:
+            if not models.Organization.objects.filter(
+                operator_roles__operator_id=operator_id, id__in=organizations
+            ).exists():
                 return Response(
                     {"error": "No valid organizations found for the given IDs."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-        else:
-            # Default to all organizations the operator has access to
-            org_ids = list(allowed_org_ids)
+            queryset = queryset.filter(organization_id__in=organizations)
 
-        # Build base queryset
-        queryset = models.Metric.objects.filter(
-            key=key,
-            service=service,
-            organization_id__in=org_ids,
-        )
+        if params.get("account_type"):
+            queryset = queryset.filter(account__type=params["account_type"])
 
-        # Filter by account_type if provided
-        account_type = request.query_params.get("account_type")
-        if account_type:
-            queryset = queryset.filter(account__type=account_type)
+        if params.get("accounts"):
+            queryset = queryset.filter(account_id__in=params["accounts"])
 
-        # Filter by accounts if provided
-        accounts_param = request.query_params.get("accounts")
-        if accounts_param:
-            account_ids = self._parse_comma_separated_ids(accounts_param)
-            queryset = queryset.filter(account_id__in=account_ids)
-
-        # Handle aggregation
-        agg = request.query_params.get("agg")
+        agg = params.get("agg")
         if agg:
-            if agg not in ("sum", "avg"):
-                return Response(
-                    {"error": "Query parameter 'agg' must be 'sum' or 'avg'."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            if agg == "sum":
-                result = queryset.aggregate(value=Sum("value"))
-            else:  # avg
-                result = queryset.aggregate(value=Avg("value"))
+            aggregation = Sum("value") if agg == "sum" else Avg("value")
+            result = queryset.aggregate(value=aggregation)
 
             serializer = core_serializers.AggregatedMetricSerializer(
                 {
-                    "key": key,
-                    "service_id": service_id,
+                    "key": params["key"],
+                    "service_id": service.id,
                     "aggregation": agg,
                     "value": result["value"] or 0,
                     "count": queryset.count(),
@@ -206,15 +244,29 @@ class OperatorMetricsViewSet(viewsets.ViewSet):
             )
             return Response(serializer.data)
 
-        # Handle group_by parameter
-        group_by = request.query_params.get("group_by")
-        if group_by == "organization":
-            # Group by organization and sum values
+        paginator = Pagination()
+
+        # Every ordering ends on a unique column. Sorting by value alone leaves
+        # ties in an order Postgres is free to change between pages, which is how
+        # a row shows up twice, or never, while paging.
+        order_by = params.get("order_by") or "organization"
+
+        if params.get("group_by") == "organization":
+            # Organization.name is not unique: the DPNT dataset has 1454 names
+            # shared by several communes, a dozen of them for "Sainte-Colombe".
+            # Without the id, those rows tie and the database is free to order
+            # them differently per page, which duplicates one and drops another.
+            grouped_order = {
+                "organization": ["organization__name", "organization__id"],
+                "value": ["value", "organization__name", "organization__id"],
+                "-value": ["-value", "organization__name", "organization__id"],
+            }[order_by]
             grouped = (
                 queryset.values("organization__id", "organization__name")
                 .annotate(value=Sum("value"))
-                .order_by("organization__name")
+                .order_by(*grouped_order)
             )
+            page = paginator.paginate_queryset(grouped, request, view=self)
             results = [
                 {
                     "organization": {
@@ -223,13 +275,42 @@ class OperatorMetricsViewSet(viewsets.ViewSet):
                     },
                     "value": str(item["value"]),
                 }
-                for item in grouped
+                for item in page
             ]
-            return Response({"results": results, "grouped_by": "organization"})
+            return self._paginated_response(
+                paginator, results, grouped_by="organization"
+            )
 
-        # Return list of metrics
+        # "id" breaks ties: accounts of the same organization can share an empty
+        # email, and without it a row could show up on two pages or on none.
+        row_order = {
+            "organization": ["organization__name", "account__email", "id"],
+            "value": ["value", "id"],
+            "-value": ["-value", "id"],
+        }[order_by]
         queryset = queryset.select_related("account", "organization").order_by(
-            "organization__name", "account__email"
+            *row_order
         )
-        serializer = core_serializers.MetricSerializer(queryset, many=True)
-        return Response({"results": serializer.data})
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        serializer = core_serializers.MetricSerializer(page, many=True)
+        return self._paginated_response(paginator, serializer.data)
+
+    def keys(self, request, operator_id=None):
+        """List the metric keys that have data for this operator.
+
+        The dashboard populates its key filter from this rather than from a
+        hardcoded list, so it only ever offers keys that resolve to a chart.
+        """
+        query = OperatorMetricKeysQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+
+        queryset = self._operator_metrics(operator_id)
+
+        service_id = query.validated_data.get("service")
+        if service_id:
+            queryset = queryset.filter(service_id=service_id)
+
+        # order_by clears Metric's default ordering, which would otherwise add
+        # "timestamp" to the selected columns and defeat the distinct().
+        keys = queryset.values_list("key", flat=True).distinct().order_by("key")
+        return Response({"results": list(keys)})

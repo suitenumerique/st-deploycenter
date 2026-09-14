@@ -14,43 +14,40 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 description = "ST Deploy Center"
 keywords = ["Django"]
 license = "MIT"
 readme = "README.md"
-requires-python = ">=3.13,<4.0"
+requires-python = ">=3.14.7,<4.0"
 
-# Note: after changing this list you must re-run `make back-poetry-lock`
+# Note: after changing this list you must re-run `make deps-lock-back`
 dependencies = [
-    "celery[redis]==5.5.3",
-    "cryptography==45.0.6",
-    "dj-database-url==3.0.1",
-    "django==5.2.12",
+    "celery[redis]==5.6.2",
+    "cryptography==50.0.1",
+    "dj-database-url==3.1.2",
+    "django==5.2.17",
     "django-celery-beat==2.8.1",
     "django-celery-results==2.6.0",
     "django-configurations==2.5.1",
-    "django-cors-headers==4.7.0",
-    "django-countries==7.6.1",
-    "django-fernet-encrypted-fields==0.3.0",
-    "django-filter==25.1",
-    "django-redis==5.4.0",
-    "django-timezone-field==7.1",
-    "djangorestframework==3.16.1",
-    "drf_spectacular==0.28.0",
-    "gunicorn==23.0.0",
+    "django-cors-headers==4.9.0",
+    "django-filter==25.2",
+    "django-redis==6.0.0",
+    "django-timezone-field==7.2.1",
+    "djangorestframework==3.17.2",
+    "drf_spectacular==0.29.0",
+    "gunicorn==25.1.0",
     "mozilla-django-oidc==4.0.1",
-    "psycopg[binary]==3.2.9",
-    "PyJWT==2.10.1",
+    "psycopg[binary]==3.3.3",
     "PySocks==1.7.1",  # pinned: pulled in by requests[socks]
     # Iterative DNS resolution from the root, for the domains service delegation check.
     "recursive-resolver==0.2.0",
-    "redis==5.2.1",
+    "redis==6.4.0",
     # [socks]: ProConnectPartnersClient can route through a SOCKS5 proxy.
-    "requests[socks]==2.32.5",
-    "sentry-sdk[django]==2.35.1",
-    "whitenoise==6.9.0",
+    "requests[socks]==2.34.2",
+    "sentry-sdk[django]==2.53.0",
+    "whitenoise==6.11.0",
 ]
 
 [project.urls]
@@ -63,27 +60,34 @@ dependencies = [
 dev = [
     "django-debug-toolbar==6.0.0",
     "django-extensions==4.1",
-    "drf-spectacular-sidecar==2025.8.1",
+    "drf-spectacular-sidecar==2026.1.1",
     "factory_boy==3.3.3",
     "flower==2.0.1",
-    "pip-audit==2.9.0",
-    "pipdeptree==2.30.0",
-    "pylint-django==2.6.1",
-    "pylint==3.3.8",
-    "pytest-cov==6.2.1",
-    "pytest-django==4.11.1",
-    "pytest==8.4.1",
+    "pip-audit==2.10.0",
+    "pipdeptree==2.31.0",
+    "pylint-django==2.7.0",
+    "pylint==4.0.4",
+    "pytest-cov==7.0.0",
+    "pytest-django==4.12.0",
+    "pytest==9.0.3",
     "pytest-icdiff==0.9",
     "pytest-repeat==0.9.4",
     "pytest-xdist==3.8.0",
-    "responses==0.25.8",
-    "ruff==0.12.11"
+    "responses==0.26.0",
+    "ruff==0.15.2"
 ]
 
-[tool.poetry]
-package-mode = false
+[tool.uv]
+# The backend is an application, not a distributable package: nothing imports it
+# from outside the image, so there is no project to build or install. The
+# Dockerfile's `uv sync` passes --no-install-project to match.
+package = false
 
 [tool.ruff]
+# Pinned a minor behind the runtime floor: targeting py314 lets ruff's formatter
+# apply PEP 758 (un-parenthesized `except E1, E2:`), which is valid 3.14 but
+# trips most static analysis and IDEs still on older Python.
+target-version = "py313"
 exclude = [
     ".git",
     ".venv",

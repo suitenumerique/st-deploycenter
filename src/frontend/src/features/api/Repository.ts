@@ -1,4 +1,4 @@
-import { SortModel } from "@openfun/cunningham-react";
+import { SortModel } from "@gouvfr-lasuite/ui-components";
 import { fetchAPI } from "./fetchApi";
 
 type PaginatedResponse<T> = {
@@ -428,27 +428,27 @@ export type Metric = {
   organization: MetricOrganization;
 };
 
-export type MetricsResponse = {
-  results: Metric[];
-};
+export type MetricsResponse = PaginatedResponse<Metric>;
 
 export type GroupedMetricItem = {
   organization: MetricOrganization;
   value: string;
 };
 
-export type GroupedMetricsResponse = {
-  results: GroupedMetricItem[];
+export type GroupedMetricsResponse = PaginatedResponse<GroupedMetricItem> & {
   grouped_by: "organization";
 };
 
 export type AggregatedMetric = {
   key: string;
-  service_id: string;
+  // IntegerField on AggregatedMetricSerializer, fed from Service.id.
+  service_id: number;
   aggregation: "sum" | "avg";
   value: string;
   count: number;
 };
+
+export type MetricsOrderBy = "organization" | "value" | "-value";
 
 export type MetricsParams = {
   key: string;
@@ -458,6 +458,9 @@ export type MetricsParams = {
   account_type?: string;
   agg?: "sum" | "avg";
   group_by?: "organization";
+  order_by?: MetricsOrderBy;
+  page?: number;
+  page_size?: number;
 };
 
 export const getOperatorMetrics = async (
@@ -483,9 +486,90 @@ export const getOperatorMetrics = async (
   if (params.group_by) {
     url.searchParams.append("group_by", params.group_by);
   }
+  if (params.order_by) {
+    url.searchParams.append("order_by", params.order_by);
+  }
+  if (params.page) {
+    url.searchParams.append("page", params.page.toString());
+  }
+  if (params.page_size) {
+    url.searchParams.append("page_size", params.page_size.toString());
+  }
 
   const response = await fetchAPI(
     `operators/${operatorId}/metrics/` + url.search
   );
-  return (await response.json()) as MetricsResponse | GroupedMetricsResponse | AggregatedMetric;
+  return (await response.json()) as
+    | MetricsResponse
+    | GroupedMetricsResponse
+    | AggregatedMetric;
+};
+
+/** The largest page the API will serve (Pagination.max_page_size). */
+const EXPORT_PAGE_SIZE = 200;
+
+/**
+ * Every row matching the filters, not just the page on screen.
+ *
+ * The endpoint is paginated with no "all" escape hatch, so this walks the pages
+ * and concatenates them. Ordering is what makes that safe: every ordering the
+ * API accepts ends on a unique column, so a row cannot move between pages while
+ * the walk is in progress.
+ */
+export const getAllOperatorMetrics = async (
+  operatorId: string,
+  params: MetricsParams,
+  onProgress?: (loaded: number, total: number) => void
+): Promise<MetricsResponse | GroupedMetricsResponse | AggregatedMetric> => {
+  const first = await getOperatorMetrics(operatorId, {
+    ...params,
+    page: 1,
+    page_size: EXPORT_PAGE_SIZE,
+  });
+
+  // An aggregation is a single value, so there is nothing to page through.
+  if ("aggregation" in first) {
+    return first;
+  }
+
+  const total = first.count;
+  const results = [...first.results];
+  onProgress?.(results.length, total);
+
+  for (let page = 2; results.length < total; page += 1) {
+    const next = (await getOperatorMetrics(operatorId, {
+      ...params,
+      page,
+      page_size: EXPORT_PAGE_SIZE,
+    })) as MetricsResponse | GroupedMetricsResponse;
+
+    // A page that comes back empty would otherwise spin forever.
+    if (next.results.length === 0) {
+      break;
+    }
+    results.push(...(next.results as (typeof results)[number][]));
+    onProgress?.(results.length, total);
+  }
+
+  return { ...first, results } as MetricsResponse | GroupedMetricsResponse;
+};
+
+/**
+ * The metric keys this operator actually has data for, for a given service.
+ *
+ * The dashboard offers only these: a hardcoded list would let a user pick a key
+ * that can only ever draw an empty chart.
+ */
+export const getOperatorMetricKeys = async (
+  operatorId: string,
+  serviceId: string
+): Promise<{ results: string[] }> => {
+  const url = new URL(`/`, window.location.origin);
+  if (serviceId) {
+    url.searchParams.append("service", serviceId);
+  }
+  const response = await fetchAPI(
+    `operators/${operatorId}/metrics/keys/` + url.search
+  );
+  return (await response.json()) as { results: string[] };
 };

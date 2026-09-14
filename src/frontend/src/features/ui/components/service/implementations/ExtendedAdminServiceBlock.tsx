@@ -16,8 +16,8 @@ import {
   Radio,
   RadioGroup,
   useModal,
-} from "@openfun/cunningham-react";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+} from "@gouvfr-lasuite/ui-components";
+import { Spinner } from "@gouvfr-lasuite/ui-components";
 import { useEffect, useRef, useState } from "react";
 import { MutateOptions } from "@tanstack/react-query";
 
@@ -164,7 +164,7 @@ const ExtendedAdminModal = (props: {
           <Button
             type="button"
             onClick={props.onClose}
-            color="secondary"
+            variant="secondary"
             disabled={isPending}
           >
             {t("common.cancel")}

@@ -4,7 +4,7 @@ import { QueryCache } from "@tanstack/react-query";
 import { NextPage } from "next";
 import type { AppProps } from "next/app";
 import { ReactElement, ReactNode } from "react";
-import { CunninghamProvider } from "@gouvfr-lasuite/ui-kit";
+import { CunninghamProvider } from "@gouvfr-lasuite/ui-components";
 import { APIError, errorToString } from "@/features/api/APIError";
 import {
   addToast,

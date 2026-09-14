@@ -1,10 +1,7 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useTranslation } from "react-i18next";
-import { Icon } from "@gouvfr-lasuite/ui-kit";
-import { useAuth } from "@/features/auth/Auth";
-import { LogoutButton } from "@/features/auth/components/LogoutButton";
-import { LoginButton } from "@/features/auth/components/LoginButton";
+import { Icon } from "@gouvfr-lasuite/ui-components";
 
 type NavItem = {
   label: string;
@@ -16,7 +13,6 @@ type NavItem = {
 export const LeftPanel = () => {
   const { t } = useTranslation();
   const router = useRouter();
-  const { user } = useAuth();
   const operatorId = router.query.operator_id as string;
 
   const items: NavItem[] = operatorId
@@ -66,9 +62,6 @@ export const LeftPanel = () => {
           );
         })}
       </ul>
-      <div className="dc__left-panel__auth">
-        {user ? <LogoutButton /> : <LoginButton />}
-      </div>
     </nav>
   );
 };

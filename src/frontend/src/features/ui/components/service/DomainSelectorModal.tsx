@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Button, Input, Modal, ModalSize } from "@openfun/cunningham-react";
+import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-components";
+import { Button, Input, Modal, ModalSize } from "@gouvfr-lasuite/ui-components";
 import { MutateOptions } from "@tanstack/react-query";
 
 const PREFIX = "organizations.services.types.messages";
@@ -111,7 +111,7 @@ export const DomainSelectorModal = (props: DomainSelectorModalProps) => {
           <Button
             type="button"
             onClick={props.onClose}
-            color="secondary"
+            variant="secondary"
             disabled={isPending}
           >
             {t("common.cancel")}
@@ -140,7 +140,7 @@ export const DomainSelectorModal = (props: DomainSelectorModalProps) => {
                   {props.isSuperUser && (
                     <Button
                       size="small"
-                      color="secondary"
+                      variant="secondary"
                       icon={<Icon name="delete" />}
                       className="dc__domain-selector__item__delete"
                       title={t(`${PREFIX}.domains.modal.delete_label`)}
@@ -171,7 +171,7 @@ export const DomainSelectorModal = (props: DomainSelectorModalProps) => {
                 />
                 <Button
                   type="button"
-                  color="secondary"
+                  variant="secondary"
                   onClick={handleAddDomain}
                   disabled={!newDomainInput.trim().includes(".")}
                 >

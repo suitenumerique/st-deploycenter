@@ -14,6 +14,7 @@ from decimal import Decimal
 from logging import getLogger
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 
 from core.models import (
     Account,
@@ -192,7 +193,8 @@ def generate_random_external_id() -> str:
 
 def generate_random_metric_value() -> Decimal:
     """Generate a random metric value between 0 and 10 million."""
-    return Decimal(random.randint(METRIC_MIN_VALUE, METRIC_MAX_VALUE))
+    # Demo fixture values, nothing depends on them being unguessable.
+    return Decimal(random.randint(METRIC_MIN_VALUE, METRIC_MAX_VALUE))  # noqa: S311
 
 
 def create_accounts_and_metrics(
@@ -291,10 +293,17 @@ class Command(BaseCommand):
             help="Name for the operator (defaults to 'Demo Operator <random>')",
         )
 
+    # Step 4 fails on a database with fewer than ORGANIZATIONS_TO_LINK
+    # organizations, which is any database where the DPNT import has not run
+    # yet. Without this the operator, its user role and its two services are
+    # already committed, and every retry leaves another orphan behind.
+    @transaction.atomic
     def handle(self, *args, **options):
         """Execute the command."""
         email = options["email"]
-        operator_name = options["operator_name"] or f"Demo Operator {uuid.uuid4().hex[:6]}"
+        operator_name = (
+            options["operator_name"] or f"Demo Operator {uuid.uuid4().hex[:6]}"
+        )
 
         self.stdout.write(f"Creating demo operator: {operator_name}")
         self.stdout.write(f"User email: {email}")
@@ -314,8 +323,12 @@ class Command(BaseCommand):
         # Step 3: Create services
         self.stdout.write("Step 3: Creating services...")
         messages_service, drive_service = create_services(operator)
-        self.stdout.write(self.style.SUCCESS(f"  Created messages service: {messages_service.name}"))
-        self.stdout.write(self.style.SUCCESS(f"  Created drive service: {drive_service.name}"))
+        self.stdout.write(
+            self.style.SUCCESS(f"  Created messages service: {messages_service.name}")
+        )
+        self.stdout.write(
+            self.style.SUCCESS(f"  Created drive service: {drive_service.name}")
+        )
 
         # Step 4: Link organizations
         self.stdout.write(f"Step 4: Linking {ORGANIZATIONS_TO_LINK} organizations...")
@@ -360,9 +373,21 @@ class Command(BaseCommand):
 
         self.stdout.write("")
         self.stdout.write(self.style.SUCCESS("Demo operator created successfully!"))
-        self.stdout.write(self.style.SUCCESS(f"  Operator: {operator.name} (ID: {operator.id})"))
+        self.stdout.write(
+            self.style.SUCCESS(f"  Operator: {operator.name} (ID: {operator.id})")
+        )
         self.stdout.write(self.style.SUCCESS(f"  User: {email}"))
-        self.stdout.write(self.style.SUCCESS(f"  Services: {messages_service.name}, {drive_service.name}"))
-        self.stdout.write(self.style.SUCCESS(f"  Organizations linked: {len(organizations)}"))
-        self.stdout.write(self.style.SUCCESS(f"  Total accounts created: {total_accounts}"))
-        self.stdout.write(self.style.SUCCESS(f"  Total metrics created: {total_metrics}"))
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"  Services: {messages_service.name}, {drive_service.name}"
+            )
+        )
+        self.stdout.write(
+            self.style.SUCCESS(f"  Organizations linked: {len(organizations)}")
+        )
+        self.stdout.write(
+            self.style.SUCCESS(f"  Total accounts created: {total_accounts}")
+        )
+        self.stdout.write(
+            self.style.SUCCESS(f"  Total metrics created: {total_metrics}")
+        )

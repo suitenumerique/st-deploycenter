@@ -8,6 +8,7 @@
 export interface User {
   id: string;
   email: string;
+  full_name: string | null;
   language: string;
   is_superuser: boolean;
 }

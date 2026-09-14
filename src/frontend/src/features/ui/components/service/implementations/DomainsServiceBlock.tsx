@@ -9,8 +9,8 @@ import {
 } from "@/features/ui/components/service/ServiceBlock";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Icon, IconSize } from "@gouvfr-lasuite/ui-kit";
-import { useModal } from "@openfun/cunningham-react";
+import { Icon, IconSize } from "@gouvfr-lasuite/ui-components";
+import { useModal } from "@gouvfr-lasuite/ui-components";
 import { MutateOptions } from "@tanstack/react-query";
 import { ServiceAttribute } from "../ServiceAttribute";
 import { DomainsModal } from "../DomainsModal";

@@ -10,8 +10,8 @@ import { SERVICE_TYPE_PROCONNECT } from "@/features/api/Repository";
 import { Breadcrumbs } from "@/features/ui/components/breadcrumbs/Breadcrumbs";
 import { useMemo } from "react";
 import { useBreadcrumbOperator } from "@/features/ui/components/breadcrumbs/Parts";
-import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Tooltip } from "@openfun/cunningham-react";
+import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-components";
+import { Tooltip } from "@gouvfr-lasuite/ui-components";
 import { RpntBadge } from "@/features/ui/components/organization/RpntBadge";
 import { ServiceBlockDispatcher } from "@/features/ui/components/service/ServiceBlockDispatcher";
 import { AccountsTab } from "@/features/ui/components/accounts/AccountsTab";
@@ -126,22 +126,22 @@ export default function Organization() {
                 <>
                 {organization?.type === "commune" ? (
                   <>
-                  ・{organization?.code_postal}
+                  ·{organization?.code_postal}
                   </>
                 ) : (
                   organization?.type === "region" ? (
                     <>
-                      ・{t("organizations.filter.types.region")}
+                      ·{t("organizations.filter.types.region")}
                     </>
                   ) : (
                     organization?.type === "departement" ? (
                       <>
-                      ・{t("organizations.filter.types.departement")}
+                      ·{t("organizations.filter.types.departement")}
                       </>
                     ) : (
                       organization?.type === "epci" ? (
                         <>
-                        ・{t("organizations.filter.types.epci")}
+                        ·{t("organizations.filter.types.epci")}
                         </>
                       ) : ""
                     

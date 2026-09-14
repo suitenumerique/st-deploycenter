@@ -1,7 +1,7 @@
 import { useRouter } from "next/router";
 import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Spinner } from "@gouvfr-lasuite/ui-components";
 import { Container } from "@/features/layouts/components/container/Container";
 import {
   getGlobalExplorerLayout,

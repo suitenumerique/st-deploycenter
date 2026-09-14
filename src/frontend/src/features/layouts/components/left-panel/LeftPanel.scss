@@ -1,6 +1,21 @@
+// Routes with no operator have nothing to navigate to. display:contents so the
+// wrapper adds no box of its own around the kit's full-height layout.
+.dc__no-left-panel {
+  display: contents;
+
+  .c__header__toggle-menu,
+  .c__left-panel__mobile {
+    display: none;
+  }
+}
+
 .dc__left-panel {
   display: flex;
   flex-direction: column;
+  // Without this the padding is added on top of height:100% and the panel is
+  // 2rem taller than the kit's scroll container, which shows as a scrollbar
+  // down the sidebar with nothing to scroll to.
+  box-sizing: border-box;
   height: 100%;
   padding: 1rem 0.75rem;
   gap: 1rem;
@@ -64,12 +79,5 @@
         }
       }
     }
-  }
-
-  &__auth {
-    display: flex;
-    justify-content: center;
-    padding-top: 0.5rem;
-    border-top: 1px solid var(--c--theme--colors--greyscale-200);
   }
 }

@@ -1267,6 +1267,7 @@ class AccountSerializer(serializers.ModelSerializer):
             entry["roles"][link.role] = {"scope": link.scope or {}}
         return list(by_service.values())
 
+
 class MetricAccountSerializer(serializers.ModelSerializer):
     """Lightweight serializer for account in metric context."""
 
@@ -1301,7 +1302,7 @@ class AggregatedMetricSerializer(serializers.Serializer):
     """Serialize aggregated metric result."""
 
     key = serializers.CharField(help_text="Metric key")
-    service_id = serializers.UUIDField(help_text="Service ID")
+    service_id = serializers.IntegerField(help_text="Service ID")
     aggregation = serializers.ChoiceField(
         choices=["sum", "avg"],
         help_text="Aggregation type applied",

@@ -1,3 +1,5 @@
+"""Entitlement resolver for the administration services."""
+
 from core import models
 from core.entitlements.resolvers.entitlement_resolver import (
     EntitlementResolver,

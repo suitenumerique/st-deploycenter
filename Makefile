@@ -129,8 +129,8 @@ update:  ## Update the project with latest changes
 	@$(MAKE) build
 	@$(MAKE) collectstatic
 	@$(MAKE) migrate
-	@$(MAKE) front-install-frozen
-	# @$(MAKE) back-i18n-compile
+	@$(MAKE) install-frozen-front
+	# @$(MAKE) i18n-compile-back
 .PHONY: update
 
 # -- Docker/compose
@@ -239,63 +239,63 @@ restart-minimal: \
 
 lint: ## run all linters
 lint: \
-  back-lint \
-  front-lint \
-  front-ts-check
+  lint-back \
+  lint-front \
+  typecheck-front
 .PHONY: lint
 
 lint-check:  ## run all linters in check mode
 lint-check: \
-  back-ruff-check \
-  back-pylint
-  #front-ts-check \
-  #front-lint
+  lint-ruff-back \
+  lint-pylint-back
+  #typecheck-front \
+  #lint-front
 .PHONY: lint-check
 
-back-lint: ## run back-end linters
-back-lint: \
-  back-ruff-format \
-  back-ruff-check \
-  back-pylint
-.PHONY: back-lint
+lint-back: ## run back-end linters
+lint-back: \
+  format-back \
+  lint-ruff-back \
+  lint-pylint-back
+.PHONY: lint-back
 
-back-ruff-format: ## format back-end python sources with ruff
+format-back: ## format back-end python sources with ruff
 	@$(COMPOSE_RUN_APP_TOOLS) ruff format .
-.PHONY: back-ruff-format
+.PHONY: format-back
 
-back-ruff-check: ## lint back-end python sources with ruff
+lint-ruff-back: ## lint back-end python sources with ruff
 	@$(COMPOSE_RUN_APP_TOOLS) ruff check . --fix
-.PHONY: back-ruff-check
+.PHONY: lint-ruff-back
 
-back-pylint: ## lint back-end python sources with pylint
+lint-pylint-back: ## lint back-end python sources with pylint
 	@$(COMPOSE_RUN_APP_TOOLS) sh -c "pylint ."
-.PHONY: back-pylint
+.PHONY: lint-pylint-back
 
-front-ts-check: ## run the frontend type checker
+typecheck-front: ## run the frontend type checker
 	@$(COMPOSE) run --rm frontend-tools npm run ts:check
-.PHONY: front-ts-check
+.PHONY: typecheck-front
 
-front-lint: ## run the frontend linter
+lint-front: ## run the frontend linter
 	@$(COMPOSE) run --rm frontend-tools npm run lint
-.PHONY: front-lint
+.PHONY: lint-front
 
 # -- Tests
 
 test: ## run all tests
 test: \
-  back-test
+  test-back
   #front-test
 .PHONY: test
 
-back-test: create-docker-network ## run back-end tests
+test-back: create-docker-network ## run back-end tests
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
 	bin/pytest $${args:-${1}}
-.PHONY: back-test
+.PHONY: test-back
 
-back-test-parallel: create-docker-network ## run all back-end tests in parallel
+test-back-parallel: create-docker-network ## run all back-end tests in parallel
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
 	bin/pytest -n auto $${args:-${1}}
-.PHONY: back-test-parallel
+.PHONY: test-back-parallel
 
 # front-test: ## run the frontend tests
 # 	@$(COMPOSE) run --rm frontend-tools npm run test
@@ -327,46 +327,46 @@ superuser: ## Create an admin superuser with password "admin"
 	@$(MANAGE_DB) createsuperuser --email admin@admin.local --password admin
 .PHONY: superuser
 
-back-i18n-compile: ## compile the gettext files
+i18n-compile-back: ## compile the gettext files
 	@$(MANAGE) compilemessages --ignore="venv/**/*"
-.PHONY: back-i18n-compile
+.PHONY: i18n-compile-back
 
-back-i18n-generate: ## create the .pot files used for i18n
+i18n-generate-back: ## create the .pot files used for i18n
 	@$(MANAGE) makemessages -a --keep-pot --all
-.PHONY: back-i18n-generate
+.PHONY: i18n-generate-back
 
-back-shell: ## open a shell in the backend container
+shell-back: ## open a shell in the backend container
 	@$(COMPOSE) run --rm --build backend-dev /bin/bash
-.PHONY: back-shell
+.PHONY: shell-back
 
-back-shell-no-deps: ## open a shell in the backend container without dependencies
+shell-back-no-deps: ## open a shell in the backend container without dependencies
 	@$(COMPOSE) run --rm --no-deps --build backend-dev /bin/bash
-.PHONY: back-shell-no-deps
+.PHONY: shell-back-no-deps
 
-back-exec: ## open a shell in the running backend-dev container
+exec-back: ## open a shell in the running backend-dev container
 	@$(COMPOSE) exec backend-dev /bin/bash
-.PHONY: back-exec
+.PHONY: exec-back
 
-back-poetry-lock: ## lock the dependencies
-	@$(COMPOSE) run --rm --build backend-poetry poetry lock
-	make pip-audit
-.PHONY: back-poetry-lock
+deps-lock-back: ## lock the dependencies
+	@$(COMPOSE) run --rm --build backend-uv uv lock
+	make deps-audit-back
+.PHONY: deps-lock-back
 
-back-poetry-check: ## check the dependencies
-	@$(COMPOSE) run --rm --build backend-poetry poetry check
-.PHONY: back-poetry-check
+deps-check-back: ## check the lock file is in step with pyproject.toml
+	@$(COMPOSE) run --rm --build backend-uv uv lock --check
+.PHONY: deps-check-back
 
-back-poetry-outdated: ## show outdated dependencies
-	@$(COMPOSE) run --rm --build backend-poetry poetry show --outdated
-.PHONY: back-poetry-outdated
+deps-outdated-back: ## show outdated dependencies
+	@$(COMPOSE) run --rm --build backend-uv uv tree --outdated --depth 1
+.PHONY: deps-outdated-back
 
-back-poetry-tree: ## show dependencies as a tree
+deps-tree-back: ## show dependencies as a tree
 	@$(COMPOSE) run --rm --build backend-dev pipdeptree
-.PHONY: back-poetry-tree
+.PHONY: deps-tree-back
 
-pip-audit: ## check the dependencies
-	@$(COMPOSE) run --rm --no-deps -e HOME=/tmp --build backend-dev pip-audit
-.PHONY: pip-audit
+deps-audit-back: ## check the dependencies
+	@$(COMPOSE) run --rm --no-deps -e HOME=/tmp --build backend-dev deps-audit-back
+.PHONY: deps-audit-back
 
 import-dpnt: ## import the DPNT dataset
 	@echo "$(BOLD)Importing DPNT dataset$(RESET)"
@@ -387,9 +387,9 @@ keycloak-export: ## export all keycloak data to a JSON file
 
 # -- Database
 
-db-shell: ## connect to database shell
+shell-db: ## connect to database shell
 	$(COMPOSE) exec backend-dev python manage.py dbshell
-.PHONY: db-shell
+.PHONY: shell-db
 
 db-reset: FLUSH_ARGS ?=
 db-reset: ## flush database
@@ -432,13 +432,13 @@ crowdin-upload: ## Upload source translations to crowdin
 
 i18n-compile: ## compile all translations
 i18n-compile: \
-	back-i18n-compile \
+	i18n-compile-back \
 	front-i18n-compile
 .PHONY: i18n-compile
 
 i18n-generate: ## create the .pot files and extract frontend messages
 i18n-generate: \
-	back-i18n-generate \
+	i18n-generate-back \
 	front-i18n-generate
 .PHONY: i18n-generate
 
@@ -475,24 +475,24 @@ help:
 
 # Front
 
-front-shell: ## open a shell in the frontend container
+shell-front: ## open a shell in the frontend container
 	@$(COMPOSE) run --rm frontend-tools /bin/sh
-.PHONY: front-shell
+.PHONY: shell-front
 
-front-install: ## install the frontend locally
+install-front: ## install the frontend locally
 	@args="$(filter-out $@,$(MAKECMDGOALS))" && \
 	$(COMPOSE) run --rm frontend-tools npm install $${args:-${1}}
-.PHONY: front-install
+.PHONY: install-front
 
-front-install-frozen: ## install the frontend locally, following the frozen lockfile
+install-frozen-front: ## install the frontend locally, following the frozen lockfile
 	@echo "Installing frontend dependencies, this might take a few minutes..."
 	@$(COMPOSE) run --rm frontend-tools npm ci
-.PHONY: front-install-frozen
+.PHONY: install-frozen-front
 
-front-install-frozen-amd64: ## install the frontend locally, following the frozen lockfile
+install-frozen-front-amd64: ## install the frontend locally, following the frozen lockfile
 	@$(COMPOSE) run --rm frontend-tools-amd64 npm ci
-.PHONY: front-install-frozen-amd64
+.PHONY: install-frozen-front-amd64
 
-front-build: ## build the frontend locally
+build-front: ## build the frontend locally
 	@$(COMPOSE) run --rm frontend-tools npm run build
-.PHONY: front-build
+.PHONY: build-front

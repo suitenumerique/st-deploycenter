@@ -357,12 +357,12 @@
           "service_placeholder": "Sélectionner un service",
           "key": "Métrique",
           "key_placeholder": "Sélectionner une métrique",
+          "key_empty": "Aucune métrique remontée pour ce service",
           "organizations": "Organisations",
           "organizations_placeholder": "Toutes les organisations",
+          "organizations_search": "Rechercher une organisation",
           "account_type": "Type de compte",
           "account_type_placeholder": "Tous les types",
-          "accounts": "Comptes",
-          "accounts_placeholder": "Tous les comptes",
           "aggregation": "Agrégation",
           "aggregation_options": {
             "none": "Aucune",
@@ -372,15 +372,27 @@
           "unit": "Unité",
           "unit_options": {
             "none": "Aucune"
+          },
+          "order_by": "Trier par",
+          "order_by_options": {
+            "organization": "Nom d'organisation",
+            "value": "Valeur croissante",
+            "-value": "Valeur décroissante"
           }
+        },
+        "export": {
+          "csv": "Télécharger en CSV",
+          "in_progress": "Export… {{percent}} %"
         },
         "chart": {
           "no_data": "Aucune donnée à afficher",
           "select_filters": "Sélectionnez un service et une métrique pour afficher les données",
+          "error": "Impossible de charger les métriques",
           "aggregated_value": "Valeur agrégée",
           "value_axis": "Valeur",
-          "account_axis": "Compte",
-          "results_count": "{{count}} résultat(s)"
+          "mode_aggregated": "Agrégation de {{count}} métrique(s)",
+          "mode_grouped": "Somme par organisation ({{count}} organisation(s))",
+          "mode_accounts": "Valeur par compte ({{count}} résultat(s))"
         },
         "account_types": {
           "user": "Utilisateur",

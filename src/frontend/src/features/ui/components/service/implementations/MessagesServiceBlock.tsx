@@ -14,8 +14,8 @@ import { useMemo, useState } from "react";
 import { useOrganizationServices } from "@/hooks/useQueries";
 import { useOperatorContext } from "@/features/layouts/components/GlobalLayout";
 import { useAuth } from "@/features/auth/Auth";
-import { Icon, IconSize } from "@gouvfr-lasuite/ui-kit";
-import { useModal } from "@openfun/cunningham-react";
+import { Icon, IconSize } from "@gouvfr-lasuite/ui-components";
+import { useModal } from "@gouvfr-lasuite/ui-components";
 import { MutateOptions } from "@tanstack/react-query";
 import { DomainSelectorModal } from "../DomainSelectorModal";
 
