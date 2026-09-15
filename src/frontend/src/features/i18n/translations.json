@@ -267,7 +267,7 @@
           "email_missing": "Email non déclaré",
           "website_missing": "Site internet non déclaré"
         },
-        "search": "Rechercher une organisation adhérente ou un territoire",
+        "search": "Rechercher une organisation",
         "type": "Type",
         "filter": {
           "type": "Filtrer par type",
@@ -282,6 +282,16 @@
           "service": "Filtrer par service",
           "services": {
             "all": "Tous les services"
+          },
+          "rpnt": "Filtrer par RPNT",
+          "rpnt_criteria": {
+            "all": "Toutes les conformités",
+            "a": "Conforme",
+            "not_a": "Non conforme",
+            "site": "Site internet conforme",
+            "not_site": "Site internet non conforme",
+            "mail": "Messagerie conforme",
+            "not_mail": "Messagerie non conforme"
           }
         }
       },

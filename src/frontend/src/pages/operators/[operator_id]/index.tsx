@@ -36,6 +36,7 @@ export default function Operator() {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [serviceFilter, setServiceFilter] = useState("");
+  const [rpntFilter, setRpntFilter] = useState("");
   const pagination = usePagination({
     defaultPage: 1,
     pageSize: 20,
@@ -51,6 +52,7 @@ export default function Operator() {
       ordering: sortModelToOrdering(sortModel),
       type: typeFilter || undefined,
       service: serviceFilter || undefined,
+      rpnt: rpntFilter || undefined,
     }
   );
 
@@ -149,6 +151,26 @@ export default function Operator() {
                   : service.name,
                 value: service.id,
               })),
+            ]}
+          />
+          <Select
+            className="dc__organizations__search__filters__rpnt"
+            label={t("organizations.filter.rpnt")}
+            value={rpntFilter}
+            onChange={(e) => {
+              setRpntFilter((e.target.value as string) || "");
+              if (pagination.page !== 1) {
+                pagination.setPage(1);
+              }
+            }}
+            options={[
+              { label: t("organizations.filter.rpnt_criteria.all"), value: "" },
+              { label: t("organizations.filter.rpnt_criteria.a"), value: "a" },
+              { label: t("organizations.filter.rpnt_criteria.not_a"), value: "!a" },
+              { label: t("organizations.filter.rpnt_criteria.site"), value: "1.a" },
+              { label: t("organizations.filter.rpnt_criteria.not_site"), value: "!1.a" },
+              { label: t("organizations.filter.rpnt_criteria.mail"), value: "2.a" },
+              { label: t("organizations.filter.rpnt_criteria.not_mail"), value: "!2.a" },
             ]}
           />
         </div>

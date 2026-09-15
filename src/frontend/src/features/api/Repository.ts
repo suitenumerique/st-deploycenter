@@ -249,6 +249,8 @@ export const getOperatorOrganizations = async (
     ordering?: string;
     type?: string;
     service?: string;
+    // RPNT meta-criterion: "a", "1.a", "2.a", each prefixed with "!" for its negative.
+    rpnt?: string;
   }
 ): Promise<PaginatedResponse<Organization>> => {
   const url = new URL(`/`, window.location.origin);
