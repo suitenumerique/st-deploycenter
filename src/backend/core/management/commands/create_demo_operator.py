@@ -70,9 +70,9 @@ def get_or_create_user(email: str) -> User:
         defaults={"full_name": f"Demo User ({email})"},
     )
     if created:
-        logger.info("Created user: %s", email)
+        logger.info("Created user: %s", user.id)
     else:
-        logger.info("Found existing user: %s", email)
+        logger.info("Found existing user: %s", user.id)
     return user
 
 
@@ -92,7 +92,7 @@ def create_user_operator_role(user: User, operator: Operator) -> UserOperatorRol
         operator=operator,
         role="admin",
     )
-    logger.info("Created user operator role: %s -> %s", user.email, operator.name)
+    logger.info("Created user operator role: %s -> %s", user.id, operator.name)
     return role
 
 
