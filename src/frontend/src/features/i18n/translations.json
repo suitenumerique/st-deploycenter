@@ -11,7 +11,8 @@
       "left_panel": {
         "aria_label": "Navigation principale",
         "organizations": "Adhérents",
-        "metrics": "Métriques"
+        "metrics": "Métriques",
+        "beta": "Bêta"
       },
       "home": {
         "title": "Espace Opérateur",

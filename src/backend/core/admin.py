@@ -17,6 +17,7 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from . import models
+from .signals import suppress_proconnect_sync
 
 
 class PrettyJSONWidget(forms.Textarea):
@@ -1466,9 +1467,30 @@ class OrganizationTypeFilter(admin.SimpleListFilter):
         return queryset
 
 
+class ServiceSubscriptionAdminForm(forms.ModelForm):
+    """Subscription form with an opt-out for the ProConnect domains push."""
+
+    skip_proconnect_sync = forms.BooleanField(
+        label=_("Skip the ProConnect push"),
+        required=False,
+        help_text=_(
+            "Save this row without pushing the domain list to api-partenaires. "
+            "The provider then no longer matches the database: reconcile it "
+            "afterwards with the proconnect_sync management command. Has no "
+            "effect on non-ProConnect services."
+        ),
+    )
+
+    class Meta:
+        model = models.ServiceSubscription
+        fields = ["organization", "operator", "service", "metadata", "is_active"]
+
+
 @admin.register(models.ServiceSubscription)
 class ServiceSubscriptionAdmin(admin.ModelAdmin):
     """Admin class for the ServiceSubscription model"""
+
+    form = ServiceSubscriptionAdminForm
 
     list_display = (
         "organization",
@@ -1500,8 +1522,17 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
     fieldsets = (
         (None, {"fields": ("organization", "operator", "service", "is_active")}),
         (_("Subscription Data"), {"fields": ("metadata",)}),
+        (_("ProConnect"), {"fields": ("skip_proconnect_sync",)}),
         (_("Metadata"), {"fields": ("created_at", "updated_at")}),
     )
+
+    def save_model(self, request, obj, form, change):
+        """Save the row, suppressing the ProConnect push when asked to."""
+        if form.cleaned_data.get("skip_proconnect_sync"):
+            with suppress_proconnect_sync():
+                super().save_model(request, obj, form, change)
+        else:
+            super().save_model(request, obj, form, change)
 
     def get_urls(self):
         """Add custom URLs for bulk subscribe functionality."""

@@ -90,3 +90,5 @@ CLAUDE.md
 
 # Local clones for analysis (e.g. api-partenaires), not part of this repo
 /tmp/
+# Albert Code
+.albert-code/

@@ -1,6 +1,7 @@
 """
 Tests for the ProConnect api-partenaires domains push (core/proconnect.py).
 """
+# pylint: disable=too-many-lines
 
 import hashlib
 import hmac
@@ -11,8 +12,9 @@ from unittest import mock
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import connection
-from django.test import override_settings
+from django.test import Client, override_settings
 from django.test.utils import CaptureQueriesContext
+from django.urls import reverse
 
 import pytest
 import requests
@@ -951,3 +953,70 @@ def test_client_does_not_follow_redirects():
     # Only the original host was contacted; the signature never left for the target.
     assert len(responses.calls) == 1
     assert "evil.test" not in responses.calls[0].request.url
+
+
+# --- django admin: the skip_proconnect_sync escape hatch ---------------------
+
+
+def _admin_client():
+    """A logged-in staff superuser for the django admin."""
+    user = factories.UserFactory(is_staff=True, is_superuser=True)
+    client = Client()
+    client.force_login(user)
+    return client
+
+
+def _admin_change_post(subscription, **overrides):
+    """The change form payload for a subscription, with is_active checked."""
+    data = {
+        "organization": str(subscription.organization_id),
+        "operator": str(subscription.operator_id),
+        "service": str(subscription.service_id),
+        "is_active": "on",
+        "metadata": json.dumps({"domains": ["autre.fr"]}),
+        "_continue": "Save and continue editing",
+    }
+    data.update(overrides)
+    return data
+
+
+@proconnect_settings
+@responses.activate
+def test_admin_skip_checkbox_prevents_push():
+    """Checking skip_proconnect_sync saves the row without contacting the provider."""
+    # No responses mock registered: any HTTP call would raise ConnectionError.
+    subscription = _make_proconnect_subscription(IDP, ["commune.fr"])
+    url = reverse("admin:core_servicesubscription_change", args=[subscription.pk])
+
+    response = _admin_client().post(
+        url, _admin_change_post(subscription, skip_proconnect_sync="on")
+    )
+
+    assert response.status_code == 302
+    subscription.refresh_from_db()
+    assert subscription.metadata["domains"] == ["autre.fr"]
+    assert len(responses.calls) == 0
+
+
+@proconnect_settings
+@responses.activate
+def test_admin_without_the_checkbox_still_pushes():
+    """Left unchecked, the admin save pushes the new domain set as usual."""
+    responses.add(
+        responses.PATCH,
+        f"{BASE_URL}/api/oidc_providers/{IDP}/configuration",
+        json={"uid": IDP, "attached_email_domains": ["autre.fr"]},
+        status=200,
+    )
+    subscription = _make_proconnect_subscription(IDP, ["commune.fr"])
+    url = reverse("admin:core_servicesubscription_change", args=[subscription.pk])
+
+    response = _admin_client().post(url, _admin_change_post(subscription))
+
+    assert response.status_code == 302
+    subscription.refresh_from_db()
+    assert subscription.metadata["domains"] == ["autre.fr"]
+    assert len(responses.calls) == 1
+    assert json.loads(responses.calls[0].request.body) == {
+        "attached_email_domains": ["autre.fr"]
+    }

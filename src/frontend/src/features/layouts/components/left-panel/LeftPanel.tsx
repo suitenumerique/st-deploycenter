@@ -2,18 +2,22 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { useTranslation } from "react-i18next";
 import { Icon } from "@gouvfr-lasuite/ui-components";
+import { useAuth } from "@/features/auth/Auth";
 
 type NavItem = {
   label: string;
   href: string;
   icon: { type: "material"; name: string } | { type: "image"; src: string };
   isActive: (pathname: string) => boolean;
+  badge?: string;
 };
 
 export const LeftPanel = () => {
   const { t } = useTranslation();
   const router = useRouter();
+  const { user } = useAuth();
   const operatorId = router.query.operator_id as string;
+  const isSuperUser = user?.is_superuser ?? false;
 
   const items: NavItem[] = operatorId
     ? [
@@ -25,13 +29,18 @@ export const LeftPanel = () => {
             pathname === "/operators/[operator_id]" ||
             pathname.startsWith("/operators/[operator_id]/organizations"),
         },
-        {
-          label: t("left_panel.metrics"),
-          href: `/operators/${operatorId}/metrics`,
-          icon: { type: "material", name: "bar_chart" },
-          isActive: (pathname) =>
-            pathname.startsWith("/operators/[operator_id]/metrics"),
-        },
+        ...(isSuperUser
+          ? [
+              {
+                label: t("left_panel.metrics"),
+                href: `/operators/${operatorId}/metrics`,
+                icon: { type: "material" as const, name: "bar_chart" },
+                isActive: (pathname: string) =>
+                  pathname.startsWith("/operators/[operator_id]/metrics"),
+                badge: t("left_panel.beta"),
+              },
+            ]
+          : []),
       ]
     : [];
 
@@ -57,6 +66,11 @@ export const LeftPanel = () => {
                   )}
                 </span>
                 <span>{item.label}</span>
+                {item.badge && (
+                  <span className="dc__left-panel__nav__link__badge">
+                    {item.badge}
+                  </span>
+                )}
               </Link>
             </li>
           );
