@@ -12,7 +12,13 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+from core.task_dashboard import get_dashboard_urlpatterns
+
 urlpatterns = [
+    # The task dashboard lives under the admin URL (staff session, and the
+    # admin IP allowlist of the Caddy proxy): before the admin's own
+    # catch-all, which would otherwise resolve it to a 404.
+    *get_dashboard_urlpatterns(),
     # Normalized: Django needs the trailing slash, the Caddy proxy in front
     # needs the bare path (see src/frontend/caddy/Caddyfile), so DJANGO_ADMIN_URL
     # can be set to either form and both ends agree.

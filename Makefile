@@ -208,7 +208,7 @@ logs: ## display all services logs (follow mode)
 .PHONY: logs
 
 start: ## start all development services
-	@$(COMPOSE) up --force-recreate --build -d backend-dev celery-dev frontend-dev
+	@$(COMPOSE) up --force-recreate --build -d backend-dev worker-dev frontend-dev
 .PHONY: start
 
 start-minimal: ## start minimal services (backend, frontend, keycloak and DB)

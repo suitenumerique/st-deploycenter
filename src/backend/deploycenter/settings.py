@@ -20,6 +20,7 @@ import dj_database_url
 import sentry_sdk
 from configurations import Configuration, values
 from sentry_sdk.integrations.django import DjangoIntegration
+from sentry_sdk.integrations.dramatiq import DramatiqIntegration
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -55,6 +56,8 @@ class Base(Configuration):
     * DB_HOST
     * DB_PASSWORD
     * DB_USER
+
+    Every variable read here is documented in docs/env.md: keep it in sync.
     """
 
     DEBUG = False
@@ -108,20 +111,21 @@ class Base(Configuration):
     STATIC_ROOT = os.path.join(DATA_DIR, "static")
     MEDIA_URL = "/media/"
     MEDIA_ROOT = os.path.join(DATA_DIR, "media")
-    MEDIA_BASE_URL = values.Value(
-        None, environ_name="MEDIA_BASE_URL", environ_prefix=None
-    )
 
     SITE_ID = 1
 
+    # No model has a file field and no object storage is configured: the
+    # default storage is the filesystem, only the static files backend can be
+    # changed (see docs/env.md).
     STORAGES = {
         "default": {
-            "BACKEND": "storages.backends.s3.S3Storage",
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
         },
         "staticfiles": {
             "BACKEND": values.Value(
                 "whitenoise.storage.CompressedManifestStaticFilesStorage",
                 environ_name="STORAGES_STATICFILES_BACKEND",
+                environ_prefix=None,
             ),
         },
     }
@@ -196,8 +200,8 @@ class Base(Configuration):
         "drf_spectacular",
         # Third party apps
         "corsheaders",
-        "django_celery_beat",
-        "django_celery_results",
+        "django_dramatiq",
+        "dramatiq_crontab",
         "django_filters",
         "rest_framework",
         # Django
@@ -221,6 +225,7 @@ class Base(Configuration):
         "ENABLE_DJANGO_DEPLOY_CHECK": values.BooleanValue(
             default=False,
             environ_name="SPECTACULAR_SETTINGS_ENABLE_DJANGO_DEPLOY_CHECK",
+            environ_prefix=None,
         ),
         "COMPONENT_SPLIT_REQUEST": True,
         # OTHER SETTINGS
@@ -273,11 +278,6 @@ class Base(Configuration):
 
     # Sentry
     SENTRY_DSN = values.Value(None, environ_name="SENTRY_DSN", environ_prefix=None)
-
-    # Frontend
-    FRONTEND_THEME = values.Value(
-        None, environ_name="FRONTEND_THEME", environ_prefix=None
-    )
 
     # ProConnect "api-partenaires": push of authorized email domains to OIDC
     # providers (``attached_email_domains`` on their side).
@@ -342,16 +342,77 @@ class Base(Configuration):
         None, environ_name="POSTHOG_SURVEY_ID", environ_prefix=None
     )
 
-    # Celery
-    CELERY_BROKER_URL = values.Value(
-        "redis://redis:6379", environ_name="CELERY_BROKER_URL", environ_prefix=None
+    # Background tasks (Dramatiq), see docs/deployment.md "Background tasks".
+    # Every task is periodic and dispatched by the scheduler that runs inside
+    # the worker (worker.py). The broker keyspace is namespaced ("dramatiq:*"),
+    # so it can share the Redis of the cache, but a queue is not a cache:
+    # whatever instance it points at must be Redis 7+ and run with
+    # "maxmemory-policy noeviction" and AOF persistence, or enqueued tasks can
+    # be silently lost.
+    TASK_BROKER_URL = values.Value(
+        "redis://redis:6379", environ_name="TASK_BROKER_URL", environ_prefix=None
     )
-    CELERY_RESULT_BACKEND = "django-db"
-    CELERY_CACHE_BACKEND = "django-cache"
-    CELERY_BROKER_TRANSPORT_OPTIONS = values.DictValue({})
-    CELERY_RESULT_EXTENDED = True
-    CELERY_TASK_RESULT_EXPIRES = 60 * 60 * 24 * 30  # 30 days
-    CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+    TASK_BROKER_NAMESPACE = values.Value(
+        "dramatiq", environ_name="TASK_BROKER_NAMESPACE", environ_prefix=None
+    )
+    TASK_BROKER_CLASS = "dramatiq_redis_streams.StreamsBroker"
+
+    # Skip the registration of every periodic schedule. For a first deploy to a
+    # PaaS, where the scheduler would otherwise fire against an unmigrated
+    # database, or to run a worker that only serves hand-sent tasks.
+    DISABLE_TASK_SCHEDULE = values.BooleanValue(
+        default=False, environ_name="DISABLE_TASK_SCHEDULE", environ_prefix=None
+    )
+
+    # core/tasks/__init__.py imports every task module, so this one import is
+    # enough for both the worker and "manage.py crontab".
+    DRAMATIQ_AUTODISCOVER_MODULES = ["tasks"]
+
+    # The two settings below are (uppercase) methods: django-configurations
+    # calls them and stores the return value. Written this way so that a
+    # configuration can replace one piece of the dict — Test swaps the broker
+    # class and drops its options — instead of restating the whole thing.
+
+    def task_broker_options(self):
+        """Constructor arguments of the broker class."""
+        return {"url": self.TASK_BROKER_URL, "namespace": self.TASK_BROKER_NAMESPACE}
+
+    # pylint: disable=invalid-name
+    def DRAMATIQ_BROKER(self):
+        """Broker configuration consumed by django_dramatiq."""
+        return {
+            "BROKER": self.TASK_BROKER_CLASS,
+            "OPTIONS": self.task_broker_options(),
+            # Dramatiq runs before_* hooks in list order and after_* in
+            # reverse. No Prometheus (it binds a port), no results backend
+            # (nothing polls a task).
+            "MIDDLEWARE": [
+                "dramatiq.middleware.AgeLimit",
+                "dramatiq.middleware.TimeLimit",
+                "dramatiq.middleware.Callbacks",
+                "dramatiq.middleware.Retries",
+                # One row per task run in the admin (django_dramatiq.Task):
+                # the way to check that a schedule fired and how it went.
+                "django_dramatiq.middleware.AdminMiddleware",
+                # Recycles connections closed by Postgres between messages;
+                # without it a worker idling past CONN_MAX_AGE fails its next
+                # task.
+                "django_dramatiq.middleware.DbConnectionsMiddleware",
+            ],
+        }
+
+    def DRAMATIQ_CRONTAB(self):
+        """Scheduler configuration (dramatiq-crontab).
+
+        The scheduler takes a Redis lock so exactly one instance is live at a
+        time, however many workers run. The long blocking timeout makes every
+        other worker's scheduler *wait* on that lock rather than give up, so a
+        dead leader is replaced in seconds instead of leaving the schedule
+        unattended until someone restarts a worker.
+        """
+        return {"REDIS_URL": self.TASK_BROKER_URL, "LOCK_BLOCKING_TIMEOUT": 3600}
+
+    # pylint: enable=invalid-name
 
     # Session
     SESSION_ENGINE = "django.contrib.sessions.backends.cache"
@@ -498,6 +559,10 @@ class Base(Configuration):
                 ),
                 "propagate": False,
             },
+            # The scheduler logs every job it dispatches at INFO, including
+            # its own lock refresh every few seconds. The task history in the
+            # admin is the record of what ran.
+            "apscheduler.executors.default": {"level": "WARNING"},
         },
     }
 
@@ -594,7 +659,7 @@ class Base(Configuration):
                 dsn=cls.SENTRY_DSN,
                 environment=cls.__name__.lower(),
                 release=get_release(),
-                integrations=[DjangoIntegration()],
+                integrations=[DjangoIntegration(), DramatiqIntegration()],
             )
             sentry_sdk.set_tag("application", "backend")
 
@@ -616,17 +681,6 @@ class Build(Base):
     """
 
     SECRET_KEY = values.Value("DummyKey")
-    STORAGES = {
-        "default": {
-            "BACKEND": "django.core.files.storage.FileSystemStorage",
-        },
-        "staticfiles": {
-            "BACKEND": values.Value(
-                "whitenoise.storage.CompressedManifestStaticFilesStorage",
-                environ_name="STORAGES_STATICFILES_BACKEND",
-            ),
-        },
-    }
 
 
 class Development(Base):
@@ -689,7 +743,16 @@ class DevelopmentMinimal(Development):
     Development environment settings with minimal dependencies
     """
 
-    CELERY_TASK_ALWAYS_EAGER = True
+    # No Redis, so no broker to reach: the in-process stub accepts what is
+    # enqueued and nothing consumes it. Nothing here enqueues anyway (the
+    # schedule is off and no request path sends a task); run a task by hand
+    # with "manage.py run_task", which calls it inline.
+    TASK_BROKER_CLASS = "dramatiq.brokers.stub.StubBroker"
+    DISABLE_TASK_SCHEDULE = True
+
+    def task_broker_options(self):
+        return {}
+
     CACHES = {
         "default": {
             "BACKEND": "django.core.cache.backends.dummy.DummyCache",
@@ -706,7 +769,12 @@ class Test(Base):
     ]
     USE_SWAGGER = True
 
-    CELERY_TASK_ALWAYS_EAGER = values.BooleanValue(True)
+    # In-process broker: nothing is enqueued anywhere, the tests call the
+    # tasks directly.
+    TASK_BROKER_CLASS = "dramatiq.brokers.stub.StubBroker"
+
+    def task_broker_options(self):
+        return {}
 
 
 class ContinuousIntegration(Test):

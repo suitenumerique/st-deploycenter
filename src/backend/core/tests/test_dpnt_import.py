@@ -34,9 +34,7 @@ def test_import_real_dpnt_data():
 
     # Run the import task with max_rows=100 for testing
     logger.info("Running DPNT import task with max_rows=100...")
-    result = import_dpnt_dataset.apply(
-        kwargs={"force_update": False, "max_rows": 100}
-    ).get()
+    result = import_dpnt_dataset(force_update=False, max_rows=100)
 
     # Verify import results
     assert result["total_processed"] >= 100  # Should be limited by max_rows, by type
@@ -98,9 +96,7 @@ def test_import_real_dpnt_data():
 
     # Run the import task with max_rows=100 for testing
     logger.info("Running DPNT import task with max_rows=100...")
-    result = import_dpnt_dataset.apply(
-        kwargs={"force_update": True, "max_rows": 100}
-    ).get()
+    result = import_dpnt_dataset(force_update=True, max_rows=100)
 
     # Verify import results
     assert result["total_processed"] >= 100  # Should be limited by max_rows
@@ -251,9 +247,7 @@ def test_dpnt_auto_join(_mock_dl):
 
     # -- Run import --
     with patch("core.tasks.dpnt.logger") as mock_logger:
-        result = import_dpnt_dataset.apply(
-            kwargs={"force_update": True, "max_rows": 5}
-        ).get()
+        result = import_dpnt_dataset(force_update=True, max_rows=5)
 
     # -- Assertions --
 
@@ -320,9 +314,7 @@ def test_dpnt_auto_join(_mock_dl):
     roles_before = OperatorOrganizationRole.objects.count()
     subs_before = ServiceSubscription.objects.count()
 
-    result2 = import_dpnt_dataset.apply(
-        kwargs={"force_update": True, "max_rows": 5}
-    ).get()
+    result2 = import_dpnt_dataset(force_update=True, max_rows=5)
 
     assert OperatorOrganizationRole.objects.count() == roles_before, (
         "Re-run should not duplicate roles"
@@ -363,7 +355,7 @@ def _mock_download_with_a_malformed_email():
 )
 def test_dpnt_import_survives_a_malformed_email(_mock_dl):
     """A row we cannot read a domain from is counted as an error, not fatal."""
-    result = import_dpnt_dataset.apply(kwargs={"force_update": True}).get()
+    result = import_dpnt_dataset(force_update=True)
 
     assert result["errors"] == 1
     assert "70000000000001" in " ".join(result["errors_details"])
@@ -393,7 +385,7 @@ def _mock_download_with_malformed_rows():
 )
 def test_dpnt_import_survives_unparseable_rows(_mock_dl):
     """A row that is not a dict, or lacks "type", costs one row — not the import."""
-    result = import_dpnt_dataset.apply(kwargs={"force_update": True}).get()
+    result = import_dpnt_dataset(force_update=True)
 
     assert result["errors"] == 2
     # The rest of the dataset still imported.

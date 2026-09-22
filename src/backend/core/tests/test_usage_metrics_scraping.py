@@ -488,7 +488,7 @@ def test_metrics_error_handling():
     )
 
     # fetch_metrics_from_service propagates errors so callers can skip the
-    # stale-row sweep; the celery task catches them and reports status=error.
+    # stale-row sweep; the task catches them and reports status=error.
     result = scrape_service_metrics(invalid_service.id)
     assert result["status"] == "error"
 

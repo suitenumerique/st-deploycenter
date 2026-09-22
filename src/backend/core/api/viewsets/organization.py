@@ -271,10 +271,10 @@ class OperatorOrganizationViewSet(viewsets.ReadOnlyModelViewSet):
             set(new_value["requested"]) - set(previous["requested"])
         )
         if added_requested:
-            # Sent inline: there is no celery worker deployed (see Procfile), so
-            # queueing this would mean never sending it. Each endpoint carries its
-            # own timeout and WebhookClient swallows per-endpoint failures, so the
-            # blast radius on this request is bounded.
+            # Sent inline rather than through the worker, so the operator's
+            # request only returns once the notification is out. Each endpoint
+            # carries its own timeout and WebhookClient swallows per-endpoint
+            # failures, so the blast radius on this request is bounded.
             operator = models.Operator.objects.filter(
                 id=self.kwargs.get("operator_id")
             ).first()

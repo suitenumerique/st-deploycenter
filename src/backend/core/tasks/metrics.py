@@ -15,17 +15,18 @@ from django.db import IntegrityError
 from django.utils import timezone
 
 import requests
-from celery import shared_task
 
 from ..models import Account, Metric, Organization, Service
+from ..task_utils import cron_task, register_task
 
 logger = logging.getLogger(__name__)
 
 
-@shared_task
+@cron_task("0 2 * * *")
+@register_task(time_limit=3600)
 def scrape_all_service_metrics():
     """
-    Scrape metrics for all active services with subscriptions (Celery task).
+    Scrape metrics for all active services with subscriptions.
 
     This task iterates through all active services and scrapes metrics
     for organizations that have active subscriptions.
@@ -85,10 +86,10 @@ def scrape_all_service_metrics():
     return result
 
 
-@shared_task
+@register_task(time_limit=1800)
 def scrape_service_metrics(service_id: int):
     """
-    Scrape metrics for a specific service (Celery task).
+    Scrape metrics for a specific service.
 
     Args:
         service_id: UUID of the Service
@@ -130,7 +131,7 @@ def scrape_service_metrics(service_id: int):
 
 def scrape_service_usage_metrics(service: Service, filters: Dict[str, Any] = None):
     """
-    Scrape usage metrics for a specific service (Celery task).
+    Scrape usage metrics for a specific service.
 
     Usage metrics are per-user/per-object disk usage or other app-specific metrics.
 

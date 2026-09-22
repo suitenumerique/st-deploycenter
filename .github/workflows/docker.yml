@@ -1,0 +1,121 @@
+name: Docker images
+
+# Builds and pushes the production images to ghcr.io, see docs/deployment.md
+# ("Published images" and "Releasing"):
+#
+#   ghcr.io/suitenumerique/st-deploycenter-backend
+#   ghcr.io/suitenumerique/st-deploycenter-frontend
+#
+# Each image is built twice: the distroless flavour (what production runs) gets
+# the plain tags, the "all" flavour (same content on a base with a shell, for
+# debugging) gets the same tags with a "-all" suffix.
+#
+#   push of tag vX.Y.Z  ->  vX.Y.Z, vX.Y.Z-all
+#   push on main        ->  latest, sha-<short sha>, latest-all, sha-<short sha>-all
+
+permissions:
+  contents: read
+  packages: write
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check-release:
+    name: Check the tag matches pyproject.toml
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # settings.get_release() reports the pyproject.toml version to Sentry, so
+      # a tag that does not match it would ship an image lying about its own
+      # version. See "Releasing" in docs/deployment.md.
+      - name: Compare the git tag with the backend version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' src/backend/pyproject.toml)"
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::tag $TAG does not match src/backend/pyproject.toml version $version (expected v$version)"
+            exit 1
+          fi
+          echo "tag $TAG matches pyproject.toml version $version"
+
+  image:
+    name: Build & push ${{ matrix.component }} (${{ matrix.flavour.name }})
+    needs: check-release
+    # check-release is skipped on main: still run when it was skipped, but not
+    # when it failed.
+    if: ${{ !cancelled() && needs.check-release.result != 'failure' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [backend, frontend]
+        flavour:
+          - name: distroless
+            target: runtime-distroless-prod
+            suffix: ""
+          - name: all
+            target: runtime-prod
+            suffix: -all
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/st-deploycenter-${{ matrix.component }}
+          # The suffix applies to every tag below, "latest" included: the "all"
+          # flavour is published as vX.Y.Z-all, latest-all, sha-xxxxxxx-all.
+          flavor: |
+            latest=false
+            ${{ matrix.flavour.suffix && format('suffix={0},onlatest=true', matrix.flavour.suffix) || '' }}
+          # {{raw}} keeps the "v" of the git tag: image tag == git tag, so
+          # Renovate can follow the github-releases datasource of this repo.
+          tags: |
+            type=semver,pattern={{raw}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+
+      - name: Build and push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: src/${{ matrix.component }}
+          file: src/${{ matrix.component }}/Dockerfile
+          target: ${{ matrix.flavour.target }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.component }}-${{ matrix.flavour.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}-${{ matrix.flavour.name }}
