@@ -97,11 +97,11 @@ When running the project, the following services are available:
 | Service | URL / Port | Description | Credentials |
 |---------|------------|-------------|------------|
 | **Frontend** | [http://localhost:8960](http://localhost:8960) | Main Deploy Center frontend | `user1@example.local` / `user1` |
-| **Backend API** | [http://localhost:8961](http://localhost:8961) | Django [REST API](http://localhost:8961/api/v1.0/) and [Admin](http://localhost:8961/admin/) | `admin@admin.local` / `admin` |
+| **Backend API** | [http://localhost:8961](http://localhost:8961) | Django [REST API](http://localhost:8961/api/v1.0/), [Admin](http://localhost:8961/admin/) and the [task dashboard](http://localhost:8961/admin/tasks/) | `admin@admin.local` / `admin` |
 | **Keycloak** | [http://localhost:8962](http://localhost:8962) | Identity provider admin | `admin` / `admin` |
-| **Celery UI** | [http://localhost:8963](http://localhost:8963) | Task queue monitoring | No auth required |
+| **Worker** | _(no port)_ | Background tasks and their schedule (`worker-dev`, see [deployment.md](docs/deployment.md#background-tasks)); task history in the Admin under *Django Dramatiq*, live queues on the task dashboard | |
 | **PostgreSQL** | 8965 | Database server | `user` / `pass` |
-| **Redis** | 8966 | Cache and message broker | No auth required |
+| **Redis** | 8966 | Cache, sessions and task broker | No auth required |
 
 
 ## Feedback 🙋‍♂️🙋‍♀️
