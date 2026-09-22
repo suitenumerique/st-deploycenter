@@ -86,11 +86,13 @@ never restates the rule:
 - The **deployed** allowlist is theirs: the same file, in their repo, updated by PR.
   It lags ours, and their API rejects any domain not yet in it.
 
-`proconnect_fetch_prevalidated` fetches the deployed one hourly (`cron.json`) and
+`proconnect_fetch_prevalidated` fetches the deployed one hourly (the worker's
+scheduler, see [deployment.md](deployment.md#background-tasks)) and
 caches it per idp, so `proconnect_prevalidated` can tell the user which domains are
 routable *now* ("pré-validé") and which are waiting for the next deploy ("pas
 encore pré-validé", up to a week). The cache TTL
-(`PROCONNECT_DOMAIN_ALLOWLIST_CACHE_TTL`, 4h) is the fallback if the cron stops,
+(`PROCONNECT_DOMAIN_ALLOWLIST_CACHE_TTL`, 4h) is the fallback if the schedule
+stops,
 not the refresh rate. Null means we do not know that provider's allowlist — shown
 as unknown, never as "not pre-validated".
 
@@ -184,8 +186,8 @@ well. Bulk writes bypass signals: reconcile with `manage.py proconnect_sync`.
 `manage.py proconnect_detect_drift` compares what each provider serves with what we
 intend and exits non-zero on any difference.
 
-**Neither is scheduled.** `cron.json` runs `proconnect_fetch_prevalidated` and
-nothing else for ProConnect, so both reconciliation commands are manual today —
+**Neither is scheduled.** `proconnect_fetch_prevalidated` is the only ProConnect
+job on the worker's schedule, so both reconciliation commands are manual today —
 even though several code paths (`_sync_proconnect`'s docstring,
 `_create_service_subscriptions` in `core/tasks/dpnt.py`) describe them as the net
 that catches what the synchronous push cannot. Until one of them runs on a

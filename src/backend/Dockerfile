@@ -14,8 +14,10 @@ WORKDIR /app
 # ---- Poetry package manager and dev system deps ----
 FROM base AS poetry
 
+# git: dramatiq-redis-streams is installed from its repository (pyproject.toml)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    git \
     rdfind \
     && rm -rf /var/lib/apt/lists/*
 

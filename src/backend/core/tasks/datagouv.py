@@ -10,7 +10,6 @@ import logging
 from django.conf import settings
 
 import requests
-from celery import shared_task
 
 from ..models import (
     Metric,
@@ -20,8 +19,13 @@ from ..models import (
     Service,
     ServiceSubscription,
 )
+from ..task_utils import cron_task, register_task
 
 logger = logging.getLogger(__name__)
+
+# An upload builds a CSV of the whole table then POSTs it; an hour is far above
+# what any of them takes and only bounds a hung connection.
+UPLOAD_TIME_LIMIT = 3600
 
 
 # pylint: disable=invalid-name
@@ -58,7 +62,7 @@ def _upload_data_to_data_gouv(dataset_id, resource_id, file_data, filename):
     return data
 
 
-@shared_task
+@register_task(time_limit=UPLOAD_TIME_LIMIT)
 def upload_deployment_metrics_dataset():
     """Upload deployment metrics dataset to data.gouv.fr"""
 
@@ -131,7 +135,7 @@ def upload_deployment_metrics_dataset():
     }
 
 
-@shared_task
+@register_task(time_limit=UPLOAD_TIME_LIMIT)
 def upload_deployment_services_dataset():
     """Upload deployment services dataset to data.gouv.fr"""
 
@@ -182,7 +186,7 @@ def upload_deployment_services_dataset():
     }
 
 
-@shared_task
+@register_task(time_limit=UPLOAD_TIME_LIMIT)
 def upload_deployment_operators_dataset():
     """Upload deployment operators dataset to data.gouv.fr"""
 
@@ -259,7 +263,7 @@ def upload_deployment_operators_dataset():
     }
 
 
-@shared_task
+@register_task(time_limit=UPLOAD_TIME_LIMIT)
 def upload_deployment_adherents_dataset():
     """Upload deployment adherents dataset to data.gouv.fr"""
 
@@ -317,7 +321,7 @@ def upload_deployment_adherents_dataset():
     }
 
 
-@shared_task
+@register_task(time_limit=UPLOAD_TIME_LIMIT)
 def upload_deployment_subscriptions_dataset():
     """Upload deployment subscriptions dataset to data.gouv.fr"""
 
@@ -382,3 +386,53 @@ def upload_deployment_subscriptions_dataset():
         "status": "success",
         "message": f"Uploaded {len(data)} subscriptions to data.gouv.fr",
     }
+
+
+# In upload order. The names are the task functions of this module, so
+# "manage.py run_task <name>" still runs any of them alone.
+DATASET_TASKS = [
+    "upload_deployment_services_dataset",
+    "upload_deployment_operators_dataset",
+    "upload_deployment_adherents_dataset",
+    "upload_deployment_subscriptions_dataset",
+    "upload_deployment_metrics_dataset",
+]
+
+
+def run_dataset_uploads(task_names=None, report=None):
+    """Upload the given datasets (default: all, in ``DATASET_TASKS`` order).
+
+    The datasets are independent, so a failing one does not stop the others: a
+    dataset that uploaded fine should not wait for the next run. Returns the
+    ``{task_name: result}`` of the successful uploads and the list of the
+    failed ones. ``report(task_name, result_or_exception)`` is called after
+    each one, for the management command's console output.
+    """
+    results = {}
+    failed = []
+    for task_name in task_names or DATASET_TASKS:
+        task = globals()[task_name]
+        try:
+            # Called directly: runs inline, whether from the worker or the
+            # management command.
+            result = task()
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logger.exception("%s failed", task_name)
+            failed.append(task_name)
+            if report:
+                report(task_name, exc)
+        else:
+            results[task_name] = result
+            if report:
+                report(task_name, result)
+    return results, failed
+
+
+@cron_task("0 */4 * * *")
+@register_task(time_limit=len(DATASET_TASKS) * UPLOAD_TIME_LIMIT)
+def upload_deployment_datasets():
+    """Upload every deployment dataset to data.gouv.fr, one after the other."""
+    results, failed = run_dataset_uploads()
+    if failed:
+        raise RuntimeError(f"{len(failed)} upload(s) failed: {', '.join(failed)}")
+    return results

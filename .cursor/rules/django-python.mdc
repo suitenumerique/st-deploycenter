@@ -25,7 +25,7 @@ Error Handling and Validation
 Dependencies
   - Django
   - Django REST Framework (for API development)
-  - Celery (for background tasks)
+  - Dramatiq (for background tasks, see core/task_utils.py)
   - Redis (for caching and task queues)
   - PostgreSQL (preferred databases for production)
   - OIDC prodiver (for managing authentication)
@@ -43,12 +43,12 @@ Performance Optimization
   - Optimize query performance using Django ORM's select_related and prefetch_related for related object fetching.
   - Use Django’s cache framework with backend support (e.g., Redis or Memcached) to reduce database load.
   - Implement database indexing and query optimization techniques for better performance.
-  - Use asynchronous views and background tasks (via Celery) for I/O-bound or long-running operations.
+  - Use asynchronous views and background tasks (via Dramatiq) for I/O-bound or long-running operations.
   - Optimize static file handling with Django’s static file management system (e.g., WhiteNoise).
 
 Logging
   - As a general rule, we should have logs for every expected and unexpected actions of the application, using the appropriate log level.
-  - We should also be logging these exceptions to Sentry with the Sentry Python SDK. Python exceptions should almost always be captured automatically without extra instrumentation, but custom ones (such as failed requests to external services, query errors, or Celery task failures) can be tracked using capture_exception().
+  - We should also be logging these exceptions to Sentry with the Sentry Python SDK. Python exceptions should almost always be captured automatically without extra instrumentation, but custom ones (such as failed requests to external services, query errors, or background task failures) can be tracked using capture_exception().
 
 Log Levels
   - A log level or log severity is a piece of information telling how important a given log message is:

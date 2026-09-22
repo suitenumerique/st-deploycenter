@@ -15,7 +15,7 @@ services:
       - env.d/development/postgresql.local
 
   redis:
-    image: redis:5
+    image: redis:7
     ports:
       - "8966:6379"
 
@@ -112,15 +112,14 @@ services:
       target: poetry
     pull_policy: build
 
-  celery-dev:
+  worker-dev:
     build:
       context: src/backend
       target: runtime-dev
       args:
         DOCKER_USER: ${DOCKER_USER:-1000}
     user: ${DOCKER_USER:-1000}
-    command:
-      ["celery", "-A", "deploycenter.celery_app", "worker", "-l", "DEBUG"]
+    command: ["python", "worker.py", "--loglevel=DEBUG"]
     environment:
       - DJANGO_CONFIGURATION=Development
     env_file:
@@ -131,27 +130,6 @@ services:
       - ./data/static:/data/static
     depends_on:
       - backend-dev
-
-  celery-ui:
-    build:
-      context: src/backend
-      target: runtime-dev
-      args:
-        DOCKER_USER: ${DOCKER_USER:-1000}
-    user: ${DOCKER_USER:-1000}
-    depends_on:
-      - redis
-    environment:
-      - FLOWER_UNAUTHENTICATED_API=true
-      - DJANGO_CONFIGURATION=Development
-    env_file:
-      - env.d/development/backend.defaults
-      - env.d/development/backend.local
-    volumes:
-      - ./src/backend:/app
-    ports:
-      - "8963:8803"
-    command: celery -A deploycenter.celery_app flower --port=8803
 
   # nginx:
   #   image: nginx:1.25

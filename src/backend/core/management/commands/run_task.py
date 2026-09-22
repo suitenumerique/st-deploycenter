@@ -1,9 +1,9 @@
 """
-Management command to run arbitrary Celery tasks synchronously.
+Management command to run a background task synchronously, by hand.
 
-This command provides a Django interface to run Celery tasks with the same
-CLI flags as the main Celery CLI, but executes them synchronously instead
-of queuing them as background tasks.
+Calling a Dramatiq actor runs it inline, in this process, instead of sending it
+to the worker: this is how to run one of the scheduled tasks outside its
+schedule (see docs/deployment.md, "Background tasks").
 """
 
 import importlib
@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    """Run arbitrary Celery tasks synchronously."""
+    """Run a background task synchronously."""
 
     help = """
-    Run arbitrary Celery tasks synchronously.
+    Run a background task synchronously, in this process.
     
     Examples:
         python manage.py run_task fetch_service_metrics
@@ -30,7 +30,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         """Add command line arguments."""
-        parser.add_argument("task_name", help="Name of the Celery task to run")
+        parser.add_argument("task_name", help="Name of the task to run")
 
         # Task execution options
         parser.add_argument(

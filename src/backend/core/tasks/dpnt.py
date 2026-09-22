@@ -14,7 +14,6 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 import requests
-from celery import shared_task
 
 from ..models import (
     Operator,
@@ -25,12 +24,14 @@ from ..models import (
 )
 from ..services import get_service_handler
 from ..services.proconnect import org_rpnt_valid_domains, update_proconnect_domains
+from ..task_utils import cron_task, register_task
 
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, max_retries=3)
-def import_dpnt_dataset(self, force_update: bool = True, max_rows: int = None):  # pylint: disable=unused-argument
+@cron_task("0 8 * * *")
+@register_task(time_limit=3600)
+def import_dpnt_dataset(force_update: bool = True, max_rows: int = None):
     """
     Import the DPNT (Données de la Présence Numérique des Territoires) dataset from data.gouv.fr.
 
@@ -229,7 +230,7 @@ def _create_service_subscriptions(operator, service_id, org_ids, valid_services)
     # ProConnect domains push (see core/signals.py::_sync_proconnect). That is fine
     # here because this only seeds subscription rows, with no metadata["domains"] to
     # contribute; the provider is reconciled by the `proconnect_sync` command, which
-    # is NOT currently scheduled in cron.json. If this ever creates *active*
+    # is NOT currently scheduled. If this ever creates *active*
     # proconnect subscriptions with routed domains, call sync_proconnect_provider()
     # for the affected idps afterwards or the provider will silently drift.
     ServiceSubscription.objects.bulk_create(new_sub_objects, ignore_conflicts=True)

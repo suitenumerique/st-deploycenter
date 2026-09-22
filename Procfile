@@ -1,7 +1,6 @@
 web: bin/scalingo_run_web
-# No worker is deployed: every @shared_task runs synchronously, either from the
-# cron entries in cron.json ("manage.py run_task <task>") or inline. Do NOT call
-# .delay()/.apply_async() anywhere — nothing would consume the queue. Re-enable
-# this line first if that ever changes.
-# worker: celery -A deploycenter.celery_app worker --task-events --beat -l INFO -c $CELERY_CONCURRENCY
+# Consumes the task queue and runs the periodic scheduler (see worker.py and
+# docs/deployment.md, "Background tasks"). Every scheduled job runs here: the
+# app declares no platform cron.
+worker: python worker.py
 postdeploy: python manage.py migrate
