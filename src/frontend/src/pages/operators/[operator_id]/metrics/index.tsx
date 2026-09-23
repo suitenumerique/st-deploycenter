@@ -35,8 +35,6 @@ import {
   MetricsResponse,
 } from "@/features/api/Repository";
 
-const ACCOUNT_TYPES = ["user", "mailbox"];
-
 type Unit = "" | "MB" | "GB" | "TB";
 type Aggregation = "" | "sum" | "avg";
 
@@ -248,7 +246,7 @@ export default function MetricsPage() {
   }, [operatorServices, filters.service, t]);
 
   const keyOptions = useMemo(() => {
-    const options = (metricKeys?.results || []).map((key) => ({
+    const options = (metricKeys?.results || []).map(({ key }) => ({
       label: key,
       value: key,
     }));
@@ -260,6 +258,45 @@ export default function MetricsPage() {
       ...options,
     ];
   }, [metricKeys, filters.key, t]);
+
+  // The account types the selected key has data for. A type is required: a
+  // service can report a key both per account and for the whole organization,
+  // and adding those up would count the same usage twice.
+  const keyAccountTypes = useMemo(
+    () =>
+      metricKeys?.results.find(({ key }) => key === filters.key)
+        ?.account_types,
+    [metricKeys, filters.key]
+  );
+
+  // One type leaves nothing to choose; a type the key has no data for (after
+  // a key change) is dropped.
+  useEffect(() => {
+    if (!isInitialized || !keyAccountTypes) {
+      return;
+    }
+    if (keyAccountTypes.includes(filters.accountType)) {
+      return;
+    }
+    setFilters((previous) => ({
+      ...previous,
+      accountType: keyAccountTypes.length === 1 ? keyAccountTypes[0] : "",
+    }));
+  }, [isInitialized, keyAccountTypes, filters.accountType]);
+
+  const accountTypeOptions = useMemo(() => {
+    const types = keyAccountTypes ? [...keyAccountTypes] : [];
+    if (filters.accountType && !types.includes(filters.accountType)) {
+      types.unshift(filters.accountType);
+    }
+    return [
+      { label: t("metrics.filters.account_type_placeholder"), value: "" },
+      ...types.map((type) => ({
+        label: t(`metrics.account_types.${type}`, { defaultValue: type }),
+        value: type,
+      })),
+    ];
+  }, [keyAccountTypes, filters.accountType, t]);
 
   const searchTimeout = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
@@ -323,14 +360,14 @@ export default function MetricsPage() {
     filters.organizations.length !== 1 && !filters.aggregation;
 
   const metricsParams: MetricsParams | null = useMemo(() => {
-    if (!filters.service || !filters.key) return null;
+    if (!filters.service || !filters.key || !filters.accountType) return null;
 
     return {
       key: filters.key,
       service: filters.service,
       organizations:
         filters.organizations.length > 0 ? filters.organizations : undefined,
-      account_type: filters.accountType || undefined,
+      account_type: filters.accountType,
       agg: filters.aggregation || undefined,
       group_by: isGroupedByOrganization ? "organization" : undefined,
       order_by: filters.orderBy,
@@ -524,7 +561,7 @@ export default function MetricsPage() {
     chartData.length * BAR_HEIGHT + 60
   );
 
-  const hasFilters = !!filters.service && !!filters.key;
+  const hasFilters = !!filters.service && !!filters.key && !!filters.accountType;
 
   const serviceHasNoKeys =
     !!filters.service && metricKeys && metricKeys.results.length === 0;
@@ -558,7 +595,11 @@ export default function MetricsPage() {
           value={filters.service}
           onChange={(e) =>
             // The keys are per service, so the current one may not exist here.
-            updateFilters({ service: (e.target.value as string) || "", key: "" })
+            updateFilters({
+              service: (e.target.value as string) || "",
+              key: "",
+              accountType: "",
+            })
           }
           options={serviceOptions}
         />
@@ -567,7 +608,8 @@ export default function MetricsPage() {
           label={t("metrics.filters.key")}
           value={filters.key}
           onChange={(e) =>
-            updateFilters({ key: (e.target.value as string) || "" })
+            // The account types are per key, so the current one may not apply.
+            updateFilters({ key: (e.target.value as string) || "", accountType: "" })
           }
           disabled={!filters.service || serviceHasNoKeys}
           text={serviceHasNoKeys ? t("metrics.filters.key_empty") : undefined}
@@ -613,13 +655,8 @@ export default function MetricsPage() {
           onChange={(e) =>
             updateFilters({ accountType: (e.target.value as string) || "" })
           }
-          options={[
-            { label: t("metrics.filters.account_type_placeholder"), value: "" },
-            ...ACCOUNT_TYPES.map((type) => ({
-              label: t(`metrics.account_types.${type}`),
-              value: type,
-            })),
-          ]}
+          disabled={!filters.key}
+          options={accountTypeOptions}
         />
 
         <Select

@@ -7,7 +7,8 @@
  */
 export interface User {
   id: string;
-  email: string;
+  // Null for a superuser created with an admin email only.
+  email: string | null;
   full_name: string | null;
   language: string;
   is_superuser: boolean;

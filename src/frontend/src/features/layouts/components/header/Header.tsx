@@ -28,12 +28,17 @@ export const HeaderIcon = () => {
 
 // The library's own profile menu: avatar trigger, identity block, logout, and a
 // full-screen variant on mobile. It renders nothing when there is no user.
+// Its avatar splits full_name ?? email, so neither may reach it as null: a
+// superuser logged in through the Django admin has no email (the session is
+// shared, the admin being served on the same domain).
 export const HeaderRight = () => {
   const { user } = useAuth();
   return (
     <UserMenu
       user={
-        user ? { full_name: user.full_name ?? undefined, email: user.email } : null
+        user
+          ? { full_name: user.full_name || undefined, email: user.email ?? "" }
+          : null
       }
       logout={logout}
     />

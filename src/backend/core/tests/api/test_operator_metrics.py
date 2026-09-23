@@ -150,29 +150,51 @@ def test_api_operator_metrics_other_operator(setup):
 
 def test_api_operator_metrics_excludes_other_operators_organizations(setup, client):
     """Metrics of an organization the operator has no role in are never returned."""
+    factories.MetricFactory(
+        key="storage_used",
+        value=Decimal("10"),
+        service=setup["service"],
+        organization=setup["alpha"],
+        account=None,
+    )
+
     response = client.get(
-        _url(setup["operator"]), {"key": "storage_used", "service": setup["service"].id}
+        _url(setup["operator"]),
+        {"key": "storage_used", "service": setup["service"].id, "account_type": "none"},
     )
     assert response.status_code == 200
     data = response.json()
 
-    assert data["count"] == 3
-    names = {result["organization"]["name"] for result in data["results"]}
-    assert names == {"Alpha", "Beta"}
+    # The foreign organization's row has no account either.
+    assert data["count"] == 1
+    assert data["results"][0]["organization"]["name"] == "Alpha"
 
 
 def test_api_operator_metrics_aggregation_excludes_other_operators(setup, client):
     """The aggregate covers the operator's organizations only."""
+    factories.MetricFactory(
+        key="storage_used",
+        value=Decimal("10"),
+        service=setup["service"],
+        organization=setup["alpha"],
+        account=None,
+    )
+
     response = client.get(
         _url(setup["operator"]),
-        {"key": "storage_used", "service": setup["service"].id, "agg": "sum"},
+        {
+            "key": "storage_used",
+            "service": setup["service"].id,
+            "account_type": "none",
+            "agg": "sum",
+        },
     )
     assert response.status_code == 200
     data = response.json()
 
-    # 100 + 20 + 7, without the foreign organization's 5000.
-    assert Decimal(data["value"]) == Decimal("127")
-    assert data["count"] == 3
+    # Without the foreign organization's 5000.
+    assert Decimal(data["value"]) == Decimal("10")
+    assert data["count"] == 1
 
 
 # -- Query parameter validation
@@ -180,22 +202,37 @@ def test_api_operator_metrics_aggregation_excludes_other_operators(setup, client
 
 def test_api_operator_metrics_requires_key(setup, client):
     """The key param is required."""
-    response = client.get(_url(setup["operator"]), {"service": setup["service"].id})
+    response = client.get(
+        _url(setup["operator"]),
+        {"service": setup["service"].id, "account_type": "user"},
+    )
     assert response.status_code == 400
     assert "key" in response.json()
 
 
 def test_api_operator_metrics_requires_service(setup, client):
     """The service param is required."""
-    response = client.get(_url(setup["operator"]), {"key": "storage_used"})
+    response = client.get(
+        _url(setup["operator"]), {"key": "storage_used", "account_type": "user"}
+    )
     assert response.status_code == 400
     assert "service" in response.json()
+
+
+def test_api_operator_metrics_requires_account_type(setup, client):
+    """The account_type param is required: account types are never summed together."""
+    response = client.get(
+        _url(setup["operator"]), {"key": "storage_used", "service": setup["service"].id}
+    )
+    assert response.status_code == 400
+    assert "account_type" in response.json()
 
 
 def test_api_operator_metrics_service_not_an_integer(setup, client):
     """A malformed service id is a 400, not a 500 from the ORM."""
     response = client.get(
-        _url(setup["operator"]), {"key": "storage_used", "service": "abc"}
+        _url(setup["operator"]),
+        {"key": "storage_used", "service": "abc", "account_type": "user"},
     )
     assert response.status_code == 400
     assert "service" in response.json()
@@ -204,7 +241,8 @@ def test_api_operator_metrics_service_not_an_integer(setup, client):
 def test_api_operator_metrics_unknown_service(setup, client):
     """An integer service id that matches nothing is a 404."""
     response = client.get(
-        _url(setup["operator"]), {"key": "storage_used", "service": 999999}
+        _url(setup["operator"]),
+        {"key": "storage_used", "service": 999999, "account_type": "user"},
     )
     assert response.status_code == 404
     assert "not found" in response.json()["error"]
@@ -214,7 +252,12 @@ def test_api_operator_metrics_invalid_aggregation(setup, client):
     """Only sum and avg are accepted."""
     response = client.get(
         _url(setup["operator"]),
-        {"key": "storage_used", "service": setup["service"].id, "agg": "max"},
+        {
+            "key": "storage_used",
+            "service": setup["service"].id,
+            "account_type": "user",
+            "agg": "max",
+        },
     )
     assert response.status_code == 400
     assert "agg" in response.json()
@@ -224,7 +267,12 @@ def test_api_operator_metrics_invalid_group_by(setup, client):
     """An unsupported group_by is rejected instead of silently ignored."""
     response = client.get(
         _url(setup["operator"]),
-        {"key": "storage_used", "service": setup["service"].id, "group_by": "account"},
+        {
+            "key": "storage_used",
+            "service": setup["service"].id,
+            "account_type": "user",
+            "group_by": "account",
+        },
     )
     assert response.status_code == 400
     assert "group_by" in response.json()
@@ -237,6 +285,7 @@ def test_api_operator_metrics_malformed_organization_id(setup, client):
         {
             "key": "storage_used",
             "service": setup["service"].id,
+            "account_type": "user",
             "organizations": "not-a-uuid",
         },
     )
@@ -251,6 +300,7 @@ def test_api_operator_metrics_malformed_account_id(setup, client):
         {
             "key": "storage_used",
             "service": setup["service"].id,
+            "account_type": "user",
             "accounts": "not-a-uuid",
         },
     )
@@ -262,9 +312,11 @@ def test_api_operator_metrics_malformed_account_id(setup, client):
 
 
 def test_api_operator_metrics_filters_by_key_and_service(setup, client):
-    """Only the requested key and service are returned."""
+    """Only the requested key and service are returned; "none" selects the rows
+    stored without an account."""
     response = client.get(
-        _url(setup["operator"]), {"key": "user_count", "service": setup["service"].id}
+        _url(setup["operator"]),
+        {"key": "user_count", "service": setup["service"].id, "account_type": "none"},
     )
     assert response.status_code == 200
     data = response.json()
@@ -274,6 +326,38 @@ def test_api_operator_metrics_filters_by_key_and_service(setup, client):
     assert data["results"][0]["account"] is None
 
 
+def test_api_operator_metrics_account_types_are_not_mixed(setup, client):
+    """An organization-level row and its users' rows are never added up."""
+    factories.MetricFactory(
+        key="storage_used",
+        value=Decimal("500"),
+        service=setup["service"],
+        organization=setup["alpha"],
+        account=factories.AccountFactory(
+            organization=setup["alpha"], type="organization"
+        ),
+    )
+
+    def grouped(account_type):
+        response = client.get(
+            _url(setup["operator"]),
+            {
+                "key": "storage_used",
+                "service": setup["service"].id,
+                "account_type": account_type,
+                "group_by": "organization",
+            },
+        )
+        assert response.status_code == 200
+        return [
+            (result["organization"]["name"], Decimal(result["value"]))
+            for result in response.json()["results"]
+        ]
+
+    assert grouped("user") == [("Alpha", Decimal("100")), ("Beta", Decimal("7"))]
+    assert grouped("organization") == [("Alpha", Decimal("500"))]
+
+
 def test_api_operator_metrics_filters_by_organization(setup, client):
     """The organizations param narrows the results."""
     response = client.get(
@@ -281,6 +365,7 @@ def test_api_operator_metrics_filters_by_organization(setup, client):
         {
             "key": "storage_used",
             "service": setup["service"].id,
+            "account_type": "user",
             "organizations": str(setup["beta"].id),
         },
     )
@@ -298,6 +383,7 @@ def test_api_operator_metrics_organization_filter_drops_foreign_ids(setup, clien
         {
             "key": "storage_used",
             "service": setup["service"].id,
+            "account_type": "user",
             "organizations": f"{setup['beta'].id},{setup['foreign'].id}",
         },
     )
@@ -315,6 +401,7 @@ def test_api_operator_metrics_only_foreign_organizations(setup, client):
         {
             "key": "storage_used",
             "service": setup["service"].id,
+            "account_type": "user",
             "organizations": str(setup["foreign"].id),
         },
     )
@@ -348,6 +435,7 @@ def test_api_operator_metrics_filters_by_accounts(setup, client):
         {
             "key": "storage_used",
             "service": setup["service"].id,
+            "account_type": "user",
             "accounts": str(setup["beta_user"].id),
         },
     )
@@ -365,36 +453,75 @@ def test_api_operator_metrics_sum(setup, client):
     """agg=sum returns the total and the number of metrics behind it."""
     response = client.get(
         _url(setup["operator"]),
-        {"key": "storage_used", "service": setup["service"].id, "agg": "sum"},
+        {
+            "key": "storage_used",
+            "service": setup["service"].id,
+            "account_type": "user",
+            "agg": "sum",
+        },
     )
     assert response.status_code == 200
     data = response.json()
 
     assert data["aggregation"] == "sum"
     assert data["service_id"] == setup["service"].id
-    assert Decimal(data["value"]) == Decimal("127")
-    assert data["count"] == 3
+    assert Decimal(data["value"]) == Decimal("107")
+    assert data["count"] == 2
 
 
 def test_api_operator_metrics_avg(setup, client):
     """agg=avg returns the mean over the same rows."""
     response = client.get(
         _url(setup["operator"]),
-        {"key": "storage_used", "service": setup["service"].id, "agg": "avg"},
+        {
+            "key": "storage_used",
+            "service": setup["service"].id,
+            "account_type": "user",
+            "agg": "avg",
+        },
     )
     assert response.status_code == 200
     data = response.json()
 
     assert data["aggregation"] == "avg"
-    assert Decimal(data["value"]).quantize(Decimal("0.01")) == Decimal("42.33")
-    assert data["count"] == 3
+    assert Decimal(data["value"]) == Decimal("53.5")
+    assert data["count"] == 2
+
+
+def test_api_operator_metrics_sum_beyond_fourteen_digits(setup, client):
+    """A total past 14 integer digits (100 TB in bytes) is returned, not a 500."""
+    for account in (setup["alpha_user"], setup["beta_user"]):
+        factories.MetricFactory(
+            key="storage_bytes",
+            value=Decimal("90000000000000"),
+            service=setup["service"],
+            organization=account.organization,
+            account=account,
+        )
+
+    response = client.get(
+        _url(setup["operator"]),
+        {
+            "key": "storage_bytes",
+            "service": setup["service"].id,
+            "account_type": "user",
+            "agg": "sum",
+        },
+    )
+    assert response.status_code == 200
+    assert Decimal(response.json()["value"]) == Decimal("180000000000000")
 
 
 def test_api_operator_metrics_aggregation_without_rows(setup, client):
     """Aggregating nothing is zero, not null."""
     response = client.get(
         _url(setup["operator"]),
-        {"key": "does_not_exist", "service": setup["service"].id, "agg": "sum"},
+        {
+            "key": "does_not_exist",
+            "service": setup["service"].id,
+            "account_type": "user",
+            "agg": "sum",
+        },
     )
     assert response.status_code == 200
     data = response.json()
@@ -405,11 +532,20 @@ def test_api_operator_metrics_aggregation_without_rows(setup, client):
 
 def test_api_operator_metrics_group_by_organization(setup, client):
     """group_by=organization sums each organization and names the grouping."""
+    factories.MetricFactory(
+        key="storage_used",
+        value=Decimal("30"),
+        service=setup["service"],
+        organization=setup["alpha"],
+        account=factories.AccountFactory(organization=setup["alpha"], type="user"),
+    )
+
     response = client.get(
         _url(setup["operator"]),
         {
             "key": "storage_used",
             "service": setup["service"].id,
+            "account_type": "user",
             "group_by": "organization",
         },
     )
@@ -421,7 +557,7 @@ def test_api_operator_metrics_group_by_organization(setup, client):
     assert [
         (result["organization"]["name"], Decimal(result["value"]))
         for result in data["results"]
-    ] == [("Alpha", Decimal("120")), ("Beta", Decimal("7"))]
+    ] == [("Alpha", Decimal("130")), ("Beta", Decimal("7"))]
 
 
 def test_api_operator_metrics_group_by_organization_with_account_type(setup, client):
@@ -432,7 +568,7 @@ def test_api_operator_metrics_group_by_organization_with_account_type(setup, cli
             "key": "storage_used",
             "service": setup["service"].id,
             "group_by": "organization",
-            "account_type": "user",
+            "account_type": "mailbox",
         },
     )
     assert response.status_code == 200
@@ -441,7 +577,7 @@ def test_api_operator_metrics_group_by_organization_with_account_type(setup, cli
     assert [
         (result["organization"]["name"], Decimal(result["value"]))
         for result in data["results"]
-    ] == [("Alpha", Decimal("100")), ("Beta", Decimal("7"))]
+    ] == [("Alpha", Decimal("20"))]
 
 
 # -- Pagination
@@ -451,13 +587,18 @@ def test_api_operator_metrics_list_is_paginated(setup, client):
     """The listing is bounded: a page, a total and a link to the next one."""
     response = client.get(
         _url(setup["operator"]),
-        {"key": "storage_used", "service": setup["service"].id, "page_size": 2},
+        {
+            "key": "storage_used",
+            "service": setup["service"].id,
+            "account_type": "user",
+            "page_size": 1,
+        },
     )
     assert response.status_code == 200
     data = response.json()
 
-    assert data["count"] == 3
-    assert len(data["results"]) == 2
+    assert data["count"] == 2
+    assert len(data["results"]) == 1
     assert data["next"] is not None
     assert data["previous"] is None
 
@@ -471,15 +612,16 @@ def test_api_operator_metrics_pagination_covers_every_row_once(setup, client):
             {
                 "key": "storage_used",
                 "service": setup["service"].id,
-                "page_size": 2,
+                "account_type": "user",
+                "page_size": 1,
                 "page": page,
             },
         )
         assert response.status_code == 200
         seen.extend(result["id"] for result in response.json()["results"])
 
-    assert len(seen) == 3
-    assert len(set(seen)) == 3
+    assert len(seen) == 2
+    assert len(set(seen)) == 2
 
 
 def test_api_operator_metrics_grouped_results_are_paginated(setup, client):
@@ -489,6 +631,7 @@ def test_api_operator_metrics_grouped_results_are_paginated(setup, client):
         {
             "key": "storage_used",
             "service": setup["service"].id,
+            "account_type": "user",
             "group_by": "organization",
             "page_size": 1,
         },
@@ -506,11 +649,20 @@ def test_api_operator_metrics_grouped_results_are_paginated(setup, client):
 # -- Metric keys
 
 
+EXPECTED_KEYS = {
+    "results": [
+        {"key": "storage_used", "account_types": ["mailbox", "user"]},
+        {"key": "user_count", "account_types": ["none"]},
+    ]
+}
+
+
 def test_api_operator_metrics_keys(setup, client):
-    """The keys endpoint lists the operator's keys, sorted and deduplicated."""
+    """The keys endpoint lists the operator's keys, sorted and deduplicated, each
+    with the account types it has data for ("none" for rows without an account)."""
     response = client.get(_keys_url(setup["operator"]))
     assert response.status_code == 200
-    assert response.json() == {"results": ["storage_used", "user_count"]}
+    assert response.json() == EXPECTED_KEYS
 
 
 def test_api_operator_metrics_keys_filtered_by_service(setup, client):
@@ -519,7 +671,9 @@ def test_api_operator_metrics_keys_filtered_by_service(setup, client):
         _keys_url(setup["operator"]), {"service": setup["other_service"].id}
     )
     assert response.status_code == 200
-    assert response.json() == {"results": ["storage_used"]}
+    assert response.json() == {
+        "results": [{"key": "storage_used", "account_types": ["user"]}]
+    }
 
 
 def test_api_operator_metrics_keys_excludes_other_operators(setup, client):
@@ -534,7 +688,7 @@ def test_api_operator_metrics_keys_excludes_other_operators(setup, client):
 
     response = client.get(_keys_url(setup["operator"]))
     assert response.status_code == 200
-    assert "foreign_only" not in response.json()["results"]
+    assert "foreign_only" not in [row["key"] for row in response.json()["results"]]
 
 
 def test_api_operator_metrics_keys_service_not_an_integer(setup, client):
@@ -563,6 +717,7 @@ def test_api_operator_metrics_order_by_defaults_to_organization(setup, client):
         {
             "key": "storage_used",
             "service": setup["service"].id,
+            "account_type": "user",
             "group_by": "organization",
         },
     )
@@ -582,13 +737,14 @@ def test_api_operator_metrics_group_by_ordered_by_value(
 ):
     """Grouped rows sort on the summed value, both directions.
 
-    Alpha sums to 120 and Beta to 7, so the two orders are each other's reverse.
+    Alpha sums to 100 and Beta to 7, so the two orders are each other's reverse.
     """
     response = client.get(
         _url(setup["operator"]),
         {
             "key": "storage_used",
             "service": setup["service"].id,
+            "account_type": "user",
             "group_by": "organization",
             "order_by": order_by,
         },
@@ -605,6 +761,7 @@ def test_api_operator_metrics_rows_ordered_by_value(setup, client, order_by):
         {
             "key": "storage_used",
             "service": setup["service"].id,
+            "account_type": "user",
             "order_by": order_by,
         },
     )
@@ -641,6 +798,7 @@ def test_api_operator_metrics_order_by_value_is_fully_ordered(setup, client):
             {
                 "key": "storage_used",
                 "service": setup["service"].id,
+                "account_type": "user",
                 "order_by": "value",
                 "page": page,
                 "page_size": 2,
@@ -652,8 +810,9 @@ def test_api_operator_metrics_order_by_value_is_fully_ordered(setup, client):
             for result in response.json()["results"]
         )
 
-    assert len(seen) == 6
-    assert len({metric_id for _, metric_id in seen}) == 6
+    # The fixture's two user rows and the three added here.
+    assert len(seen) == 5
+    assert len({metric_id for _, metric_id in seen}) == 5
     # The full (value, id) ordering, ties included.
     assert seen == sorted(seen)
 
@@ -680,7 +839,7 @@ def test_api_operator_metrics_grouped_same_name_is_ordered_by_id(setup, client):
             value=Decimal("50"),
             service=setup["service"],
             organization=organization,
-            account=None,
+            account=factories.AccountFactory(organization=organization, type="user"),
         )
 
     seen = []
@@ -690,6 +849,7 @@ def test_api_operator_metrics_grouped_same_name_is_ordered_by_id(setup, client):
             {
                 "key": "storage_used",
                 "service": setup["service"].id,
+                "account_type": "user",
                 "group_by": "organization",
                 "page": page,
                 "page_size": 1,
@@ -718,6 +878,7 @@ def test_api_operator_metrics_invalid_order_by(setup, client):
         {
             "key": "storage_used",
             "service": setup["service"].id,
+            "account_type": "user",
             "order_by": "bogus",
         },
     )
@@ -748,12 +909,13 @@ def fixture_api_key_client(setup):
 def test_api_operator_metrics_with_api_key(setup, api_key_client):
     """An operator key reads the same rows the operator's user sees."""
     response = api_key_client.get(
-        _url(setup["operator"]), {"key": "storage_used", "service": setup["service"].id}
+        _url(setup["operator"]),
+        {"key": "storage_used", "service": setup["service"].id, "account_type": "user"},
     )
     assert response.status_code == 200
 
     data = response.json()
-    assert data["count"] == 3
+    assert data["count"] == 2
     assert "Foreign" not in {
         result["organization"]["name"] for result in data["results"]
     }
@@ -763,7 +925,7 @@ def test_api_operator_metrics_keys_with_api_key(setup, api_key_client):
     """The keys endpoint accepts the same operator key."""
     response = api_key_client.get(_keys_url(setup["operator"]))
     assert response.status_code == 200
-    assert response.json() == {"results": ["storage_used", "user_count"]}
+    assert response.json() == EXPECTED_KEYS
 
 
 def test_api_operator_metrics_api_key_of_other_operator(setup):

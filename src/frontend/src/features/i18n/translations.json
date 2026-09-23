@@ -402,7 +402,7 @@
           "organizations_placeholder": "Toutes les organisations",
           "organizations_search": "Rechercher une organisation",
           "account_type": "Type de compte",
-          "account_type_placeholder": "Tous les types",
+          "account_type_placeholder": "Sélectionner un type de compte",
           "aggregation": "Agrégation",
           "aggregation_options": {
             "none": "Aucune",
@@ -426,7 +426,7 @@
         },
         "chart": {
           "no_data": "Aucune donnée à afficher",
-          "select_filters": "Sélectionnez un service et une métrique pour afficher les données",
+          "select_filters": "Sélectionnez un service, une métrique et un type de compte pour afficher les données",
           "error": "Impossible de charger les métriques",
           "aggregated_value": "Valeur agrégée",
           "value_axis": "Valeur",
@@ -436,7 +436,9 @@
         },
         "account_types": {
           "user": "Utilisateur",
-          "mailbox": "Boîte mail"
+          "mailbox": "Boîte mail",
+          "organization": "Organisation",
+          "none": "Organisation (sans compte)"
         }
       }
     }

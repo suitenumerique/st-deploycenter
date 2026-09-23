@@ -242,21 +242,6 @@
                                             "type": "string",
                                             "readOnly": true
                                         },
-                                        "POSTHOG_KEY": {
-                                            "type": "string",
-                                            "nullable": true,
-                                            "readOnly": true
-                                        },
-                                        "POSTHOG_HOST": {
-                                            "type": "string",
-                                            "nullable": true,
-                                            "readOnly": true
-                                        },
-                                        "POSTHOG_SURVEY_ID": {
-                                            "type": "string",
-                                            "nullable": true,
-                                            "readOnly": true
-                                        },
                                         "LANGUAGES": {
                                             "type": "array",
                                             "items": {
@@ -271,9 +256,6 @@
                                     },
                                     "required": [
                                         "ENVIRONMENT",
-                                        "POSTHOG_KEY",
-                                        "POSTHOG_HOST",
-                                        "POSTHOG_SURVEY_ID",
                                         "LANGUAGES",
                                         "LANGUAGE_CODE"
                                     ]
@@ -592,7 +574,7 @@
         "/api/v1.0/operators/{operator_id}/metrics/keys/": {
             "get": {
                 "operationId": "operators_metrics_keys_retrieve",
-                "description": "List the metric keys that have data for this operator.\n\nThe dashboard populates its key filter from this rather than from a\nhardcoded list, so it only ever offers keys that resolve to a chart.",
+                "description": "List the metric keys that have data for this operator, each with the\naccount types it has data for (\"none\" for rows without an account).\n\nThe dashboard populates its key and account type filters from this\nrather than from hardcoded lists, so it only offers what resolves to a\nchart.",
                 "parameters": [
                     {
                         "in": "path",

@@ -468,7 +468,8 @@ export type MetricsParams = {
   service: string;
   organizations?: string[];
   accounts?: string[];
-  account_type?: string;
+  // An account type, or "none" for the metrics stored without an account.
+  account_type: string;
   agg?: "sum" | "avg";
   group_by?: "organization";
   order_by?: MetricsOrderBy;
@@ -483,15 +484,13 @@ export const getOperatorMetrics = async (
   const url = new URL(`/`, window.location.origin);
   url.searchParams.append("key", params.key);
   url.searchParams.append("service", params.service);
+  url.searchParams.append("account_type", params.account_type);
 
   if (params.organizations && params.organizations.length > 0) {
     url.searchParams.append("organizations", params.organizations.join(","));
   }
   if (params.accounts && params.accounts.length > 0) {
     url.searchParams.append("accounts", params.accounts.join(","));
-  }
-  if (params.account_type) {
-    url.searchParams.append("account_type", params.account_type);
   }
   if (params.agg) {
     url.searchParams.append("agg", params.agg);
@@ -567,8 +566,15 @@ export const getAllOperatorMetrics = async (
   return { ...first, results } as MetricsResponse | GroupedMetricsResponse;
 };
 
+export type MetricKey = {
+  key: string;
+  // "none" stands for the metrics stored without an account.
+  account_types: string[];
+};
+
 /**
- * The metric keys this operator actually has data for, for a given service.
+ * The metric keys this operator actually has data for, for a given service,
+ * each with the account types it has data for.
  *
  * The dashboard offers only these: a hardcoded list would let a user pick a key
  * that can only ever draw an empty chart.
@@ -576,7 +582,7 @@ export const getAllOperatorMetrics = async (
 export const getOperatorMetricKeys = async (
   operatorId: string,
   serviceId: string
-): Promise<{ results: string[] }> => {
+): Promise<{ results: MetricKey[] }> => {
   const url = new URL(`/`, window.location.origin);
   if (serviceId) {
     url.searchParams.append("service", serviceId);
@@ -584,5 +590,5 @@ export const getOperatorMetricKeys = async (
   const response = await fetchAPI(
     `operators/${operatorId}/metrics/keys/` + url.search
   );
-  return (await response.json()) as { results: string[] };
+  return (await response.json()) as { results: MetricKey[] };
 };

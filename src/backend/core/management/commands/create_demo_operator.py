@@ -13,6 +13,8 @@ import uuid
 from decimal import Decimal
 from logging import getLogger
 
+from django.conf import settings
+from django.contrib.auth.hashers import make_password
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
@@ -67,7 +69,9 @@ def get_or_create_user(email: str) -> User:
     """
     user, created = User.objects.get_or_create(
         email=email,
-        defaults={"full_name": f"Demo User ({email})"},
+        # Passwordless OIDC user; User.save() runs full_clean, which refuses a
+        # blank password.
+        defaults={"full_name": f"Demo User ({email})", "password": make_password(None)},
     )
     if created:
         logger.info("Created user: %s", user.id)
@@ -300,6 +304,11 @@ class Command(BaseCommand):
     @transaction.atomic
     def handle(self, *args, **options):
         """Execute the command."""
+        # It links real organizations to a fake operator and creates fake
+        # accounts and metrics in them.
+        if settings.ENVIRONMENT == "production":
+            raise CommandError("This command is not allowed in production.")
+
         email = options["email"]
         operator_name = (
             options["operator_name"] or f"Demo Operator {uuid.uuid4().hex[:6]}"

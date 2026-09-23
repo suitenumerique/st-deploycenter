@@ -91,6 +91,11 @@ def _parse_uuid_list(value):
     return parsed
 
 
+# account_type value selecting the metrics stored without an account
+# (organization-level rows from the service's metrics endpoint).
+NO_ACCOUNT_TYPE = "none"
+
+
 class OperatorMetricsQuerySerializer(serializers.Serializer):
     """Validate query params for the operator metrics endpoint.
 
@@ -102,7 +107,9 @@ class OperatorMetricsQuerySerializer(serializers.Serializer):
     service = serializers.IntegerField()
     organizations = serializers.CharField(required=False, allow_blank=True)
     accounts = serializers.CharField(required=False, allow_blank=True)
-    account_type = serializers.CharField(required=False, allow_blank=True)
+    # Required: a service can report the same key per account and for the whole
+    # organization, and adding those up counts the same usage twice.
+    account_type = serializers.CharField()
     agg = serializers.ChoiceField(
         choices=["sum", "avg"], required=False, allow_blank=True
     )
@@ -137,16 +144,18 @@ class OperatorMetricsViewSet(viewsets.ViewSet):
         Supports aggregation via agg=sum|avg query param.
 
     GET /api/v1.0/operators/<operator_id>/metrics/keys/
-        Return the metric keys that have data for this operator.
+        Return the metric keys that have data for this operator, each with the
+        account types it has data for.
 
     Required query params:
         - key: Metric key to filter on (single value)
         - service: Service ID to filter on (single value)
+        - account_type: Account type (e.g. "user", "mailbox", "organization"), or
+          "none" for the metrics stored without an account.
 
     Optional query params:
         - organizations: Comma-separated organization IDs. Defaults to all orgs the operator has access to.
-        - accounts: Comma-separated account IDs. If omitted, returns all accounts (including null).
-        - account_type: Filter by account type (e.g., "user", "mailbox").
+        - accounts: Comma-separated account IDs. If omitted, returns all accounts of the type.
         - agg: Aggregation type (sum|avg). If provided, returns aggregated value.
         - group_by: Group results by 'organization'. Returns sum per organization.
         - page / page_size: Paginate the listed and grouped results.
@@ -222,7 +231,9 @@ class OperatorMetricsViewSet(viewsets.ViewSet):
                 )
             queryset = queryset.filter(organization_id__in=organizations)
 
-        if params.get("account_type"):
+        if params["account_type"] == NO_ACCOUNT_TYPE:
+            queryset = queryset.filter(account__isnull=True)
+        else:
             queryset = queryset.filter(account__type=params["account_type"])
 
         if params.get("accounts"):
@@ -296,10 +307,12 @@ class OperatorMetricsViewSet(viewsets.ViewSet):
         return self._paginated_response(paginator, serializer.data)
 
     def keys(self, request, operator_id=None):
-        """List the metric keys that have data for this operator.
+        """List the metric keys that have data for this operator, each with the
+        account types it has data for ("none" for rows without an account).
 
-        The dashboard populates its key filter from this rather than from a
-        hardcoded list, so it only ever offers keys that resolve to a chart.
+        The dashboard populates its key and account type filters from this
+        rather than from hardcoded lists, so it only offers what resolves to a
+        chart.
         """
         query = OperatorMetricKeysQuerySerializer(data=request.query_params)
         query.is_valid(raise_exception=True)
@@ -312,5 +325,17 @@ class OperatorMetricsViewSet(viewsets.ViewSet):
 
         # order_by clears Metric's default ordering, which would otherwise add
         # "timestamp" to the selected columns and defeat the distinct().
-        keys = queryset.values_list("key", flat=True).distinct().order_by("key")
-        return Response({"results": list(keys)})
+        rows = queryset.values_list("key", "account__type").distinct().order_by()
+        account_types = {}
+        for key, account_type in rows:
+            account_types.setdefault(key, set()).add(
+                NO_ACCOUNT_TYPE if account_type is None else account_type
+            )
+        return Response(
+            {
+                "results": [
+                    {"key": key, "account_types": sorted(types)}
+                    for key, types in sorted(account_types.items())
+                ]
+            }
+        )

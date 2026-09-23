@@ -246,7 +246,8 @@ lint: \
 
 lint-check:  ## run all linters in check mode
 lint-check: \
-  lint-ruff-back \
+  format-check-back \
+  lint-ruff-check-back \
   lint-pylint-back
   #typecheck-front \
   #lint-front
@@ -263,9 +264,17 @@ format-back: ## format back-end python sources with ruff
 	@$(COMPOSE_RUN_APP_TOOLS) ruff format .
 .PHONY: format-back
 
+format-check-back: ## check back-end python sources formatting with ruff
+	@$(COMPOSE_RUN_APP_TOOLS) ruff format --check .
+.PHONY: format-check-back
+
 lint-ruff-back: ## lint back-end python sources with ruff
 	@$(COMPOSE_RUN_APP_TOOLS) ruff check . --fix
 .PHONY: lint-ruff-back
+
+lint-ruff-check-back: ## lint back-end python sources with ruff, without fixing
+	@$(COMPOSE_RUN_APP_TOOLS) ruff check .
+.PHONY: lint-ruff-check-back
 
 lint-pylint-back: ## lint back-end python sources with pylint
 	@$(COMPOSE_RUN_APP_TOOLS) sh -c "pylint ."
@@ -365,7 +374,7 @@ deps-tree-back: ## show dependencies as a tree
 .PHONY: deps-tree-back
 
 deps-audit-back: ## check the dependencies
-	@$(COMPOSE) run --rm --no-deps -e HOME=/tmp --build backend-dev deps-audit-back
+	@$(COMPOSE) run --rm --no-deps -e HOME=/tmp --build backend-dev pip-audit
 .PHONY: deps-audit-back
 
 import-dpnt: ## import the DPNT dataset

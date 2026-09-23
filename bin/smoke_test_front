@@ -126,6 +126,8 @@ assert_code 200 "static route" "$BASE/operators"
 assert_code 308 "trailing slash redirect" "$BASE/operators/"
 assert_code 200 "dynamic route" "$BASE/operators/$UUID"
 assert_code 200 "nested dynamic route" "$BASE/operators/$UUID/organizations/$UUID"
+assert_code 200 "organizations route" "$BASE/operators/$UUID/organizations"
+assert_code 200 "metrics route" "$BASE/operators/$UUID/metrics"
 assert_code 404 "unknown path" "$BASE/nope"
 
 # Proxy paths first: a 502 here means the container cannot reach the

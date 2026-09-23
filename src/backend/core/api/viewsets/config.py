@@ -21,21 +21,6 @@ class ConfigView(drf.views.APIView):
                     "type": "object",
                     "properties": {
                         "ENVIRONMENT": {"type": "string", "readOnly": True},
-                        "POSTHOG_KEY": {
-                            "type": "string",
-                            "nullable": True,
-                            "readOnly": True,
-                        },
-                        "POSTHOG_HOST": {
-                            "type": "string",
-                            "nullable": True,
-                            "readOnly": True,
-                        },
-                        "POSTHOG_SURVEY_ID": {
-                            "type": "string",
-                            "nullable": True,
-                            "readOnly": True,
-                        },
                         "LANGUAGES": {
                             "type": "array",
                             "items": {"type": "string"},
@@ -43,14 +28,7 @@ class ConfigView(drf.views.APIView):
                         },
                         "LANGUAGE_CODE": {"type": "string", "readOnly": True},
                     },
-                    "required": [
-                        "ENVIRONMENT",
-                        "POSTHOG_KEY",
-                        "POSTHOG_HOST",
-                        "POSTHOG_SURVEY_ID",
-                        "LANGUAGES",
-                        "LANGUAGE_CODE",
-                    ],
+                    "required": ["ENVIRONMENT", "LANGUAGES", "LANGUAGE_CODE"],
                 },
             )
         },
@@ -61,17 +39,10 @@ class ConfigView(drf.views.APIView):
         GET /api/v1.0/config/
             Return a dictionary of public settings.
         """
-        array_settings = [
-            "ENVIRONMENT",
-            "POSTHOG_KEY",
-            "POSTHOG_HOST",
-            "POSTHOG_SURVEY_ID",
-            "LANGUAGES",
-            "LANGUAGE_CODE",
-        ]
-        dict_settings = {}
-        for setting in array_settings:
-            if hasattr(settings, setting):
-                dict_settings[setting] = getattr(settings, setting)
-
-        return drf.response.Response(dict_settings)
+        return drf.response.Response(
+            {
+                "ENVIRONMENT": settings.ENVIRONMENT,
+                "LANGUAGES": settings.LANGUAGES,
+                "LANGUAGE_CODE": settings.LANGUAGE_CODE,
+            }
+        )

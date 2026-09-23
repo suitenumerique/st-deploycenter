@@ -98,6 +98,9 @@
 		@organization_list path_regexp ^/operators/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/organizations$
 		rewrite @organization_list "/operators/[operator_id]/organizations.html"
 
+		@operator_metrics path_regexp ^/operators/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/metrics$
+		rewrite @operator_metrics "/operators/[operator_id]/metrics.html"
+
 		@organization_detail path_regexp ^/operators/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/organizations/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
 		rewrite @organization_detail "/operators/[operator_id]/organizations/[id].html"
 

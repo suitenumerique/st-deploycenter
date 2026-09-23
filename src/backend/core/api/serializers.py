@@ -1353,8 +1353,10 @@ class AggregatedMetricSerializer(serializers.Serializer):
         choices=["sum", "avg"],
         help_text="Aggregation type applied",
     )
+    # No max_digits: a sum can outgrow the per-metric precision, and DRF rounds
+    # with max_digits as the precision, raising past it.
     value = serializers.DecimalField(
-        max_digits=20,
+        max_digits=None,
         decimal_places=6,
         help_text="Aggregated value",
     )
