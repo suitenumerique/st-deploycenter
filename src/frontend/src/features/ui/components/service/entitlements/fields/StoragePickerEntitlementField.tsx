@@ -6,11 +6,11 @@ import {
   ModalSize,
   Select,
   useModal,
-} from "@openfun/cunningham-react";
+} from "@gouvfr-lasuite/ui-components";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ServiceAttribute } from "@/features/ui/components/service/ServiceAttribute";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Spinner } from "@gouvfr-lasuite/ui-components";
 import { Entitlement } from "@/features/api/Repository";
 import { ServiceBlockEntitlementFieldProps } from "@/features/ui/components/service/entitlements/ServiceBlockEntitlements";
 
@@ -163,7 +163,7 @@ const StoragePickerEntitlementFieldModal = (
           <Button
             type="button"
             onClick={props.onClose}
-            color="secondary"
+            variant="secondary"
             disabled={isLoading}
           >
             {t("common.cancel")}

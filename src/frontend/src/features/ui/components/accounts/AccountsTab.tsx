@@ -7,8 +7,8 @@ import {
   Button,
   usePagination,
   useModals,
-} from "@openfun/cunningham-react";
-import { Icon } from "@gouvfr-lasuite/ui-kit";
+} from "@gouvfr-lasuite/ui-components";
+import { Icon } from "@gouvfr-lasuite/ui-components";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useRouter } from "next/router";
@@ -276,13 +276,13 @@ export const AccountsTab = ({
               <div style={{ display: "flex", gap: "0.5rem" }}>
                 <Button
                   size="small"
-                  color="secondary"
+                  variant="secondary"
                   icon={<Icon name="edit" />}
                   onClick={() => setEditingAccount(params.row as Account)}
                 />
                 <Button
                   size="small"
-                  color="secondary"
+                  variant="secondary"
                   icon={<Icon name="delete" />}
                   onClick={async () => {
                     const decision = await modals.confirmationModal({

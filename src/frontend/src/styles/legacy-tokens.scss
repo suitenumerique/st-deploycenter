@@ -1,0 +1,58 @@
+/*
+ * Compatibility layer for the app's own styles, kept for the ui-components
+ * migration.
+ *
+ * The kit used to publish a "--c--theme--*" namespace; it now publishes
+ * "--c--globals--*" (raw palette), "--c--contextuals--*" (semantic roles) and
+ * "--c--components--*". The new palette is a different set of values, not a
+ * rename, so this file keeps the previous values verbatim: the app's custom
+ * styles render exactly as before the migration.
+ *
+ * This is a bridge, not a destination. Each declaration below should be
+ * replaced, at its call sites, by the semantic token that says what the colour
+ * means (a border, a muted label, a brand surface), after which this file goes
+ * away. Only the variables the app actually uses are declared.
+ */
+
+:root {
+  --c--theme--colors--danger-050: #fff4f4;
+  --c--theme--colors--danger-300: #ffbdbd;
+  --c--theme--colors--danger-500: #f60700;
+  --c--theme--colors--danger-600: #ce0500;
+  --c--theme--colors--danger-800: #412121;
+
+  --c--theme--colors--greyscale-000: #fff;
+  --c--theme--colors--greyscale-050: #f6f6f6;
+  --c--theme--colors--greyscale-100: #eee;
+  --c--theme--colors--greyscale-200: #e5e5e5;
+  --c--theme--colors--greyscale-300: #cecece;
+  --c--theme--colors--greyscale-400: #929292;
+  --c--theme--colors--greyscale-500: #7c7c7c;
+  --c--theme--colors--greyscale-600: #666666;
+  --c--theme--colors--greyscale-700: #3a3a3a;
+  --c--theme--colors--greyscale-800: #2a2a2a;
+  --c--theme--colors--greyscale-900: #242424;
+  --c--theme--colors--greyscale-950: #1e1e1e;
+  --c--theme--colors--greyscale-1000: #161616;
+  --c--theme--colors--greyscale-text: #303c4b;
+
+  --c--theme--colors--info-600: #0063cb;
+
+  --c--theme--colors--primary-050: #f5f5fe;
+  --c--theme--colors--primary-100: #ececfe;
+  --c--theme--colors--primary-300: #cacafb;
+  --c--theme--colors--primary-500: #6a6af4;
+  --c--theme--colors--primary-600: #313178;
+  --c--theme--colors--primary-700: #272747;
+  --c--theme--colors--primary-800: #000091;
+
+  --c--theme--colors--success-100: #dffee6;
+  --c--theme--colors--success-600: #18753c;
+  --c--theme--colors--success-700: #204129;
+
+  --c--theme--colors--warning-100: #fff4f3;
+  --c--theme--colors--warning-500: #d64d00;
+  --c--theme--colors--warning-700: #5e2c21;
+
+  --c--theme--font--families--base: Marianne;
+}

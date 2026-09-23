@@ -1,12 +1,20 @@
 @use "sass:map";
 @use "@/styles/cunningham-tokens-sass" as *;
 
-$tablet: map.get($themes, "default", "theme", "breakpoints", "tablet");
+$tablet: map.get($themes, "default", "globals", "breakpoints", "tablet");
 
 @media (max-width: $tablet) {
   .c__header {
     border-bottom: 0;
   }
+}
+
+// The header is fixed with z-index auto, and the content below it starts at the
+// header height, border excluded. Without this the container wrapper, which is
+// positioned and comes later in the DOM, paints over the header's bottom border.
+// Stays under the mobile drawer (z-index 999).
+.c__main-layout__header {
+  z-index: 1;
 }
 
 .drive__header__logo {

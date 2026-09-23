@@ -7,9 +7,9 @@ import {
 import {
   Button,
   useModal,
-} from "@openfun/cunningham-react";
+} from "@gouvfr-lasuite/ui-components";
 import { ServiceAttribute } from "../ServiceAttribute";
-import { Icon, IconSize } from "@gouvfr-lasuite/ui-kit";
+import { Icon, IconSize } from "@gouvfr-lasuite/ui-components";
 import { DomainMultiSelectModal } from "../DomainMultiSelectModal";
 import { MutateOptions } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -267,7 +267,8 @@ export const ProConnectServiceBlock = (props: {
                 Documentation
               </a>
               <Button
-                color="tertiary"
+                variant="secondary"
+                color="neutral"
                 size="nano"
                 href={props.service.config?.help_center_url}
                 target="_blank"

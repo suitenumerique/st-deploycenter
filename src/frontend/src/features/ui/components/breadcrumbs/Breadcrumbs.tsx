@@ -1,4 +1,4 @@
-import { Button } from "@openfun/cunningham-react";
+import { Button } from "@gouvfr-lasuite/ui-components";
 import React, { ReactElement, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -23,7 +23,8 @@ export const Breadcrumbs = ({
       {displayBack && (
         <Button
           icon={<span className="material-icons">arrow_back</span>}
-          color="tertiary"
+          variant="secondary"
+          color="neutral"
           className="mr-t"
           onClick={onBack}
           disabled={items.length <= 1}

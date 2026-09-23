@@ -3,20 +3,28 @@
 
 import json
 import secrets
+from contextlib import nullcontext
 
 from django import forms
 from django.conf import settings
 from django.contrib import admin, messages
+from django.contrib.admin.utils import unquote
 from django.contrib.auth import admin as auth_admin
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import JSONField
-from django.http import HttpResponseRedirect
+from django.http import Http404, HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
+from rest_framework import serializers as drf_serializers
+
 from . import models
+from .api.serializers import ServiceSubscriptionSerializer
+from .services.proconnect import ProConnectPartnersError
+from .signals import request_user_context, suppress_proconnect_sync
 
 
 class PrettyJSONWidget(forms.Textarea):
@@ -1466,9 +1474,34 @@ class OrganizationTypeFilter(admin.SimpleListFilter):
         return queryset
 
 
+class ProConnectManualActionsForm(forms.Form):
+    """Edit a ProConnect subscription's state and domains, without editing JSON."""
+
+    skip_proconnect_sync = forms.BooleanField(
+        label=_("Skip the ProConnect push"),
+        required=False,
+        help_text=_(
+            "Save to the database only, without pushing the domain list to "
+            "api-partenaires: to align the database with ProConnect, or to push "
+            "later with the proconnect_sync management command."
+        ),
+    )
+    is_active = forms.BooleanField(label=_("Active"), required=False)
+    domain = forms.CharField(label=_("Domain to add"), required=False)
+
+    def clean(self):
+        """Require a domain when the add button was pressed."""
+        cleaned_data = super().clean()
+        if "add" in self.data and not cleaned_data.get("domain"):
+            self.add_error("domain", _("Enter a domain to add."))
+        return cleaned_data
+
+
 @admin.register(models.ServiceSubscription)
 class ServiceSubscriptionAdmin(admin.ModelAdmin):
     """Admin class for the ServiceSubscription model"""
+
+    change_form_template = "admin/core/servicesubscription/change_form.html"
 
     list_display = (
         "organization",
@@ -1504,9 +1537,14 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
     )
 
     def get_urls(self):
-        """Add custom URLs for bulk subscribe functionality."""
+        """Add custom URLs for bulk subscribe and ProConnect manual actions."""
         urls = super().get_urls()
         custom_urls = [
+            path(
+                "<path:object_id>/proconnect-manual-actions/",
+                self.admin_site.admin_view(self.proconnect_manual_actions_view),
+                name="core_servicesubscription_proconnect_manual_actions",
+            ),
             path(
                 "bulk-subscribe/",
                 self.admin_site.admin_view(self.bulk_subscribe_view),
@@ -1519,6 +1557,91 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
             ),
         ]
         return custom_urls + urls
+
+    def proconnect_manual_actions_view(self, request, object_id):
+        """Set a ProConnect subscription's active state, add or remove a domain.
+
+        Writes through the API serializer as a superuser, so the API's domain
+        validation, normalization and cross-subscription uniqueness apply. The
+        save pushes the provider's domain list unless the skip box is checked,
+        and a failed push rolls the change back.
+        """
+        subscription = self.get_object(request, unquote(object_id))
+        if subscription is None or subscription.service.type != "proconnect":
+            raise Http404
+        if not self.has_change_permission(request, subscription):
+            raise PermissionDenied
+
+        stored = (subscription.metadata or {}).get("domains")
+        domains = stored if isinstance(stored, list) else []
+        form = ProConnectManualActionsForm(
+            request.POST or None, initial={"is_active": subscription.is_active}
+        )
+
+        if request.method == "POST" and form.is_valid():
+            if "remove" in request.POST:
+                new_domains = [d for d in domains if d != request.POST["remove"]]
+            elif "add" in request.POST:
+                new_domains = [*domains, form.cleaned_data["domain"]]
+            else:
+                new_domains = domains
+            skip_push = form.cleaned_data["skip_proconnect_sync"]
+            try:
+                with (
+                    transaction.atomic(),
+                    request_user_context(request.user),
+                    suppress_proconnect_sync() if skip_push else nullcontext(),
+                ):
+                    serializer = ServiceSubscriptionSerializer(
+                        subscription,
+                        data={
+                            "is_active": form.cleaned_data["is_active"],
+                            "metadata": {"domains": new_domains},
+                        },
+                        partial=True,
+                        context={"request": request},
+                    )
+                    serializer.is_valid(raise_exception=True)
+                    serializer.save()
+            except drf_serializers.ValidationError as err:
+                messages.error(
+                    request,
+                    " ".join(
+                        str(message)
+                        for field_messages in err.detail.values()
+                        for message in field_messages
+                    ),
+                )
+            except ProConnectPartnersError as err:
+                messages.error(
+                    request,
+                    _("The ProConnect push failed, nothing was saved: {error}").format(
+                        error=err
+                    ),
+                )
+            else:
+                messages.success(
+                    request,
+                    _("Saved without the ProConnect push.")
+                    if skip_push
+                    else _("Saved."),
+                )
+                return HttpResponseRedirect(request.path)
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": _("ProConnect manual actions"),
+            "form": form,
+            "domains": domains,
+            "original": subscription,
+            "opts": self.model._meta,  # pylint: disable=protected-access # noqa: SLF001
+            "has_view_permission": self.has_view_permission(request, subscription),
+        }
+        return render(
+            request,
+            "admin/core/servicesubscription/proconnect_manual_actions.html",
+            context,
+        )
 
     def _process_bulk_subscribe(
         self, siret_list, operator, service, metadata, is_active, expand_epci

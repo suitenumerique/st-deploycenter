@@ -27,7 +27,7 @@ jobs:
       - name: Create env files
         run: make create-env-files
       - name: Run linting checks
-        run: make back-lint
+        run: make lint-check
 
   test-back:
     runs-on: ubuntu-latest
@@ -47,7 +47,7 @@ jobs:
       - name: Collect static files
         run: make collectstatic
       - name: Run backend tests
-        run: make back-test
+        run: make test-back
 
   # test-front:
   #   runs-on: ubuntu-latest
@@ -59,9 +59,9 @@ jobs:
   #     - name: Create env files
   #       run: make create-env-files
   #     - name: Install frontend dependencies
-  #       run: make front-install-frozen
+  #       run: make install-frozen-front
   #     - name: Run frontend tests
-  #       run: make front-test
+  #       run: make test-front
 
   # lint-front:
   #   runs-on: ubuntu-latest
@@ -73,11 +73,11 @@ jobs:
   #     - name: Create env files
   #       run: make create-env-files
   #     - name: Install frontend dependencies
-  #       run: make front-install-frozen
+  #       run: make install-frozen-front
   #     - name: Run frontend linting
-  #       run: make front-lint
+  #       run: make lint-front
   #     - name: Run frontend check
-  #       run: make front-ts-check
+  #       run: make typecheck-front
 
   # build-front:
   #   runs-on: ubuntu-latest
@@ -89,6 +89,6 @@ jobs:
   #     - name: Create env files
   #       run: make create-env-files
   #     - name: Install frontend dependencies
-  #       run: make front-install-frozen
+  #       run: make install-frozen-front
   #     - name: Build frontend
-  #       run: make front-build
+  #       run: make build-front

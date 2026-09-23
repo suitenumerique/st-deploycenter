@@ -8,6 +8,12 @@
         "copied": "Copié"
       },
       "app_title": "Espace Opérateur",
+      "left_panel": {
+        "aria_label": "Navigation principale",
+        "organizations": "Adhérents",
+        "metrics": "Métriques",
+        "beta": "Bêta"
+      },
       "home": {
         "title": "Espace Opérateur",
         "subtitle": "Activez et gérez simplement les services de tous vos adhérents.",
@@ -172,6 +178,28 @@
                 }
               }
             },
+            "bal": {
+              "epci_note": "Cet EPCI peut administrer toutes ses communes qui n'ont pas refusé la délégation",
+              "epci_delegation": {
+                "label": "Délégation à l'EPCI",
+                "modal": {
+                  "title": "Délégation à l'EPCI",
+                  "description": "Choisissez si les administrateurs de l'EPCI <bold>{{epci_name}}</bold> peuvent gérer les adresses de la commune sur <bold>{{service_name}}</bold>."
+                },
+                "choices": {
+                  "allowed": {
+                    "short": "Autorisée",
+                    "label": "Autoriser l'EPCI",
+                    "description": "Les administrateurs de l'EPCI gèrent aussi les adresses de la commune, dès lors que l'EPCI a activé le service."
+                  },
+                  "refused": {
+                    "short": "Refusée",
+                    "label": "Refuser la délégation",
+                    "description": "Seuls les administrateurs de la commune gèrent ses adresses."
+                  }
+                }
+              }
+            },
             "proconnect": {
               "domains": {
                 "label": "Domaines",
@@ -262,7 +290,7 @@
           "email_missing": "Email non déclaré",
           "website_missing": "Site internet non déclaré"
         },
-        "search": "Rechercher une organisation adhérente ou un territoire",
+        "search": "Rechercher une organisation",
         "type": "Type",
         "filter": {
           "type": "Filtrer par type",
@@ -277,6 +305,16 @@
           "service": "Filtrer par service",
           "services": {
             "all": "Tous les services"
+          },
+          "rpnt": "Filtrer par RPNT",
+          "rpnt_criteria": {
+            "all": "Toutes les conformités",
+            "a": "Conforme",
+            "not_a": "Non conforme",
+            "site": "Site internet conforme",
+            "not_site": "Site internet non conforme",
+            "mail": "Messagerie conforme",
+            "not_mail": "Messagerie non conforme"
           }
         }
       },
@@ -327,7 +365,14 @@
           }
         },
         "scope": {
-          "domains_label": "Domaines autorisés"
+          "domains_label": "Domaines autorisés",
+          "channels_label": "Canaux autorisés",
+          "channels": {
+            "channel_api_depot": "API dépôt",
+            "channel_moissonneur": "Moissonneur",
+            "channel_mesadresses": "Mes Adresses",
+            "channel_formulaire": "Formulaire"
+          }
         }
       },
       "feedback": {
@@ -342,6 +387,58 @@
       "api": {
         "error": {
           "unexpected": "Une erreur inattendue est survenue"
+        }
+      },
+      "metrics": {
+        "title": "Métriques",
+        "subtitle": "Visualisez les métriques de vos services",
+        "filters": {
+          "service": "Service",
+          "service_placeholder": "Sélectionner un service",
+          "key": "Métrique",
+          "key_placeholder": "Sélectionner une métrique",
+          "key_empty": "Aucune métrique remontée pour ce service",
+          "organizations": "Organisations",
+          "organizations_placeholder": "Toutes les organisations",
+          "organizations_search": "Rechercher une organisation",
+          "account_type": "Type de compte",
+          "account_type_placeholder": "Sélectionner un type de compte",
+          "aggregation": "Agrégation",
+          "aggregation_options": {
+            "none": "Aucune",
+            "sum": "Somme",
+            "avg": "Moyenne"
+          },
+          "unit": "Unité",
+          "unit_options": {
+            "none": "Aucune"
+          },
+          "order_by": "Trier par",
+          "order_by_options": {
+            "organization": "Nom d'organisation",
+            "value": "Valeur croissante",
+            "-value": "Valeur décroissante"
+          }
+        },
+        "export": {
+          "csv": "Télécharger en CSV",
+          "in_progress": "Export… {{percent}} %"
+        },
+        "chart": {
+          "no_data": "Aucune donnée à afficher",
+          "select_filters": "Sélectionnez un service, une métrique et un type de compte pour afficher les données",
+          "error": "Impossible de charger les métriques",
+          "aggregated_value": "Valeur agrégée",
+          "value_axis": "Valeur",
+          "mode_aggregated": "Agrégation de {{count}} métrique(s)",
+          "mode_grouped": "Somme par organisation ({{count}} organisation(s))",
+          "mode_accounts": "Valeur par compte ({{count}} résultat(s))"
+        },
+        "account_types": {
+          "user": "Utilisateur",
+          "mailbox": "Boîte mail",
+          "organization": "Organisation",
+          "none": "Organisation (sans compte)"
         }
       }
     }

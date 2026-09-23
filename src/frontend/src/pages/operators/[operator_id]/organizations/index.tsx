@@ -1,7 +1,7 @@
 import { useRouter } from "next/router";
 import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Spinner } from "@gouvfr-lasuite/ui-kit";
+import { Spinner } from "@gouvfr-lasuite/ui-components";
 import { Container } from "@/features/layouts/components/container/Container";
 import {
   getGlobalExplorerLayout,
@@ -48,13 +48,18 @@ export default function OrganizationResolver() {
     };
   }, [router.isReady, router.query]);
 
-  const { data: organizations, isLoading } = useOperatorOrganizations(
+  const {
+    data: organizations,
+    isLoading,
+    isPlaceholderData,
+  } = useOperatorOrganizations(
     operatorId,
     { search: searchTerm },
     router.isReady && !!searchTerm
   );
 
-  const match = organizations?.results?.[0];
+  // Placeholder data is the previous search's result: never redirect to it.
+  const match = isPlaceholderData ? undefined : organizations?.results?.[0];
 
   useEffect(() => {
     if (!match) {
@@ -68,7 +73,10 @@ export default function OrganizationResolver() {
 
   const noIdentifier = router.isReady && !searchTerm;
   const notFound =
-    !!searchTerm && !isLoading && (organizations?.results?.length ?? 0) === 0;
+    !!searchTerm &&
+    !isLoading &&
+    !isPlaceholderData &&
+    (organizations?.results?.length ?? 0) === 0;
 
   return (
     <Container

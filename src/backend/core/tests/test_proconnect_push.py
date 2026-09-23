@@ -1,6 +1,7 @@
 """
 Tests for the ProConnect api-partenaires domains push (core/proconnect.py).
 """
+# pylint: disable=too-many-lines
 
 import hashlib
 import hmac
@@ -11,8 +12,9 @@ from unittest import mock
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import connection
-from django.test import override_settings
+from django.test import Client, override_settings
 from django.test.utils import CaptureQueriesContext
+from django.urls import reverse
 
 import pytest
 import requests
@@ -38,6 +40,7 @@ pytestmark = pytest.mark.django_db
 BASE_URL = "https://api-partenaires-sandbox.test"
 SECRET = "test-oidc-providers-secret"
 IDP = "aaa58fc5-0397-495d-8cb5-92b02559d376"
+PATCH_URL = f"{BASE_URL}/api/oidc_providers/{IDP}/configuration"
 
 proconnect_settings = override_settings(
     PROCONNECT_API_PARTENAIRES_URL=BASE_URL,
@@ -877,6 +880,75 @@ def test_subscription_delete_rolls_back_on_push_failure():
 
 @proconnect_settings
 @responses.activate
+def test_subscription_create_inactive_does_not_push():
+    """Creating an inactive subscription changes no pushed set: no push, so an
+    unreachable provider does not block it."""
+    responses.add(responses.PATCH, PATCH_URL, json={"error": "down"}, status=503)
+    client, operator, organization, service = _proconnect_api_setup()
+
+    response = client.patch(
+        _subscription_url(operator, organization, service),
+        {"is_active": False},
+        format="json",
+    )
+
+    assert response.status_code == 201
+    assert ServiceSubscription.objects.filter(
+        service=service, organization=organization, is_active=False
+    ).exists()
+    assert len(responses.calls) == 0
+
+
+@proconnect_settings
+@responses.activate
+def test_subscription_delete_inactive_does_not_push():
+    """Deleting an inactive subscription removes nothing from the pushed set."""
+    responses.add(responses.PATCH, PATCH_URL, json={"error": "down"}, status=503)
+    client, operator, organization, service = _proconnect_api_setup()
+    with suppress_proconnect_sync():
+        subscription = factories.ServiceSubscriptionFactory(
+            organization=organization,
+            service=service,
+            operator=operator,
+            metadata={"domains": ["commune.fr"]},
+            is_active=False,
+        )
+
+    response = client.delete(_subscription_url(operator, organization, service))
+
+    assert response.status_code == 204
+    assert not ServiceSubscription.objects.filter(pk=subscription.pk).exists()
+    assert len(responses.calls) == 0
+
+
+@proconnect_settings
+@responses.activate
+def test_admin_add_inactive_subscription_does_not_push():
+    """The admin add form creates an inactive subscription without a push."""
+    responses.add(responses.PATCH, PATCH_URL, json={"error": "down"}, status=503)
+    operator = factories.OperatorFactory()
+    organization = factories.OrganizationFactory()
+    service = factories.ServiceFactory(type="proconnect", config={"idp_id": IDP})
+
+    response = _admin_client().post(
+        reverse("admin:core_servicesubscription_add"),
+        {
+            "organization": str(organization.pk),
+            "operator": str(operator.pk),
+            "service": str(service.pk),
+            "metadata": json.dumps({"domains": ["commune.fr"]}),
+        },
+    )
+
+    assert response.status_code == 302
+    assert ServiceSubscription.objects.filter(
+        service=service, organization=organization, is_active=False
+    ).exists()
+    assert len(responses.calls) == 0
+
+
+@proconnect_settings
+@responses.activate
 def test_reassigning_the_operator_pushes_both_providers():
     """Moving a subscription between operators re-pushes the old idp and the new one.
 
@@ -951,3 +1023,213 @@ def test_client_does_not_follow_redirects():
     # Only the original host was contacted; the signature never left for the target.
     assert len(responses.calls) == 1
     assert "evil.test" not in responses.calls[0].request.url
+
+
+# --- django admin: subscription change form and ProConnect domains page -----
+
+
+def _admin_client():
+    """A logged-in staff superuser for the django admin."""
+    user = factories.UserFactory(is_staff=True, is_superuser=True)
+    client = Client()
+    client.force_login(user)
+    return client
+
+
+def _admin_change_post(subscription, **overrides):
+    """The change form payload for a subscription, with is_active checked."""
+    data = {
+        "organization": str(subscription.organization_id),
+        "operator": str(subscription.operator_id),
+        "service": str(subscription.service_id),
+        "is_active": "on",
+        "metadata": json.dumps({"domains": ["autre.fr"]}),
+        "_continue": "Save and continue editing",
+    }
+    data.update(overrides)
+    return data
+
+
+@proconnect_settings
+@responses.activate
+def test_admin_change_form_always_pushes():
+    """The regular change form has no skip option: a posted one is ignored."""
+    responses.add(
+        responses.PATCH,
+        PATCH_URL,
+        json={"uid": IDP, "attached_email_domains": ["autre.fr"]},
+        status=200,
+    )
+    subscription = _make_proconnect_subscription(IDP, ["commune.fr"])
+    url = reverse("admin:core_servicesubscription_change", args=[subscription.pk])
+
+    response = _admin_client().post(
+        url, _admin_change_post(subscription, skip_proconnect_sync="on")
+    )
+
+    assert response.status_code == 302
+    subscription.refresh_from_db()
+    assert subscription.metadata["domains"] == ["autre.fr"]
+    assert len(responses.calls) == 1
+    assert json.loads(responses.calls[0].request.body) == {
+        "attached_email_domains": ["autre.fr"]
+    }
+
+
+def _manual_actions_url(subscription):
+    return reverse(
+        "admin:core_servicesubscription_proconnect_manual_actions",
+        args=[subscription.pk],
+    )
+
+
+def test_admin_change_form_links_proconnect_manual_actions():
+    """A ProConnect subscription's change form links to the manual actions page."""
+    subscription = _make_proconnect_subscription(IDP, ["commune.fr"])
+    url = reverse("admin:core_servicesubscription_change", args=[subscription.pk])
+
+    response = _admin_client().get(url)
+
+    assert response.status_code == 200
+    assert _manual_actions_url(subscription) in response.content.decode()
+
+
+def test_admin_proconnect_manual_actions_page_shows_state():
+    """The page shows the current domains and active state."""
+    subscription = _make_proconnect_subscription(IDP, ["commune.fr", "mairie.fr"])
+
+    response = _admin_client().get(_manual_actions_url(subscription))
+
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert "commune.fr" in content
+    assert "mairie.fr" in content
+    assert 'name="is_active" id="id_is_active" checked' in content
+
+
+def test_admin_proconnect_manual_actions_not_for_other_services():
+    """The page 404s for a non-ProConnect subscription."""
+    subscription = factories.ServiceSubscriptionFactory(
+        service=factories.ServiceFactory(type="adc"),
+        operator=factories.OperatorFactory(),
+    )
+
+    response = _admin_client().get(_manual_actions_url(subscription))
+
+    assert response.status_code == 404
+
+
+@proconnect_settings
+@responses.activate
+def test_admin_proconnect_manual_actions_add_pushes():
+    """Adding a domain saves it and pushes the provider's new domain list."""
+    responses.add(responses.PATCH, PATCH_URL, json={"uid": IDP}, status=200)
+    subscription = _make_proconnect_subscription(IDP, ["commune.fr"])
+
+    response = _admin_client().post(
+        _manual_actions_url(subscription),
+        {"domain": " Autre.FR ", "add": "", "is_active": "on"},
+    )
+
+    assert response.status_code == 302
+    subscription.refresh_from_db()
+    assert subscription.metadata["domains"] == ["autre.fr", "commune.fr"]
+    assert len(responses.calls) == 1
+    assert json.loads(responses.calls[0].request.body) == {
+        "attached_email_domains": ["autre.fr", "commune.fr"]
+    }
+
+
+@proconnect_settings
+@responses.activate
+def test_admin_proconnect_manual_actions_skip_push():
+    """With the skip box, the change is saved without contacting the provider."""
+    # No responses mock registered: any HTTP call would raise ConnectionError.
+    subscription = _make_proconnect_subscription(IDP, ["commune.fr", "mairie.fr"])
+
+    response = _admin_client().post(
+        _manual_actions_url(subscription),
+        {"remove": "commune.fr", "is_active": "on", "skip_proconnect_sync": "on"},
+    )
+
+    assert response.status_code == 302
+    subscription.refresh_from_db()
+    assert subscription.metadata["domains"] == ["mairie.fr"]
+    assert len(responses.calls) == 0
+
+
+@proconnect_settings
+@responses.activate
+def test_admin_proconnect_manual_actions_activate_without_push():
+    """With the skip box, activating works while the provider is down."""
+    responses.add(responses.PATCH, PATCH_URL, json={"error": "down"}, status=503)
+    subscription = _make_proconnect_subscription(IDP, ["commune.fr"], is_active=False)
+
+    response = _admin_client().post(
+        _manual_actions_url(subscription),
+        {"save": "", "is_active": "on", "skip_proconnect_sync": "on"},
+    )
+
+    assert response.status_code == 302
+    subscription.refresh_from_db()
+    assert subscription.is_active is True
+    assert len(responses.calls) == 0
+
+
+@proconnect_settings
+@responses.activate
+def test_admin_proconnect_manual_actions_deactivate_pushes():
+    """Deactivating without the skip box pushes the reduced domain list."""
+    responses.add(responses.PATCH, PATCH_URL, json={"uid": IDP}, status=200)
+    subscription = _make_proconnect_subscription(IDP, ["commune.fr"])
+
+    response = _admin_client().post(_manual_actions_url(subscription), {"save": ""})
+
+    assert response.status_code == 302
+    subscription.refresh_from_db()
+    assert subscription.is_active is False
+    assert json.loads(responses.calls[0].request.body) == {"attached_email_domains": []}
+
+
+@proconnect_settings
+@responses.activate
+def test_admin_proconnect_manual_actions_failed_push_rolls_back():
+    """A failed push leaves the subscription unchanged and reports the error."""
+    responses.add(responses.PATCH, PATCH_URL, json={"error": "boom"}, status=500)
+    subscription = _make_proconnect_subscription(IDP, ["commune.fr"])
+
+    response = _admin_client().post(
+        _manual_actions_url(subscription),
+        {"domain": "autre.fr", "add": "", "is_active": "on"},
+    )
+
+    assert response.status_code == 200
+    assert "The ProConnect push failed" in response.content.decode()
+    subscription.refresh_from_db()
+    assert subscription.metadata["domains"] == ["commune.fr"]
+
+
+@pytest.mark.parametrize(
+    "post, error",
+    [
+        ({"domain": "not a domain", "add": ""}, "Not valid domain name"),
+        ({"domain": "", "add": ""}, "Enter a domain to add."),
+        ({"remove": "commune.fr"}, "Mail domain is required"),
+        ({"domain": "pris.fr", "add": ""}, "already used by another active"),
+    ],
+)
+def test_admin_proconnect_manual_actions_refused(post, error):
+    """The API's domain rules apply: nothing is saved and the reason is shown."""
+    _make_proconnect_subscription(IDP, ["pris.fr"])
+    subscription = _make_proconnect_subscription(IDP, ["commune.fr"])
+
+    response = _admin_client().post(
+        _manual_actions_url(subscription),
+        {**post, "is_active": "on", "skip_proconnect_sync": "on"},
+    )
+
+    assert response.status_code == 200
+    assert error in response.content.decode()
+    subscription.refresh_from_db()
+    assert subscription.metadata["domains"] == ["commune.fr"]
+    assert subscription.is_active is True

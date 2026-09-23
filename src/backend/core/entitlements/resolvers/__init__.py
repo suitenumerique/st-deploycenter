@@ -5,6 +5,9 @@ from core.entitlements.resolvers.access_entitlement_resolver import (
 from core.entitlements.resolvers.admin_entitlement_resolver import (
     AdminEntitlementResolver,
 )
+from core.entitlements.resolvers.bal_admin_entitlement_resolver import (
+    BalAdminEntitlementResolver,
+)
 from core.entitlements.resolvers.calendars_access_entitlement_resolver import (
     CalendarsAccessEntitlementResolver,
 )
@@ -58,6 +61,7 @@ TYPE_TO_ADMIN_RESOLVER = {
     "esd": ExtendedAdminEntitlementResolver,
     "meet": NoopAdminEntitlementResolver,
     "messages": MessagesAdminEntitlementResolver,
+    "bal": BalAdminEntitlementResolver,
 }
 
 

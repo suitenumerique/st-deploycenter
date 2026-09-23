@@ -33,7 +33,6 @@ persistent=yes
 
 # When enabled, pylint would attempt to guess common misconfiguration and emit
 # user-friendly hints instead of false-positive error messages
-suggestion-mode=yes
 
 # Allow loading of arbitrary C extensions. Extensions are imported into the
 # active Python interpreter and may run arbitrary code.
@@ -352,11 +351,13 @@ method-naming-style=snake_case
 method-rgx=([a-z_][a-z0-9_]{2,50}|setUp|set[Uu]pClass|tearDown|tear[Dd]ownClass|assert[A-Z]\w*|maxDiff|test_[a-z0-9_]+)$
 
 # Naming style matching correct module names
-module-naming-style=snake_case
+#module-naming-style=snake_case
 
 # Regular expression matching correct module names. Overrides module-naming-
-# style
-#module-rgx=
+# style.
+# snake_case plus the empty name: pylint 4 walks from src/backend/__init__.py and
+# calls that root module "", which no naming style accepts.
+module-rgx=^[a-z_][a-z0-9_]*$|^$
 
 # Colon-delimited sets of names that determine each other's naming style when
 # the name regexes allow several styles.

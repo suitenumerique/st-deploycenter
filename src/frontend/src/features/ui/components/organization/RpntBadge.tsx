@@ -1,4 +1,4 @@
-import { Badge, Icon, IconSize } from "@gouvfr-lasuite/ui-kit";
+import { Badge, Icon, IconSize } from "@gouvfr-lasuite/ui-components";
 
 export type RpntBadgeProps = {
   rpnt?: string[];

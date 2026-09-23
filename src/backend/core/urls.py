@@ -15,7 +15,7 @@ from .api.viewsets.config import ConfigView
 from .api.viewsets.domains import DomainCheckView, DomainListView
 from .api.viewsets.entitlements import EntitlementView
 from .api.viewsets.lagaufre import LagaufreViewSet
-from .api.viewsets.metrics import SubscriptionsByServiceView
+from .api.viewsets.metrics import OperatorMetricsViewSet, SubscriptionsByServiceView
 from .api.viewsets.operator import OperatorViewSet
 from .api.viewsets.organization import OperatorOrganizationViewSet
 from .api.viewsets.proconnect import ProConnectAllowlistView
@@ -94,6 +94,16 @@ urlpatterns = [
                     include(
                         [
                             *operator_organization_router.urls,
+                            path(
+                                "metrics/keys/",
+                                OperatorMetricsViewSet.as_view({"get": "keys"}),
+                                name="operator-metrics-keys",
+                            ),
+                            path(
+                                "metrics/",
+                                OperatorMetricsViewSet.as_view({"get": "list"}),
+                                name="operator-metrics",
+                            ),
                             re_path(
                                 r"^organizations/(?P<organization_id>[0-9a-z-]*)/",
                                 include(

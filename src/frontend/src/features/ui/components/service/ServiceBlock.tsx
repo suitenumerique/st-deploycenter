@@ -5,8 +5,8 @@ import {
 } from "@/features/api/Repository";
 import { useTranslation } from "react-i18next";
 import { Service } from "@/features/api/Repository";
-import { Button, Switch, Tooltip, useModals } from "@openfun/cunningham-react";
-import { Icon, IconSize } from "@gouvfr-lasuite/ui-kit";
+import { Button, Switch, Tooltip, useModals } from "@gouvfr-lasuite/ui-components";
+import { Icon, IconSize } from "@gouvfr-lasuite/ui-components";
 import { useEffect, useState } from "react";
 import { useMutationUpdateOrganizationServiceSubscription } from "@/hooks/useQueries";
 import { useOperatorContext } from "@/features/layouts/components/GlobalLayout";
@@ -309,7 +309,8 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
                 {t("organizations.services.goto")}
               </a>
               <Button
-                color="tertiary"
+                variant="secondary"
+                color="neutral"
                 size="nano"
                 href={props.service.url}
                 target="_blank"

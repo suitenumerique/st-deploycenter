@@ -7,7 +7,7 @@ import {
   HomeGutter,
   MainLayout,
   ProConnectButton,
-} from "@gouvfr-lasuite/ui-kit";
+} from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import banner from "@/assets/home/banner.svg";
 import {

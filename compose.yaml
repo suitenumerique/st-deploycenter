@@ -102,14 +102,14 @@ services:
         condition: service_healthy
         restart: true
 
-  backend-poetry:
+  backend-uv:
     profiles:
       - tools
     volumes:
       - ./src/backend:/app
     build:
       context: src/backend/
-      target: poetry
+      target: uv
     pull_policy: build
 
   celery-dev:

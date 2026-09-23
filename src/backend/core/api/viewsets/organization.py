@@ -25,6 +25,12 @@ from .. import permissions, serializers
 
 logger = logging.getLogger(__name__)
 
+# RPNT meta-criteria the organizations list can be filtered on: "a" (conforme),
+# "1.a" (site internet conforme), "2.a" (messagerie conforme). Filtering matches
+# the criterion as the DPNT dataset stores it, without deriving one from another:
+# upstream publishes "a" on a few organizations that lack "1.a".
+RPNT_FILTER_CRITERIA = frozenset({"a", "1.a", "2.a"})
+
 
 class OperatorOrganizationViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for Organization model nested in Operator model.
@@ -81,6 +87,22 @@ class OperatorOrganizationViewSet(viewsets.ReadOnlyModelViewSet):
                 service_subscriptions__operator_id=self.kwargs["operator_id"],
                 service_subscriptions__is_active=True,
             )
+
+        # Filter by RPNT meta-criterion if provided, "!" prefix for its negative
+        # ("!a" = every organization that is not conforme, missing criteria
+        # included).
+        if self.request.query_params.get("rpnt"):
+            rpnt_filter = self.request.query_params.get("rpnt")
+            negated = rpnt_filter.startswith("!")
+            criterion = rpnt_filter[1:] if negated else rpnt_filter
+            if criterion not in RPNT_FILTER_CRITERIA:
+                raise drf_serializers.ValidationError(
+                    {"rpnt": f"Unsupported RPNT criterion: {rpnt_filter}"}
+                )
+            if negated:
+                queryset = queryset.exclude(rpnt__contains=[criterion])
+            else:
+                queryset = queryset.filter(rpnt__contains=[criterion])
 
         if self.request.query_params.get("search"):
             search_query = self.request.query_params.get("search")

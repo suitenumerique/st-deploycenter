@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Button, Input, Modal, ModalSize, Select } from "@openfun/cunningham-react";
+import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-components";
+import { Button, Input, Modal, ModalSize, Select } from "@gouvfr-lasuite/ui-components";
 import { MutateOptions } from "@tanstack/react-query";
 import { errorToString } from "@/features/api/APIError";
 import { CopyableValue } from "@/features/ui/components/copy/CopyableValue";
@@ -299,7 +299,7 @@ export const DomainsModal = (props: DomainsModalProps) => {
           <Button
             type="button"
             onClick={props.onClose}
-            color="secondary"
+            variant="secondary"
             disabled={isPending}
           >
             {t("common.cancel")}
@@ -330,7 +330,8 @@ export const DomainsModal = (props: DomainsModalProps) => {
                 <Button
                   type="button"
                   size="small"
-                  color="tertiary"
+                  variant="secondary"
+                  color="neutral"
                   onClick={retryChecks}
                 >
                   {t(`${PREFIX}.modal.checks.retry`)}
@@ -349,7 +350,7 @@ export const DomainsModal = (props: DomainsModalProps) => {
                       <Button
                         type="button"
                         size="small"
-                        color="secondary"
+                        variant="secondary"
                         className="dc__domain-selector__item__delete"
                         icon={<Icon name="delete" />}
                         title={t(`${PREFIX}.modal.delete_label`)}
@@ -419,7 +420,7 @@ export const DomainsModal = (props: DomainsModalProps) => {
               />
               <Button
                 type="button"
-                color="secondary"
+                variant="secondary"
                 onClick={handleAdd}
                 disabled={!newDomain.trim().includes(".")}
               >

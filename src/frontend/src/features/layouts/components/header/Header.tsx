@@ -1,5 +1,5 @@
-import { DropdownMenu, Spinner } from "@gouvfr-lasuite/ui-kit";
-import { Button } from "@openfun/cunningham-react";
+import { DropdownMenu, Spinner, UserMenu } from "@gouvfr-lasuite/ui-components";
+import { Button } from "@gouvfr-lasuite/ui-components";
 import { useAuth, logout } from "@/features/auth/Auth";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -26,44 +26,22 @@ export const HeaderIcon = () => {
   );
 };
 
+// The library's own profile menu: avatar trigger, identity block, logout, and a
+// full-screen variant on mobile. It renders nothing when there is no user.
+// Its avatar splits full_name ?? email, so neither may reach it as null: a
+// superuser logged in through the Django admin has no email (the session is
+// shared, the admin being served on the same domain).
 export const HeaderRight = () => {
   const { user } = useAuth();
-  const [isOpen, setIsOpen] = useState(false);
-  const { t } = useTranslation();
   return (
-    <>
-      {user ? (
-        <DropdownMenu
-          options={[
-            {
-              label: t("logout"),
-              icon: <span className="material-icons">logout</span>,
-              callback: logout,
-            },
-          ]}
-          isOpen={isOpen}
-          onOpenChange={setIsOpen}
-        >
-          <Button
-            color="primary-text"
-            onClick={() => setIsOpen(!isOpen)}
-            icon={
-              <span className="material-icons">
-                {isOpen ? "arrow_drop_up" : "arrow_drop_down"}
-              </span>
-            }
-            iconPosition="right"
-          >
-            {user.email}
-          </Button>
-        </DropdownMenu>
-      ) : (
-        <>
-          {/* <LoginButton /> */}
-          {/* <LanguagePicker /> */}
-        </>
-      )}
-    </>
+    <UserMenu
+      user={
+        user
+          ? { full_name: user.full_name || undefined, email: user.email ?? "" }
+          : null
+      }
+      logout={logout}
+    />
   );
 };
 
@@ -110,7 +88,7 @@ export const LanguagePicker = () => {
     >
       <Button
         onClick={() => setIsOpen(!isOpen)}
-        color="primary-text"
+        variant="tertiary"
         className="c__language-picker"
         icon={
           <span className="material-icons">

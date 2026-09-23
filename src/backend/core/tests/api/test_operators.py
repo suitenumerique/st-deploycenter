@@ -208,3 +208,57 @@ def test_api_operators_list_superuser_page_size():
     data = response.json()
     assert data["count"] == 25
     assert len(data["results"]) == 25
+
+
+def _operator_with_organization():
+    operator = factories.OperatorFactory()
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    return operator, organization
+
+
+def _operator_pages(operator, organization):
+    base = f"/api/v1.0/operators/{operator.id}"
+    return [
+        f"{base}/organizations/",
+        f"{base}/organizations/{organization.id}/",
+        f"{base}/organizations/{organization.id}/services/",
+        f"{base}/organizations/{organization.id}/accounts/",
+        f"{base}/metrics/keys/",
+    ]
+
+
+def test_api_operators_superuser_opens_any_operator():
+    """A superuser lists every operator, so can open one without a role in it."""
+    client = APIClient()
+    client.force_login(factories.UserFactory(is_superuser=True))
+    operator, organization = _operator_with_organization()
+
+    for url in _operator_pages(operator, organization):
+        assert client.get(url).status_code == 200, url
+
+
+def test_api_operators_superuser_organization_of_another_operator():
+    """The organization in the URL must still be managed by the operator."""
+    client = APIClient()
+    client.force_login(factories.UserFactory(is_superuser=True))
+    operator, _ = _operator_with_organization()
+    _, other_organization = _operator_with_organization()
+
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{other_organization.id}"
+        "/services/"
+    )
+    assert response.status_code == 403
+
+
+def test_api_operators_user_without_role_cannot_open_operator():
+    """A regular user without a role in the operator is refused."""
+    client = APIClient()
+    client.force_login(factories.UserFactory())
+    operator, organization = _operator_with_organization()
+
+    for url in _operator_pages(operator, organization):
+        assert client.get(url).status_code in (403, 404), url

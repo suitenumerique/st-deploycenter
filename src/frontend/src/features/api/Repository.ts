@@ -1,4 +1,4 @@
-import { SortModel } from "@openfun/cunningham-react";
+import { SortModel } from "@gouvfr-lasuite/ui-components";
 import { fetchAPI } from "./fetchApi";
 
 type PaginatedResponse<T> = {
@@ -40,6 +40,7 @@ export type Organization = {
   population: number;
   departement_code_insee: string;
   epci_libelle: string;
+  epci_siren: string | null;
   rpnt: string[];
   mail_domain: string | null;
   mail_domain_status: MailDomainStatus;
@@ -110,6 +111,16 @@ export const SERVICE_TYPE_ESD = "esd";
 export const SERVICE_TYPE_MESSAGES = "messages";
 export const SERVICE_TYPE_DRIVE = "drive";
 export const SERVICE_TYPE_DOMAINS = "domains";
+export const SERVICE_TYPE_BAL = "bal";
+
+// The address channels a BAL commune exposes for administration. Mirrors
+// core.services.bal.CHANNELS.
+export const BAL_CHANNELS = [
+  "channel_api_depot",
+  "channel_moissonneur",
+  "channel_mesadresses",
+  "channel_formulaire",
+];
 
 // What serves a domain's website, in the Domains service subscription metadata.
 export const WEBSITE_MODE_NONE = "none";
@@ -249,6 +260,8 @@ export const getOperatorOrganizations = async (
     ordering?: string;
     type?: string;
     service?: string;
+    // RPNT meta-criterion: "a", "1.a", "2.a", each prefixed with "!" for its negative.
+    rpnt?: string;
   }
 ): Promise<PaginatedResponse<Organization>> => {
   const url = new URL(`/`, window.location.origin);
@@ -404,4 +417,178 @@ export const updateAccountServiceLink = async (
     }
   );
   return (await response.json()) as AccountServiceLink;
+};
+
+// Metrics types
+export type MetricAccount = {
+  id: string;
+  email: string;
+  external_id: string;
+  type: string;
+};
+
+export type MetricOrganization = {
+  id: string;
+  name: string;
+};
+
+export type Metric = {
+  id: number;
+  key: string;
+  value: string;
+  timestamp: string;
+  account: MetricAccount | null;
+  organization: MetricOrganization;
+};
+
+export type MetricsResponse = PaginatedResponse<Metric>;
+
+export type GroupedMetricItem = {
+  organization: MetricOrganization;
+  value: string;
+};
+
+export type GroupedMetricsResponse = PaginatedResponse<GroupedMetricItem> & {
+  grouped_by: "organization";
+};
+
+export type AggregatedMetric = {
+  key: string;
+  // IntegerField on AggregatedMetricSerializer, fed from Service.id.
+  service_id: number;
+  aggregation: "sum" | "avg";
+  value: string;
+  count: number;
+};
+
+export type MetricsOrderBy = "organization" | "value" | "-value";
+
+export type MetricsParams = {
+  key: string;
+  service: string;
+  organizations?: string[];
+  accounts?: string[];
+  // An account type, or "none" for the metrics stored without an account.
+  account_type: string;
+  agg?: "sum" | "avg";
+  group_by?: "organization";
+  order_by?: MetricsOrderBy;
+  page?: number;
+  page_size?: number;
+};
+
+export const getOperatorMetrics = async (
+  operatorId: string,
+  params: MetricsParams
+): Promise<MetricsResponse | GroupedMetricsResponse | AggregatedMetric> => {
+  const url = new URL(`/`, window.location.origin);
+  url.searchParams.append("key", params.key);
+  url.searchParams.append("service", params.service);
+  url.searchParams.append("account_type", params.account_type);
+
+  if (params.organizations && params.organizations.length > 0) {
+    url.searchParams.append("organizations", params.organizations.join(","));
+  }
+  if (params.accounts && params.accounts.length > 0) {
+    url.searchParams.append("accounts", params.accounts.join(","));
+  }
+  if (params.agg) {
+    url.searchParams.append("agg", params.agg);
+  }
+  if (params.group_by) {
+    url.searchParams.append("group_by", params.group_by);
+  }
+  if (params.order_by) {
+    url.searchParams.append("order_by", params.order_by);
+  }
+  if (params.page) {
+    url.searchParams.append("page", params.page.toString());
+  }
+  if (params.page_size) {
+    url.searchParams.append("page_size", params.page_size.toString());
+  }
+
+  const response = await fetchAPI(
+    `operators/${operatorId}/metrics/` + url.search
+  );
+  return (await response.json()) as
+    | MetricsResponse
+    | GroupedMetricsResponse
+    | AggregatedMetric;
+};
+
+/** The largest page the API will serve (Pagination.max_page_size). */
+const EXPORT_PAGE_SIZE = 200;
+
+/**
+ * Every row matching the filters, not just the page on screen.
+ *
+ * The endpoint is paginated with no "all" escape hatch, so this walks the pages
+ * and concatenates them. Ordering is what makes that safe: every ordering the
+ * API accepts ends on a unique column, so a row cannot move between pages while
+ * the walk is in progress.
+ */
+export const getAllOperatorMetrics = async (
+  operatorId: string,
+  params: MetricsParams,
+  onProgress?: (loaded: number, total: number) => void
+): Promise<MetricsResponse | GroupedMetricsResponse | AggregatedMetric> => {
+  const first = await getOperatorMetrics(operatorId, {
+    ...params,
+    page: 1,
+    page_size: EXPORT_PAGE_SIZE,
+  });
+
+  // An aggregation is a single value, so there is nothing to page through.
+  if ("aggregation" in first) {
+    return first;
+  }
+
+  const total = first.count;
+  const results = [...first.results];
+  onProgress?.(results.length, total);
+
+  for (let page = 2; results.length < total; page += 1) {
+    const next = (await getOperatorMetrics(operatorId, {
+      ...params,
+      page,
+      page_size: EXPORT_PAGE_SIZE,
+    })) as MetricsResponse | GroupedMetricsResponse;
+
+    // A page that comes back empty would otherwise spin forever.
+    if (next.results.length === 0) {
+      break;
+    }
+    results.push(...(next.results as (typeof results)[number][]));
+    onProgress?.(results.length, total);
+  }
+
+  return { ...first, results } as MetricsResponse | GroupedMetricsResponse;
+};
+
+export type MetricKey = {
+  key: string;
+  // "none" stands for the metrics stored without an account.
+  account_types: string[];
+};
+
+/**
+ * The metric keys this operator actually has data for, for a given service,
+ * each with the account types it has data for.
+ *
+ * The dashboard offers only these: a hardcoded list would let a user pick a key
+ * that can only ever draw an empty chart.
+ */
+export const getOperatorMetricKeys = async (
+  operatorId: string,
+  serviceId: string
+): Promise<{ results: MetricKey[] }> => {
+  const url = new URL(`/`, window.location.origin);
+  if (serviceId) {
+    url.searchParams.append("service", serviceId);
+  }
+  const response = await fetchAPI(
+    `operators/${operatorId}/metrics/keys/` + url.search
+  );
+  return (await response.json()) as { results: MetricKey[] };
 };

@@ -1,6 +1,10 @@
-@use "@gouvfr-lasuite/ui-kit/sass/fonts";
-@use "@gouvfr-lasuite/ui-kit/style";
+@use "@gouvfr-lasuite/ui-components/fonts/marianne";
+// The kit used to bundle the icon font with its stylesheet; it now ships each
+// font on its own path, and the UI is full of material-icons ligatures.
+@use "@gouvfr-lasuite/ui-components/sass/fonts/material-icons";
+@use "@gouvfr-lasuite/ui-components/style";
 @use "./cunningham-tokens.css";
+@use "./legacy-tokens.scss";
 @use "./../features/layouts/components/header/index.scss";
 @use "./../features/ui/components/toaster";
 @use "./../features/ui/components/breadcrumbs/index.scss" as *;
@@ -8,12 +12,14 @@
 @use "./../features/ui/components/service/entitlements/fields/StoragePickerEntitlementField.scss"
   as *;
 @use "./../features/layouts/components/container/Container.scss" as *;
+@use "./../features/layouts/components/left-panel/LeftPanel.scss" as *;
 
 @use "./../features/ui/components/spinner/SpinnerPage.scss";
 @use "./../pages/index.scss" as *;
 @use "./../pages/operators/index.scss" as *;
 @use "./../pages/operators/[operator_id]/index.scss" as *;
 @use "./../pages/operators/[operator_id]/organizations/index.scss" as *;
+@use "./../pages/operators/[operator_id]/metrics/index.scss" as *;
 
 body {
   margin: 0;

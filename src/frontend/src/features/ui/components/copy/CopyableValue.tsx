@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Icon, IconSize } from "@gouvfr-lasuite/ui-kit";
-import { Button } from "@openfun/cunningham-react";
+import { Icon, IconSize } from "@gouvfr-lasuite/ui-components";
+import { Button } from "@gouvfr-lasuite/ui-components";
 
 /**
  * A read-only value in a fixed-width font with a copy button (e.g. a nameserver to
@@ -56,7 +56,8 @@ export const CopyableValue = ({
       <Button
         type="button"
         size="small"
-        color="tertiary"
+        variant="secondary"
+        color="neutral"
         className="dc__copyable__button"
         onClick={handleCopy}
         title={t(copied ? "common.copied" : "common.copy")}

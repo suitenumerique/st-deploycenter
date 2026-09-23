@@ -1,4 +1,4 @@
-import { Button } from "@openfun/cunningham-react";
+import { Button } from "@gouvfr-lasuite/ui-components";
 import clsx from "clsx";
 import { ToastContainer, ToastContentProps, toast } from "react-toastify";
 
@@ -30,7 +30,7 @@ export const ToasterItem = ({
       {closeButton && (
         <Button
           onClick={closeToast}
-          color="primary-text"
+          variant="tertiary"
           size="small"
           icon={<span className="material-icons">close</span>}
         ></Button>
