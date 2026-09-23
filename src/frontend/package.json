@@ -32,6 +32,9 @@
     "typescript": "^5"
   },
   "overrides": {
-    "react-aria": "3.52.1"
+    "react-aria": "3.52.1",
+    "recharts": {
+      "react-is": "19.1.2"
+    }
   }
 }

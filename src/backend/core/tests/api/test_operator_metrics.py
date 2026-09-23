@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """Tests for the operator metrics dashboard API."""
 
 from decimal import Decimal
@@ -39,6 +40,10 @@ def fixture_setup():
         factories.OperatorOrganizationRoleFactory(
             operator=operator, organization=organization
         )
+        for subscribed_service in (service, other_service):
+            factories.ServiceSubscriptionFactory(
+                organization=organization, service=subscribed_service, operator=operator
+            )
 
     alpha_user = factories.AccountFactory(
         organization=alpha, type="user", email="user@alpha.test"
@@ -93,6 +98,9 @@ def fixture_setup():
     foreign = factories.OrganizationFactory(name="Foreign")
     factories.OperatorOrganizationRoleFactory(
         operator=other_operator, organization=foreign
+    )
+    factories.ServiceSubscriptionFactory(
+        organization=foreign, service=service, operator=other_operator
     )
     factories.MetricFactory(
         key="storage_used",
@@ -195,6 +203,52 @@ def test_api_operator_metrics_aggregation_excludes_other_operators(setup, client
     # Without the foreign organization's 5000.
     assert Decimal(data["value"]) == Decimal("10")
     assert data["count"] == 1
+
+
+def test_api_operator_metrics_excludes_services_operated_by_others(setup, client):
+    """On an organization shared with another operator, the metrics of a service
+    that other operator runs there are not returned, nor their keys."""
+    shared = factories.OrganizationFactory(name="Shared")
+    for operator in (setup["operator"], setup["other_operator"]):
+        factories.OperatorOrganizationRoleFactory(
+            operator=operator, organization=shared
+        )
+    factories.ServiceSubscriptionFactory(
+        organization=shared, service=setup["service"], operator=setup["other_operator"]
+    )
+    factories.MetricFactory(
+        key="shared_only",
+        value=Decimal("42"),
+        service=setup["service"],
+        organization=shared,
+        account=factories.AccountFactory(organization=shared, type="user"),
+    )
+
+    response = client.get(
+        _url(setup["operator"]),
+        {"key": "shared_only", "service": setup["service"].id, "account_type": "user"},
+    )
+    assert response.status_code == 200
+    assert response.json()["count"] == 0
+
+    response = client.get(_keys_url(setup["operator"]))
+    assert "shared_only" not in [row["key"] for row in response.json()["results"]]
+
+
+def test_api_operator_metrics_group_by_with_aggregation(setup, client):
+    """An aggregate is one value: asking to also group it is a 400."""
+    response = client.get(
+        _url(setup["operator"]),
+        {
+            "key": "storage_used",
+            "service": setup["service"].id,
+            "account_type": "user",
+            "agg": "sum",
+            "group_by": "organization",
+        },
+    )
+    assert response.status_code == 400
+    assert "group_by" in response.json()
 
 
 # -- Query parameter validation
@@ -833,6 +887,11 @@ def test_api_operator_metrics_grouped_same_name_is_ordered_by_id(setup, client):
     for organization in twins:
         factories.OperatorOrganizationRoleFactory(
             operator=setup["operator"], organization=organization
+        )
+        factories.ServiceSubscriptionFactory(
+            organization=organization,
+            service=setup["service"],
+            operator=setup["operator"],
         )
         factories.MetricFactory(
             key="storage_used",

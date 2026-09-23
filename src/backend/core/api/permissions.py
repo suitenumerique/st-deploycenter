@@ -40,7 +40,8 @@ class IsSelf(IsAuthenticatedWithAnyMethod):
 
 class OperatorAccessPermission(permissions.BasePermission):
     """
-    Allows access only to authenticated users with a role in a operators's parent organization.
+    Allows access only to authenticated users with a role in the operator, and to
+    superusers.
     Used for nested /operators/<operator_id>/* endpoints.
     Supports both user authentication and external API key authentication.
     """
@@ -59,6 +60,10 @@ class OperatorAccessPermission(permissions.BasePermission):
             operator = models.Operator.objects.get(id=view.kwargs["operator_id"])
         except models.Operator.DoesNotExist:
             return False
+
+        # Superusers see every operator (OperatorViewSet), so they can open them.
+        if request.user.is_superuser:
+            return True
 
         has_role = models.UserOperatorRole.objects.filter(
             operator=operator, user=request.user
@@ -82,6 +87,16 @@ def user_has_role_in_organization(request, organization_id, operator_id=None):
     """
     if not request.user or not request.user.is_authenticated:
         return False
+
+    # Superusers have a role everywhere, as long as the operator in the URL
+    # manages the organization.
+    if request.user.is_superuser:
+        organizations = models.Organization.objects.filter(id=organization_id)
+        if operator_id:
+            organizations = organizations.filter(
+                operator_roles__operator_id=operator_id
+            )
+        return organizations.exists()
 
     if operator_id:
         try:

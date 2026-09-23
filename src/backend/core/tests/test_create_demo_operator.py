@@ -7,7 +7,13 @@ from django.test import override_settings
 import pytest
 
 from core import factories
-from core.models import Account, Operator, OperatorOrganizationRole, User
+from core.models import (
+    Account,
+    Operator,
+    OperatorOrganizationRole,
+    ServiceSubscription,
+    User,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -35,5 +41,7 @@ def test_create_demo_operator_outside_production():
 
     operator = Operator.objects.get(name="Demo X")
     assert OperatorOrganizationRole.objects.filter(operator=operator).count() == 10
+    # Drive and Messages for each organization, run by the demo operator.
+    assert ServiceSubscription.objects.filter(operator=operator).count() == 20
     user = User.objects.get(email="demo@example.com")
     assert not user.has_usable_password()

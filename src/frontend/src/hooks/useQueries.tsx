@@ -441,7 +441,7 @@ export const useOperatorMetrics = (
   params: MetricsParams | null,
 ) => {
   return useQuery({
-    queryKey: ["operators", operatorId, "metrics", JSON.stringify(params)],
+    queryKey: ["operators", operatorId, "metrics", params],
     queryFn: () => getOperatorMetrics(operatorId, params!),
     enabled: !!operatorId && !!params?.key && !!params?.service,
   });

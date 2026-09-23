@@ -4,7 +4,7 @@ API endpoints for Metrics model.
 
 import uuid
 
-from django.db.models import Avg, Sum
+from django.db.models import Avg, Count, F, Sum
 
 from rest_framework import serializers, status, viewsets
 from rest_framework.response import Response
@@ -128,6 +128,14 @@ class OperatorMetricsQuerySerializer(serializers.Serializer):
         """Turn the comma-separated param into a list of UUIDs."""
         return _parse_uuid_list(value)
 
+    def validate(self, attrs):
+        """An aggregate is a single value, so it cannot also be grouped."""
+        if attrs.get("agg") and attrs.get("group_by"):
+            raise serializers.ValidationError(
+                {"group_by": "Cannot be combined with 'agg'."}
+            )
+        return attrs
+
 
 class OperatorMetricKeysQuerySerializer(serializers.Serializer):
     """Validate query params for the operator metric keys endpoint."""
@@ -173,16 +181,23 @@ class OperatorMetricsViewSet(viewsets.ViewSet):
     ]
 
     def _operator_metrics(self, operator_id):
-        """Metrics of every organization the operator has a role in.
+        """Metrics of the organizations the operator has a role in, for the
+        services it operates there: the organization's subscription to the
+        metric's service must be the operator's. A service instance is shared by
+        operators, so an organization they share can have its subscription run
+        by another one.
 
-        The join cannot duplicate a metric: OperatorOrganizationRole is unique per
-        (operator, organization). Filtering through it beats fetching the operator's
+        The joins cannot duplicate a metric: OperatorOrganizationRole is unique
+        per (operator, organization) and ServiceSubscription per (organization,
+        service). Filtering through them beats fetching the operator's
         organization IDs and passing them back as an IN clause, which costs a
-        second query and grows with the operator (~300ms against 36k organizations,
-        against ~2ms here).
+        second query and grows with the operator (~300ms against 36k
+        organizations, against ~2ms here).
         """
         return models.Metric.objects.filter(
-            organization__operator_roles__operator_id=operator_id
+            organization__operator_roles__operator_id=operator_id,
+            organization__service_subscriptions__operator_id=operator_id,
+            organization__service_subscriptions__service=F("service"),
         )
 
     @staticmethod
@@ -242,7 +257,7 @@ class OperatorMetricsViewSet(viewsets.ViewSet):
         agg = params.get("agg")
         if agg:
             aggregation = Sum("value") if agg == "sum" else Avg("value")
-            result = queryset.aggregate(value=aggregation)
+            result = queryset.aggregate(value=aggregation, count=Count("id"))
 
             serializer = core_serializers.AggregatedMetricSerializer(
                 {
@@ -250,7 +265,7 @@ class OperatorMetricsViewSet(viewsets.ViewSet):
                     "service_id": service.id,
                     "aggregation": agg,
                     "value": result["value"] or 0,
-                    "count": queryset.count(),
+                    "count": result["count"],
                 }
             )
             return Response(serializer.data)

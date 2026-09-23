@@ -201,7 +201,11 @@ RUN strip-python
 # cc-debian13 provides glibc, libgcc and libstdc++; every other system library
 # the interpreter and the C extensions need comes from the shared-libs stage.
 # Debug with: docker run --entrypoint='' gcr.io/distroless/cc-debian13:debug-nonroot sh
-FROM gcr.io/distroless/cc-debian13:nonroot AS runtime-distroless-prod
+# Pinned by digest (cc-debian13:nonroot, 2026-09-23). Verify with:
+# cosign verify gcr.io/distroless/cc-debian13@sha256:<digest> \
+#   --certificate-oidc-issuer https://accounts.google.com \
+#   --certificate-identity keyless@distroless.iam.gserviceaccount.com
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:54df941ed0d06a1bd95ef5e0ce391fd8d9f94b64782dc9a60062727849ee3f97 AS runtime-distroless-prod
 ARG DEPLOYCENTER_STATIC_ROOT=/data/static
 
 WORKDIR /app

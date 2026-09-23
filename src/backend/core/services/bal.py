@@ -37,48 +37,64 @@ def epci_delegation_allowed(metadata):
     return (metadata or {}).get(EPCI_DELEGATION_KEY, True) is not False
 
 
-def get_covered_communes(organization, service):
-    """Return the INSEE codes of the communes an organization covers through
-    its active BAL subscription.
+def get_covered_communes_by_organization(organizations, service):
+    """Return ``{organization id: set(insee)}`` of the communes each
+    organization covers through its active BAL subscription, in at most two
+    queries whatever the number of organizations. Organizations covering
+    nothing are left out.
 
     A commune covers itself. An EPCI covers its member communes that have an
     active BAL subscription and have not opted out of delegation. Other
     organization types cover nothing.
     """
-    if organization.type not in ("commune", "epci"):
-        return set()
+    candidates = [org for org in organizations if org.type in ("commune", "epci")]
+    if not candidates:
+        return {}
 
-    if not models.ServiceSubscription.objects.filter(
-        organization=organization, service=service, is_active=True
-    ).exists():
-        return set()
+    subscribed_ids = set(
+        models.ServiceSubscription.objects.filter(
+            organization__in=candidates, service=service, is_active=True
+        ).values_list("organization_id", flat=True)
+    )
 
-    if organization.type == "commune":
-        return {organization.code_insee} if organization.code_insee else set()
+    covered = {}
+    # siren -> ids of the EPCIs carrying it.
+    epcis_by_siren = {}
+    for org in candidates:
+        if org.id not in subscribed_ids:
+            continue
+        if org.type == "commune":
+            if org.code_insee:
+                covered[org.id] = {org.code_insee}
+        # Without this guard, a null siren would match every commune whose
+        # epci_siren is null.
+        elif org.siren:
+            epcis_by_siren.setdefault(org.siren, []).append(org.id)
 
-    # Without this guard, a null siren would match every commune whose
-    # epci_siren is null.
-    if not organization.siren:
-        return set()
-    members = models.ServiceSubscription.objects.filter(
-        organization__type="commune",
-        organization__epci_siren=organization.siren,
-        service=service,
-        is_active=True,
-    ).values_list("organization__code_insee", "metadata")
-    return {
-        insee
-        for insee, metadata in members
-        if insee and epci_delegation_allowed(metadata)
-    }
+    if epcis_by_siren:
+        members = models.ServiceSubscription.objects.filter(
+            organization__type="commune",
+            organization__epci_siren__in=epcis_by_siren.keys(),
+            service=service,
+            is_active=True,
+        ).values_list(
+            "organization__epci_siren", "organization__code_insee", "metadata"
+        )
+        for epci_siren, insee, metadata in members:
+            if insee and epci_delegation_allowed(metadata):
+                for epci_id in epcis_by_siren[epci_siren]:
+                    covered.setdefault(epci_id, set()).add(insee)
+
+    return covered
 
 
 def parse_scope(scope):
     """Return the set of channels a BAL AccountServiceLink scope grants.
 
-    An empty scope grants all channels. A malformed scope grants nothing.
+    An empty scope grants all channels. A malformed scope grants nothing,
+    including other falsy values such as [].
     """
-    if not scope:
+    if scope == {}:
         return set(CHANNELS)
     channels = scope.get(SCOPE_CHANNELS_KEY) if isinstance(scope, dict) else None
     if not isinstance(channels, list):

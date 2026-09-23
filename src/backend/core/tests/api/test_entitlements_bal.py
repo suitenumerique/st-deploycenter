@@ -4,6 +4,9 @@ Test the BAL service: can_admin_communes entitlement, subscription metadata
 and service-link scope validation.
 """
 
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
+
 import pytest
 from rest_framework.test import APIClient
 
@@ -248,6 +251,10 @@ def test_bal_scoped_admin_on_auto_admin_commune_gets_all_channels():
 @pytest.mark.parametrize(
     "scope",
     [
+        [],
+        "",
+        0,
+        False,
         ["channel_api_depot"],
         {"channels": []},
         {"channels": "channel_api_depot"},
@@ -603,6 +610,45 @@ def test_bal_operator_admin_passthrough_flag_off():
         _can_admin_communes(service, commune.siret, account_email="admin@operator.fr")
         == {}
     )
+
+
+def test_bal_resolver_query_count_does_not_grow_with_organizations():
+    """Coverage is resolved in a fixed number of queries, however many
+    organizations grant access (here through the operator admin passthrough)."""
+    user = factories.UserFactory(email="admin@operator.fr")
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    service = _make_bal_service()
+
+    def add_organizations(count):
+        for _ in range(count):
+            commune = factories.OrganizationFactory(population=LARGE_POPULATION)
+            epci = factories.OrganizationFactory(type="epci")
+            member = factories.OrganizationFactory(epci_siren=epci.siren)
+            for organization in (commune, epci):
+                factories.OperatorOrganizationRoleFactory(
+                    operator=operator,
+                    organization=organization,
+                    operator_admins_have_admin_role=True,
+                )
+            for organization in (commune, epci, member):
+                _subscribe(organization, service, operator)
+
+    def query_count():
+        with CaptureQueriesContext(connection) as queries:
+            communes = _can_admin_communes(
+                service, "99999999999999", account_email="admin@operator.fr"
+            )
+        return len(queries), len(communes)
+
+    add_organizations(1)
+    queries_for_one, communes_for_one = query_count()
+    add_organizations(3)
+    queries_for_four, communes_for_four = query_count()
+
+    # Each group covers its commune and the EPCI's member commune.
+    assert (communes_for_one, communes_for_four) == (2, 8)
+    assert queries_for_four == queries_for_one
 
 
 def test_bal_resolver_runs_without_active_subscription():

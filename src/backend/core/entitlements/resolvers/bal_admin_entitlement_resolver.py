@@ -19,7 +19,8 @@ class BalAdminEntitlementResolver(AdminEntitlementResolver):
     queried user may administer for the BAL service, across all organizations.
 
     Sources of access, unioned per commune. Each grants channels on every
-    commune the organization covers (see core.services.bal.get_covered_communes):
+    commune the organization covers (see
+    core.services.bal.get_covered_communes_by_organization):
 
     - Organization-level ``admin`` role on an account: all channels.
     - BAL service-link ``admin``: the channels of the link's scope
@@ -101,13 +102,17 @@ class BalAdminEntitlementResolver(AdminEntitlementResolver):
         ):
             org_access[organization.id] = all_channels
 
+        granting_organizations = models.Organization.objects.filter(
+            id__in=[org_id for org_id, channels in org_access.items() if channels]
+        ).only("id", "type", "code_insee", "siren")
+        covered_by_organization = bal_service.get_covered_communes_by_organization(
+            granting_organizations, service
+        )
+
         result = {}
-        granting_org_ids = [
-            org_id for org_id, channels in org_access.items() if channels
-        ]
-        for org in models.Organization.objects.filter(id__in=granting_org_ids):
-            for insee in bal_service.get_covered_communes(org, service):
-                result.setdefault(insee, set()).update(org_access[org.id])
+        for org_id, communes in covered_by_organization.items():
+            for insee in communes:
+                result.setdefault(insee, set()).update(org_access[org_id])
 
         return {
             "can_admin_communes": {

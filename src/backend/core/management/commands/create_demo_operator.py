@@ -26,6 +26,7 @@ from core.models import (
     OperatorServiceConfig,
     Organization,
     Service,
+    ServiceSubscription,
     User,
     UserOperatorRole,
 )
@@ -357,6 +358,13 @@ class Command(BaseCommand):
 
         for organization in organizations:
             self.stdout.write(f"  Processing organization: {organization.name}")
+
+            # The dashboard only shows the metrics of subscriptions the
+            # operator runs.
+            for service in (drive_service, messages_service):
+                ServiceSubscription.objects.create(
+                    organization=organization, service=service, operator=operator
+                )
 
             # Drive service: accounts with type "user" (with email and external_id)
             drive_accounts, drive_metrics = create_accounts_and_metrics(
