@@ -14,6 +14,7 @@ from core.entitlements.resolvers import TYPE_TO_ADMIN_RESOLVER
 from core.entitlements.resolvers.extended_admin_entitlement_resolver import (
     ExtendedAdminEntitlementResolver,
 )
+from core.services import bal as bal_service
 from core.services import domainnames, get_service_handler, locks
 from core.services import domains as domains_service
 from core.services import proconnect as proconnect_service
@@ -896,6 +897,50 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
         merged_metadata["auto_admin"] = auto_admin
         attrs["metadata"] = merged_metadata
 
+    def _validate_bal_subscription(self, attrs, service_type, existing_metadata):
+        """
+        Validate BAL subscription data.
+        Validates the auto_admin and epci_delegation metadata values and merges
+        them with existing metadata.
+        """
+        if service_type != bal_service.SERVICE_TYPE:
+            return
+
+        new_metadata = attrs.get("metadata")
+        has_auto_admin = bool(new_metadata) and "auto_admin" in new_metadata
+        has_epci_delegation = (
+            bool(new_metadata) and bal_service.EPCI_DELEGATION_KEY in new_metadata
+        )
+        if not has_auto_admin and not has_epci_delegation:
+            return
+
+        merged_metadata = dict(existing_metadata or {})
+        if has_auto_admin:
+            auto_admin = new_metadata["auto_admin"]
+            if auto_admin not in self.VALID_AUTO_ADMIN_VALUES:
+                raise serializers.ValidationError(
+                    {
+                        "metadata": (
+                            f"Invalid auto_admin value: '{auto_admin}'. "
+                            f"Must be one of: {', '.join(self.VALID_AUTO_ADMIN_VALUES)}."
+                        )
+                    }
+                )
+            merged_metadata["auto_admin"] = auto_admin
+        if has_epci_delegation:
+            epci_delegation = new_metadata[bal_service.EPCI_DELEGATION_KEY]
+            if not isinstance(epci_delegation, bool):
+                raise serializers.ValidationError(
+                    {
+                        "metadata": (
+                            f"Invalid {bal_service.EPCI_DELEGATION_KEY} value. "
+                            "Must be a boolean."
+                        )
+                    }
+                )
+            merged_metadata[bal_service.EPCI_DELEGATION_KEY] = epci_delegation
+        attrs["metadata"] = merged_metadata
+
     def _get_service(self):
         """Resolve the service from instance or view kwargs."""
         if self.instance:
@@ -937,6 +982,7 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
             self._validate_extended_admin_subscription(
                 attrs, service.type, existing_metadata
             )
+            self._validate_bal_subscription(attrs, service.type, existing_metadata)
         # Validate entitlement types here (at is_valid time) so an invalid type is
         # rejected before the subscription is saved — otherwise the save's
         # ProConnect push would fire and then get rolled back, drifting the provider.

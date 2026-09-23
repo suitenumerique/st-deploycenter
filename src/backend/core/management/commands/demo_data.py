@@ -50,6 +50,11 @@ SERVICE_TYPES = [
         "name": "Domaines",
         "url": "https://domaines.example.fr",
     },
+    {
+        "type": "bal",
+        "name": "Base Adresse Locale",
+        "url": "https://bal.example.fr",
+    },
 ]
 
 

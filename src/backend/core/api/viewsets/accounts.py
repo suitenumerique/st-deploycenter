@@ -17,6 +17,7 @@ from core import models
 from core.api import permissions, serializers
 from core.api.filters import AccountFilter
 from core.authentication import OperatorExternalManagementApiKeyAuthentication
+from core.services import bal as bal_service
 from core.signals import (
     request_user_context,
     send_account_webhooks,
@@ -188,6 +189,15 @@ class AccountViewSet(
                 desired = raw_roles
             else:
                 raise ValidationError({"roles": "Must be a list or object."})
+
+            if service.type == bal_service.SERVICE_TYPE:
+                for role_name, config in desired.items():
+                    try:
+                        bal_service.validate_scope((config or {}).get("scope", {}))
+                    except ValueError as err:
+                        raise ValidationError(
+                            {"roles": f"Role '{role_name}': {err}"}
+                        ) from err
 
             # Suppress per-link webhook signals; we send one at the end
             with suppress_account_webhooks():

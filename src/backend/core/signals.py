@@ -95,7 +95,10 @@ def capture_proconnect_change(sender, instance, **kwargs):
     # Stash transient flags on the instance for the post_save handler to read.
     # pylint: disable=protected-access
     if instance._state.adding or instance.pk is None:  # noqa: SLF001
-        instance._proconnect_needs_sync = True  # noqa: SLF001
+        # A new inactive or domainless subscription leaves the pushed set as is.
+        instance._proconnect_needs_sync = bool(  # noqa: SLF001
+            _subscription_routed_domains(instance)
+        )
         instance._proconnect_previous_idp_id = None  # noqa: SLF001
         return
     old = (
@@ -127,9 +130,9 @@ def _sync_proconnect(instance, service):
     back the subscription change (keeping local DB and the provider in sync). The
     API user then gets a sync error instead of a silent drift.
 
-    Skips the push when the save did not change the pushed domain set (per the
-    ``_proconnect_needs_sync`` flag set in :func:`capture_proconnect_change`).
-    Deletes have no flag and always push (a contribution is being removed).
+    Skips the push when the save or delete does not change the pushed domain set
+    (per the ``_proconnect_needs_sync`` flag, set in
+    :func:`capture_proconnect_change` and :func:`handle_subscription_delete`).
 
     FOOTGUN: this fires from ``post_save`` / ``post_delete`` signals, which Django
     does NOT emit for bulk operations — ``QuerySet.bulk_create``,
@@ -270,6 +273,10 @@ def handle_subscription_delete(sender, instance, **kwargs):
 
     # Before the webhooks, for the same reason as on save: a failed push rolls the
     # deletion back, and subscription.deleted would already be out.
+    # pylint: disable-next=protected-access
+    instance._proconnect_needs_sync = bool(  # noqa: SLF001
+        _subscription_routed_domains(instance)
+    )
     _sync_proconnect(instance, service)
 
     _dispatch_subscription_webhooks(

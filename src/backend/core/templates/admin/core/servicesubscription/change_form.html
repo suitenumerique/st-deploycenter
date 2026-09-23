@@ -1,0 +1,13 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls %}
+
+{% block object-tools-items %}
+    {% if original.service.type == "proconnect" %}
+    <li>
+        <a href="{% url 'admin:core_servicesubscription_proconnect_manual_actions' original.pk|admin_urlquote %}">
+            {% trans 'ProConnect manual actions' %}
+        </a>
+    </li>
+    {% endif %}
+    {{ block.super }}
+{% endblock %}

@@ -178,6 +178,28 @@
                 }
               }
             },
+            "bal": {
+              "epci_note": "Cet EPCI peut administrer toutes ses communes qui n'ont pas refusé la délégation",
+              "epci_delegation": {
+                "label": "Délégation à l'EPCI",
+                "modal": {
+                  "title": "Délégation à l'EPCI",
+                  "description": "Choisissez si les administrateurs de l'EPCI <bold>{{epci_name}}</bold> peuvent gérer les adresses de la commune sur <bold>{{service_name}}</bold>."
+                },
+                "choices": {
+                  "allowed": {
+                    "short": "Autorisée",
+                    "label": "Autoriser l'EPCI",
+                    "description": "Les administrateurs de l'EPCI gèrent aussi les adresses de la commune, dès lors que l'EPCI a activé le service."
+                  },
+                  "refused": {
+                    "short": "Refusée",
+                    "label": "Refuser la délégation",
+                    "description": "Seuls les administrateurs de la commune gèrent ses adresses."
+                  }
+                }
+              }
+            },
             "proconnect": {
               "domains": {
                 "label": "Domaines",
@@ -343,7 +365,14 @@
           }
         },
         "scope": {
-          "domains_label": "Domaines autorisés"
+          "domains_label": "Domaines autorisés",
+          "channels_label": "Canaux autorisés",
+          "channels": {
+            "channel_api_depot": "API dépôt",
+            "channel_moissonneur": "Moissonneur",
+            "channel_mesadresses": "Mes Adresses",
+            "channel_formulaire": "Formulaire"
+          }
         }
       },
       "feedback": {

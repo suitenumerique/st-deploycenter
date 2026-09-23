@@ -9,7 +9,13 @@ import {
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Spinner } from "@gouvfr-lasuite/ui-components";
-import { Account, Service, SERVICE_TYPE_MESSAGES } from "@/features/api/Repository";
+import {
+  Account,
+  Service,
+  SERVICE_TYPE_BAL,
+  BAL_CHANNELS,
+  SERVICE_TYPE_MESSAGES,
+} from "@/features/api/Repository";
 import {
   useMutationCreateAccount,
   useMutationUpdateAccount,
@@ -17,6 +23,18 @@ import {
   useOrganizationServices,
 } from "@/hooks/useQueries";
 import { GLOBAL_ROLES, getServiceRoles } from "@/features/accounts/roles";
+
+type ServiceRoles = Record<string, { scope: Record<string, unknown> }>;
+
+// The BAL channels granted by the admin role: all of them when its scope has
+// no "channels" list, none without the role.
+const getBalChannels = (roles: ServiceRoles): string[] => {
+  const admin = roles["admin"];
+  if (!admin) return [];
+  const channels = admin.scope?.channels;
+  if (!Array.isArray(channels)) return BAL_CHANNELS;
+  return BAL_CHANNELS.filter((c) => channels.includes(c));
+};
 
 interface AccountModalProps {
   operatorId: string;
@@ -148,6 +166,44 @@ export const AccountModal = ({
       }
       return { ...prev, [serviceId]: currentRoles };
     });
+  };
+
+  // No channel removes the admin role, all channels is the unrestricted admin
+  // role, anything in between is the admin role scoped to those channels.
+  const updateBalChannels = (
+    serviceId: string,
+    update: (channels: string[]) => string[]
+  ) => {
+    setServiceLinkRoles((prev) => {
+      const currentRoles = {
+        ...(prev[serviceId] || getServiceLinkRolesDict(serviceId)),
+      };
+      const channels = update(getBalChannels(currentRoles));
+      if (channels.length === 0) {
+        delete currentRoles["admin"];
+      } else if (channels.length === BAL_CHANNELS.length) {
+        currentRoles["admin"] = { scope: {} };
+      } else {
+        currentRoles["admin"] = {
+          scope: { channels: BAL_CHANNELS.filter((c) => channels.includes(c)) },
+        };
+      }
+      return { ...prev, [serviceId]: currentRoles };
+    });
+  };
+
+  const toggleBalAdmin = (serviceId: string) => {
+    updateBalChannels(serviceId, (channels) =>
+      channels.length === BAL_CHANNELS.length ? [] : BAL_CHANNELS
+    );
+  };
+
+  const toggleBalChannel = (serviceId: string, channel: string) => {
+    updateBalChannels(serviceId, (channels) =>
+      channels.includes(channel)
+        ? channels.filter((c) => c !== channel)
+        : [...channels, channel]
+    );
   };
 
   const updateServiceLinks = (accountId: string): Promise<void> => {
@@ -301,6 +357,40 @@ export const AccountModal = ({
     );
   };
 
+  const renderBalRoles = (service: Service) => {
+    const channels = getBalChannels(getServiceLinkRolesDict(service.id));
+    // The admin checkbox stands for "all channels".
+    const checkedRoles =
+      channels.length === BAL_CHANNELS.length ? ["admin"] : [];
+    const disabled = globalRoles.includes("admin");
+
+    return (
+      <>
+        {renderRoleCheckboxes(
+          checkedRoles,
+          getServiceRoles(service.type),
+          () => toggleBalAdmin(service.id),
+          globalRoles
+        )}        <div className="dc__accounts__modal__roles__scope">
+          <span className="dc__accounts__modal__roles__scope__label">
+            {t("accounts.scope.channels_label")}
+          </span>
+          <div className="dc__accounts__modal__roles__scope__checkboxes">
+            {BAL_CHANNELS.map((channel) => (
+              <Checkbox
+                key={channel}
+                label={t(`accounts.scope.channels.${channel}`)}
+                checked={channels.includes(channel)}
+                onChange={() => toggleBalChannel(service.id, channel)}
+                disabled={disabled}
+              />
+            ))}
+          </div>
+        </div>
+      </>
+    );
+  };
+
   const renderServiceRoles = (service: Service) => {
     const serviceRoles = getServiceRoles(service.type);
     // Skip services with no roles defined
@@ -316,8 +406,12 @@ export const AccountModal = ({
         <h5 className="dc__accounts__modal__roles__group__title">
           {service.name}
         </h5>
-        {renderRoleCheckboxes(Object.keys(currentRoles), serviceRoles, (role) =>
-          toggleServiceRole(service.id, role), globalRoles
+        {service.type === SERVICE_TYPE_BAL ? (
+          renderBalRoles(service)
+        ) : (
+          renderRoleCheckboxes(Object.keys(currentRoles), serviceRoles, (role) =>
+            toggleServiceRole(service.id, role), globalRoles
+          )
         )}
         {showDomainScope && renderDomainScope(service)}
       </div>

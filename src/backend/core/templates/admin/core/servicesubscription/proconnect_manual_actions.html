@@ -1,0 +1,66 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+&rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+&rsaquo; <a href="{% url 'admin:core_servicesubscription_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+&rsaquo; <a href="{% url 'admin:core_servicesubscription_change' original.pk|admin_urlquote %}">{{ original }}</a>
+&rsaquo; {{ title }}
+</div>
+{% endblock %}
+
+{% block content %}
+{# The add button is the first submit button: pressing Enter in the domain input submits it. #}
+<form method="post" id="proconnect-manual-actions-form">
+    {% csrf_token %}
+
+    <fieldset class="module aligned">
+        <h2>{% trans 'ProConnect' %}</h2>
+        <div class="form-row">
+            <div>
+                {{ form.skip_proconnect_sync }} <label for="{{ form.skip_proconnect_sync.id_for_label }}" class="vCheckboxLabel">{{ form.skip_proconnect_sync.label }}</label>
+                <p class="help">{{ form.skip_proconnect_sync.help_text }}</p>
+            </div>
+        </div>
+        <div class="form-row">
+            <div>
+                {{ form.is_active }} <label for="{{ form.is_active.id_for_label }}" class="vCheckboxLabel">{{ form.is_active.label }}</label>
+            </div>
+        </div>
+    </fieldset>
+
+    <fieldset class="module aligned">
+        <h2>{% trans 'Add a domain' %}</h2>
+        <div class="form-row">
+            <div>
+                <label for="{{ form.domain.id_for_label }}">{{ form.domain.label }}:</label>
+                {{ form.domain }}
+                <button type="submit" name="add" class="button">{% trans 'Add' %}</button>
+                {{ form.domain.errors }}
+            </div>
+        </div>
+    </fieldset>
+
+    <fieldset class="module aligned">
+        <h2>{% trans 'Current domains' %}</h2>
+        {% for domain in domains %}
+        <div class="form-row">
+            <div>
+                <label>{{ domain }}</label>
+                <button type="submit" name="remove" value="{{ domain }}" class="button">{% trans 'Remove' %}</button>
+            </div>
+        </div>
+        {% empty %}
+        <div class="form-row"><p>{% trans 'No domain.' %}</p></div>
+        {% endfor %}
+    </fieldset>
+
+    <div class="submit-row">
+        <input type="submit" value="{% trans 'Save' %}" class="default" name="save">
+    </div>
+</form>
+{% endblock %}

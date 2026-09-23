@@ -40,6 +40,7 @@ export type Organization = {
   population: number;
   departement_code_insee: string;
   epci_libelle: string;
+  epci_siren: string | null;
   rpnt: string[];
   mail_domain: string | null;
   mail_domain_status: MailDomainStatus;
@@ -110,6 +111,16 @@ export const SERVICE_TYPE_ESD = "esd";
 export const SERVICE_TYPE_MESSAGES = "messages";
 export const SERVICE_TYPE_DRIVE = "drive";
 export const SERVICE_TYPE_DOMAINS = "domains";
+export const SERVICE_TYPE_BAL = "bal";
+
+// The address channels a BAL commune exposes for administration. Mirrors
+// core.services.bal.CHANNELS.
+export const BAL_CHANNELS = [
+  "channel_api_depot",
+  "channel_moissonneur",
+  "channel_mesadresses",
+  "channel_formulaire",
+];
 
 // What serves a domain's website, in the Domains service subscription metadata.
 export const WEBSITE_MODE_NONE = "none";

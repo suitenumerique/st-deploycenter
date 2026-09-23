@@ -2,12 +2,14 @@ import {
   Organization,
   Service,
   SERVICE_TYPE_ADC,
+  SERVICE_TYPE_BAL,
   SERVICE_TYPE_DOMAINS,
   SERVICE_TYPE_DRIVE,
   SERVICE_TYPE_ESD,
   SERVICE_TYPE_MESSAGES,
   SERVICE_TYPE_PROCONNECT,
 } from "@/features/api/Repository";
+import { BalServiceBlock } from "@/features/ui/components/service/implementations/BalServiceBlock";
 import { DomainsServiceBlock } from "@/features/ui/components/service/implementations/DomainsServiceBlock";
 import { DriveServiceBlock } from "@/features/ui/components/service/implementations/DriveServiceBlock";
 import { ExtendedAdminServiceBlock } from "@/features/ui/components/service/implementations/ExtendedAdminServiceBlock";
@@ -29,6 +31,9 @@ export const ServiceBlockDispatcher = (props: ServiceBlockDispatcherProps) => {
   }
   if (props.service.type === SERVICE_TYPE_MESSAGES) {
     return <MessagesServiceBlock {...props} />;
+  }
+  if (props.service.type === SERVICE_TYPE_BAL) {
+    return <BalServiceBlock {...props} />;
   }
   if (props.service.type === SERVICE_TYPE_DRIVE) {
     return <DriveServiceBlock {...props} />;
