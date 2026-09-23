@@ -15,6 +15,23 @@ pytestmark = pytest.mark.django_db
 class TestOrganizationModel:
     """Test the Organization model."""
 
+    # __str__
+
+    @pytest.mark.parametrize(
+        ("org_type", "code_postal", "expected"),
+        [
+            ("commune", "01000", "Bourg (commune, 01000)"),
+            ("commune", None, "Bourg (commune)"),
+            ("epci", "01000", "Bourg (epci)"),
+        ],
+    )
+    def test_str(self, org_type, code_postal, expected):
+        """Communes show their postal code to tell homonyms apart."""
+        organization = factories.OrganizationFactory.build(
+            name="Bourg", type=org_type, code_postal=code_postal
+        )
+        assert str(organization) == expected
+
     # Attribute: adresse_messagerie
 
     def test_messagerie_domain_empty(self):

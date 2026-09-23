@@ -605,6 +605,8 @@ class Organization(BaseModel):
         ]
 
     def __str__(self):
+        if self.type == "commune" and self.code_postal:
+            return f"{self.name} ({self.type}, {self.code_postal})"
         return f"{self.name} ({self.type})"
 
     @property
