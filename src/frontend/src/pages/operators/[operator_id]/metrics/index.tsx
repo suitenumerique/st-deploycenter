@@ -616,6 +616,16 @@ export default function MetricsPage() {
           options={keyOptions}
         />
 
+        <Select
+          label={t("metrics.filters.account_type")}
+          value={filters.accountType}
+          onChange={(e) =>
+            updateFilters({ accountType: (e.target.value as string) || "" })
+          }
+          disabled={!filters.key}
+          options={accountTypeOptions}
+        />
+
         {/* The operator can hold tens of thousands of organizations, so the
             dropdown's own search box queries the API rather than filtering a
             list it never received in full. The kit filters the options it holds
@@ -648,16 +658,6 @@ export default function MetricsPage() {
             options={[]}
           />
         )}
-
-        <Select
-          label={t("metrics.filters.account_type")}
-          value={filters.accountType}
-          onChange={(e) =>
-            updateFilters({ accountType: (e.target.value as string) || "" })
-          }
-          disabled={!filters.key}
-          options={accountTypeOptions}
-        />
 
         <Select
           label={t("metrics.filters.aggregation")}
