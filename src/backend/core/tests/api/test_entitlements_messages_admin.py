@@ -1323,10 +1323,11 @@ def test_non_messages_admin_resolver_not_run_without_active_subscription():
 
 
 def test_messages_admin_resolver_runs_without_active_subscription_flag():
-    """The Messages admin resolver is flagged to run without an active
+    """The Messages and ADC admin resolvers are flagged to run without an active
     subscription; the base and extended resolvers are not."""
     messages_service = factories.ServiceFactory(type="messages")
     adc_service = factories.ServiceFactory(type="adc")
+    esd_service = factories.ServiceFactory(type="esd")
     other_service = factories.ServiceFactory(type="some-other-type")
 
     assert (
@@ -1337,6 +1338,10 @@ def test_messages_admin_resolver_runs_without_active_subscription_flag():
     )
     assert (
         get_admin_entitlement_resolver(adc_service).runs_without_active_subscription
+        is True
+    )
+    assert (
+        get_admin_entitlement_resolver(esd_service).runs_without_active_subscription
         is False
     )
     assert (

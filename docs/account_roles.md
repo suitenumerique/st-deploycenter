@@ -29,7 +29,8 @@ Which resolver runs depends on the service type (`TYPE_TO_ADMIN_RESOLVER` in
 
 | Service type | Resolver |
 |---|---|
-| `adc`, `esd` | `ExtendedAdminEntitlementResolver` (below) |
+| `adc` | `AdcAdminEntitlementResolver`: `ExtendedAdminEntitlementResolver` plus `can_admin_collectivites` (below) |
+| `esd` | `ExtendedAdminEntitlementResolver` (below) |
 | `meet` | `NoopAdminEntitlementResolver` — returns `{}`, no admin entitlement at all |
 | `messages` | `MessagesAdminEntitlementResolver` — returns `can_admin_maildomains` (a list of mail domains) instead of `is_admin` |
 | anything else | `AdminEntitlementResolver` |
@@ -61,6 +62,19 @@ the organization has no `siret`.
    - `"all"` -> `is_admin: True`, level: `"auto_admin"` (bypasses population check)
    - `"manual"` -> `is_admin: False` (bypasses population check)
 4. **Population fallback** (only if no `auto_admin` choice): Organization population under threshold -> `is_admin: True`, level: `"population"`
+
+### `can_admin_collectivites` (ADC service)
+
+The `adc` resolver also returns `can_admin_collectivites`: the sorted SIRENs of
+the communes the user administers as an operator admin, across all
+organizations. It is matched by `account_email` (case-insensitive) against the
+`UserOperatorRole` admins of active operators, and lists every commune those
+operators have an `OperatorOrganizationRole` on. Service subscriptions and
+`operator_admins_have_admin_role` are not considered, and EPCIs grant nothing
+on their member communes.
+
+It is returned even when the queried organization has no active subscription;
+`is_admin` is only returned when it has one.
 
 ### Resolution priority order
 

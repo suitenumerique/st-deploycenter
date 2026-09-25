@@ -1,4 +1,4 @@
-# pylint: disable=invalid-name
+# pylint: disable=invalid-name,too-many-lines
 """
 Test ADC-specific admin entitlements in the deploycenter core app.
 """
@@ -948,3 +948,194 @@ def test_api_adc_entitlements_unknown_siret():
     assert data["operator"] is None
     assert data["entitlements"]["can_access"] is False
     assert data["entitlements"]["can_access_reason"] == "no_organization"
+    assert data["entitlements"]["can_admin_collectivites"] == []
+    assert "is_admin" not in data["entitlements"]
+
+
+# --- can_admin_collectivites (operator admins) ---
+
+
+def _make_adc_service():
+    return factories.ServiceFactory(
+        type="adc",
+        config={"entitlements_api_key": "test_token"},
+    )
+
+
+def _adc_entitlements(service, siret, account_email=None, account_id=None):
+    params = {"service_id": service.id, "account_type": "user", "siret": siret}
+    if account_email:
+        params["account_email"] = account_email
+    if account_id:
+        params["account_id"] = account_id
+    response = APIClient().get(
+        "/api/v1.0/entitlements/",
+        query_params=params,
+        headers={"X-Service-Auth": "Bearer test_token"},
+    )
+    assert response.status_code == 200
+    return response.json()["entitlements"]
+
+
+def _make_operator_admin(email="admin@operator.fr", **operator_kwargs):
+    operator = factories.OperatorFactory(**operator_kwargs)
+    factories.UserOperatorRoleFactory(
+        user=factories.UserFactory(email=email), operator=operator
+    )
+    return operator
+
+
+def _manage(operator, **org_kwargs):
+    organization = factories.OrganizationFactory(**org_kwargs)
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    return organization
+
+
+def test_adc_can_admin_collectivites_operator_admin():
+    """An operator admin gets the communes its operator has a role on, without
+    any subscription nor operator_admins_have_admin_role."""
+    operator = _make_operator_admin()
+    _manage(operator, siren="217500016")
+    _manage(operator, siren="210100012")
+    _manage(operator, siren=None)
+    _manage(operator, siren="")
+    # Managed, but not communes: neither they nor their members are granted.
+    epci = _manage(operator, type="epci", siren="200000001")
+    factories.OrganizationFactory(siren="210100020", epci_siren=epci.siren)
+    _manage(operator, type="departement", siren="220100010")
+    # Not managed.
+    factories.OrganizationFactory(siren="211300553")
+    queried = factories.OrganizationFactory()
+    service = _make_adc_service()
+
+    entitlements = _adc_entitlements(
+        service, queried.siret, account_email="admin@operator.fr"
+    )
+    assert entitlements["can_admin_collectivites"] == ["210100012", "217500016"]
+    # The queried organization has no active subscription.
+    assert "is_admin" not in entitlements
+
+
+def test_adc_can_admin_collectivites_with_active_subscription_keeps_is_admin():
+    """On a queried organization with an active subscription, is_admin is
+    resolved alongside can_admin_collectivites."""
+    operator = _make_operator_admin()
+    commune = _manage(operator, siren="217500016", population=50000)
+    service = _make_adc_service()
+    factories.ServiceSubscriptionFactory(
+        organization=commune,
+        service=service,
+        operator=operator,
+        metadata={"auto_admin": "manual"},
+    )
+
+    entitlements = _adc_entitlements(
+        service, commune.siret, account_email="admin@operator.fr"
+    )
+    assert entitlements["can_admin_collectivites"] == ["217500016"]
+    assert entitlements["is_admin"] is False
+
+
+def test_adc_can_admin_collectivites_with_inactive_subscription_no_is_admin():
+    """On a queried organization with an inactive subscription, only
+    can_admin_collectivites is returned."""
+    operator = _make_operator_admin()
+    commune = _manage(operator, siren="217500016", population=500)
+    service = _make_adc_service()
+    factories.ServiceSubscriptionFactory(
+        organization=commune, service=service, operator=operator, is_active=False
+    )
+
+    entitlements = _adc_entitlements(
+        service, commune.siret, account_email="admin@operator.fr"
+    )
+    assert entitlements["can_admin_collectivites"] == ["217500016"]
+    assert "is_admin" not in entitlements
+
+
+def test_adc_can_admin_collectivites_email_case_insensitive():
+    """User.email and account_email are matched case-insensitively."""
+    operator = _make_operator_admin(email="Admin@Operator.FR")
+    _manage(operator, siren="217500016")
+    service = _make_adc_service()
+
+    assert _adc_entitlements(
+        service, "00000000000000", account_email="admin@operator.fr"
+    )["can_admin_collectivites"] == ["217500016"]
+
+
+def test_adc_can_admin_collectivites_other_operator():
+    """Organizations managed by another operator are not granted."""
+    _make_operator_admin()
+    other_operator = factories.OperatorFactory()
+    _manage(other_operator, siren="217500016")
+    service = _make_adc_service()
+
+    assert (
+        _adc_entitlements(service, "00000000000000", account_email="admin@operator.fr")[
+            "can_admin_collectivites"
+        ]
+        == []
+    )
+
+
+def test_adc_can_admin_collectivites_not_operator_admin():
+    """A user without a UserOperatorRole gets nothing."""
+    factories.UserFactory(email="admin@operator.fr")
+    _manage(factories.OperatorFactory(), siren="217500016")
+    service = _make_adc_service()
+
+    assert (
+        _adc_entitlements(service, "00000000000000", account_email="admin@operator.fr")[
+            "can_admin_collectivites"
+        ]
+        == []
+    )
+
+
+def test_adc_can_admin_collectivites_inactive_operator():
+    """An inactive operator grants nothing."""
+    operator = _make_operator_admin(is_active=False)
+    _manage(operator, siren="217500016")
+    service = _make_adc_service()
+
+    assert (
+        _adc_entitlements(service, "00000000000000", account_email="admin@operator.fr")[
+            "can_admin_collectivites"
+        ]
+        == []
+    )
+
+
+def test_adc_can_admin_collectivites_requires_email():
+    """Operator admins are matched by email only."""
+    operator = _make_operator_admin()
+    _manage(operator, siren="217500016")
+    service = _make_adc_service()
+
+    assert (
+        _adc_entitlements(service, "00000000000000", account_id="xyz")[
+            "can_admin_collectivites"
+        ]
+        == []
+    )
+
+
+def test_adc_can_admin_collectivites_deduplicated():
+    """A commune granted by two operators of the same user appears once."""
+    operator = _make_operator_admin()
+    commune = _manage(operator, siren="210100012")
+    other_operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(
+        user=operator.user_roles.get().user, operator=other_operator
+    )
+    factories.OperatorOrganizationRoleFactory(
+        operator=other_operator, organization=commune
+    )
+    service = _make_adc_service()
+
+    assert _adc_entitlements(
+        service, "00000000000000", account_email="admin@operator.fr"
+    )["can_admin_collectivites"] == ["210100012"]

@@ -2,6 +2,9 @@ from core import models
 from core.entitlements.resolvers.access_entitlement_resolver import (
     AccessEntitlementResolver,
 )
+from core.entitlements.resolvers.adc_admin_entitlement_resolver import (
+    AdcAdminEntitlementResolver,
+)
 from core.entitlements.resolvers.admin_entitlement_resolver import (
     AdminEntitlementResolver,
 )
@@ -57,7 +60,7 @@ class NoopAdminEntitlementResolver:
 
 
 TYPE_TO_ADMIN_RESOLVER = {
-    "adc": ExtendedAdminEntitlementResolver,
+    "adc": AdcAdminEntitlementResolver,
     "esd": ExtendedAdminEntitlementResolver,
     "meet": NoopAdminEntitlementResolver,
     "messages": MessagesAdminEntitlementResolver,
