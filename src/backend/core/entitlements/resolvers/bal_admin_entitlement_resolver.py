@@ -51,7 +51,7 @@ class BalAdminEntitlementResolver(AdminEntitlementResolver):
         if account_id:
             account_filter |= Q(external_id=account_id)
         if account_email:
-            account_filter |= Q(email=account_email)
+            account_filter |= Q(email=models.Account.normalize_email(account_email))
 
         admin_accounts = models.Account.objects.filter(
             account_filter,
@@ -81,7 +81,7 @@ class BalAdminEntitlementResolver(AdminEntitlementResolver):
                     role="admin",
                     operator_admins_have_admin_role=True,
                     operator__user_roles__role="admin",
-                    operator__user_roles__user__email=account_email,
+                    operator__user_roles__user__email__iexact=account_email,
                     organization__service_subscriptions__service=service,
                     organization__service_subscriptions__is_active=True,
                 )

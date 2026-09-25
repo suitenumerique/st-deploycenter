@@ -41,7 +41,7 @@ class AdminEntitlementResolver(EntitlementResolver):
         - The organization has an OperatorOrganizationRole with role="admin"
           and operator_admins_have_admin_role=True
         - The operator of that role has a UserOperatorRole with role="admin"
-          for a user whose email matches account_email
+          for a user whose email matches account_email (case-insensitive)
         - The organization has an active subscription for the queried service
         """
         account_email = context.get("account_email") or ""
@@ -58,7 +58,7 @@ class AdminEntitlementResolver(EntitlementResolver):
             operator_admins_have_admin_role=True,
             organization=organization,
             operator__user_roles__role="admin",
-            operator__user_roles__user__email=account_email,
+            operator__user_roles__user__email__iexact=account_email,
             organization__service_subscriptions__service=service,
             organization__service_subscriptions__is_active=True,
         ).exists()

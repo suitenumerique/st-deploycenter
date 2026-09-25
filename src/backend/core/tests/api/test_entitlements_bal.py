@@ -187,6 +187,20 @@ def test_bal_commune_requires_active_subscription():
     assert _can_admin_communes(service, commune.siret, account_id="xyz") == {}
 
 
+def test_bal_org_admin_by_email_domain_case():
+    """Account.email has its domain lowercased on save, so the lookup must
+    normalize the requested account_email the same way."""
+    operator = factories.OperatorFactory()
+    commune = _make_org(operator)
+    service = _make_bal_service()
+    _subscribe(commune, service, operator)
+    _make_account(commune, roles=["admin"])
+
+    assert _can_admin_communes(
+        service, commune.siret, account_email="test@EXAMPLE.com"
+    ) == {commune.code_insee: CHANNELS}
+
+
 def test_bal_non_commune_non_epci_covers_nothing():
     """An admin of an organization that is neither a commune nor an EPCI gets nothing."""
     operator = factories.OperatorFactory()
@@ -599,6 +613,15 @@ def test_bal_operator_admin_passthrough():
 
     assert _can_admin_communes(
         service, commune.siret, account_email="admin@operator.fr"
+    ) == {commune.code_insee: CHANNELS}
+
+
+def test_bal_operator_admin_passthrough_email_case_insensitive():
+    """User.email and account_email are matched case-insensitively."""
+    service, commune = _operator_admin_setup(passthrough=True)
+
+    assert _can_admin_communes(
+        service, commune.siret, account_email="Admin@Operator.FR"
     ) == {commune.code_insee: CHANNELS}
 
 

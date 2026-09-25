@@ -330,6 +330,42 @@ def test_operator_admin_passthrough_is_admin_true():
     )
 
 
+def test_operator_admin_passthrough_email_case_insensitive():
+    """User.email (from OIDC) and account_email are matched case-insensitively."""
+    user = factories.UserFactory(email="Admin@Operator.FR")
+    client = APIClient()
+    client.force_login(user)
+
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator,
+        organization=organization,
+        operator_admins_have_admin_role=True,
+    )
+
+    service = _make_service()
+    factories.ServiceSubscriptionFactory(
+        organization=organization, service=service, operator=operator
+    )
+
+    response = _entitlements_by_email(
+        client, service, organization.siret, "admin@operator.fr"
+    )
+    assert response.status_code == 200
+    assert_equals_partial(
+        response.json(),
+        {
+            "entitlements": {
+                "is_admin": True,
+                "is_admin_resolve_level": "operator",
+            },
+        },
+    )
+
+
 def test_operator_admin_passthrough_flag_off_is_admin_false():
     """Flag off → operator admin does not get is_admin."""
     user = factories.UserFactory(email="admin@operator.fr")

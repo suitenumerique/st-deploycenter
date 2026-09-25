@@ -403,6 +403,40 @@ def test_api_entitlements_messages_can_admin_maildomains_by_email():
     )
 
 
+def test_api_entitlements_messages_can_admin_maildomains_by_email_domain_case():
+    """Account.email has its domain lowercased on save, so the lookup must
+    normalize the requested account_email the same way."""
+    operator = factories.OperatorFactory()
+    organization = factories.OrganizationFactory(siret="12345678900001")
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+
+    service = _make_messages_service()
+    factories.ServiceSubscriptionFactory(
+        organization=organization,
+        service=service,
+        operator=operator,
+        metadata={"domains": ["email-domain.com"]},
+    )
+
+    factories.AccountFactory(
+        organization=organization,
+        type="user",
+        external_id="xyz",
+        email="Test@Example.COM",
+        roles=["admin"],
+    )
+
+    response = _entitlements_request(
+        APIClient(), service, organization.siret, account_email="Test@Example.COM"
+    )
+    assert response.status_code == 200
+    assert response.json()["entitlements"]["can_admin_maildomains"] == [
+        "email-domain.com"
+    ]
+
+
 def test_api_entitlements_messages_can_admin_maildomains_domain_scoped_service_admin():
     """Service admin with scope={"domains": ["d1.com"]} gets only scoped domains."""
     user = factories.UserFactory()
@@ -1125,13 +1159,17 @@ def test_operator_admin_passthrough_combined_with_account_admin():
     assert sorted(domains) == ["a.fr", "b.fr"]
 
 
-def test_operator_admin_passthrough_email_must_match_exactly():
-    """Email match is exact — different casing in User.email won't match.
-
-    But when the entitlements request sends the account_email with the exact
-    same casing as User.email, it matches and returns the admin domains.
-    """
-    user = factories.UserFactory(email="Admin@Operator.FR")
+@pytest.mark.parametrize(
+    "user_email,account_email",
+    [
+        ("Admin@Operator.FR", "admin@operator.fr"),
+        ("admin@operator.fr", "Admin@Operator.FR"),
+        ("Admin@Operator.FR", "Admin@Operator.FR"),
+    ],
+)
+def test_operator_admin_passthrough_email_case_insensitive(user_email, account_email):
+    """User.email (from OIDC) and account_email are matched case-insensitively."""
+    user = factories.UserFactory(email=user_email)
     client = APIClient()
     client.force_login(user)
 
@@ -1154,14 +1192,7 @@ def test_operator_admin_passthrough_email_must_match_exactly():
     )
 
     response = _entitlements_request(
-        client, service, organization.siret, account_email="admin@operator.fr"
-    )
-    assert response.status_code == 200
-    assert response.json()["entitlements"]["can_admin_maildomains"] == []
-
-    # But the exact same casing as User.email matches and returns the domains.
-    response = _entitlements_request(
-        client, service, organization.siret, account_email="Admin@Operator.FR"
+        client, service, organization.siret, account_email=account_email
     )
     assert response.status_code == 200
     assert response.json()["entitlements"]["can_admin_maildomains"] == ["commune.fr"]
