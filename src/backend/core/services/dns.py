@@ -3,9 +3,12 @@
 Resolution walks the delegation chain from the root with ``recursive-resolver``
 instead of asking whatever is in ``/etc/resolv.conf``, so a check reads what the
 authoritative servers publish rather than what an intermediate cache decided to
-remember. Only the root -> TLD cuts are cached: a delegation the user just changed
-at their registrar shows up on the next check, while the root servers are left
-alone.
+remember. Each batch gets its own resolver and cache: a delegation the user just
+changed at their registrar shows up on the next check, while within the batch each
+nameserver hostname is resolved once. Without that cache a chain of nameservers
+living outside the zones they serve (houdelaincourt.fr -> lst-domaines.fr ->
+scw.cloud -> online.net -> scaleway.com) is re-resolved at every level and runs out
+of the resolver's query budget.
 
 DNSSEC validation is off: we read public delegation data to display a hint in the
 UI, not a credential, and a bogus zone should surface as "nameservers don't match"
@@ -14,7 +17,6 @@ rather than as an error the user cannot act on.
 
 import logging
 from concurrent.futures import ThreadPoolExecutor, wait
-from functools import lru_cache
 
 from django.conf import settings
 
@@ -54,30 +56,30 @@ MAX_WORKERS = 8
 BATCH_TIMEOUT = 20.0
 
 
-@lru_cache(maxsize=1)
-def get_resolver() -> RecursiveResolver:
-    """The process-wide resolver, built on first use.
+def new_resolver() -> RecursiveResolver:
+    """A resolver for one batch, caching every answer and zone cut it sees.
 
-    Shared on purpose: the instance is thread-safe, holds the TLD delegation cache
-    and collapses concurrent lookups of the same name into a single walk.
+    Thread-safe: the batch's workers share it, and its cache.
     """
     return RecursiveResolver(
         timeout=settings.DOMAINS_DNS_TIMEOUT,
         max_resolution_time=settings.DOMAINS_DNS_MAX_RESOLUTION_TIME,
-        max_delegation_cache_depth="tld",
-        cache_answers=False,
+        max_delegation_cache_depth="all",
+        cache_answers=True,
         dnssec=False,
     )
 
 
-def nameservers(domain: str) -> tuple[list[str], str | None]:
+def nameservers(
+    resolver: RecursiveResolver, domain: str
+) -> tuple[list[str], str | None]:
     """Return ``(nameservers, error)`` for a domain's NS records.
 
     The names are lowercased and stripped of their trailing dot, sorted. On failure
     the list is empty and ``error`` is one of the ``ERROR_*`` codes above.
     """
     try:
-        records = get_resolver().resolve(domain, "NS")
+        records = resolver.resolve(domain, "NS")
     except NXDOMAINError:
         return [], ERROR_NXDOMAIN
     except NoAnswerError:
@@ -103,12 +105,15 @@ def nameservers_batch(domains: list[str]) -> dict[str, tuple[list[str], str | No
     if not domains:
         return {}
 
+    resolver = new_resolver()
     results: dict[str, tuple[list[str], str | None]] = {}
     # Not a context manager: leaving one waits for every running lookup, which would
     # defeat the batch deadline below.
     pool = ThreadPoolExecutor(max_workers=MAX_WORKERS)
     try:
-        futures = {pool.submit(nameservers, domain): domain for domain in domains}
+        futures = {
+            pool.submit(nameservers, resolver, domain): domain for domain in domains
+        }
         done, pending = wait(futures, timeout=BATCH_TIMEOUT)
         for future in pending:
             results[futures[future]] = ([], ERROR_TIMEOUT)
