@@ -853,9 +853,12 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
         return False
 
     def _get_organization(self):
-        """Resolve the organization from instance or view kwargs."""
+        """Resolve the organization from instance, context or view kwargs."""
         if self.instance:
             return self.instance.organization
+
+        if "organization" in self.context:
+            return self.context["organization"]
 
         view = self.context.get("view")
         if view and "organization_id" in getattr(view, "kwargs", {}):
@@ -942,9 +945,12 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
         attrs["metadata"] = merged_metadata
 
     def _get_service(self):
-        """Resolve the service from instance or view kwargs."""
+        """Resolve the service from instance, context or view kwargs."""
         if self.instance:
             return self.instance.service
+
+        if "service" in self.context:
+            return self.context["service"]
 
         view = self.context.get("view")
         if view and "service_id" in getattr(view, "kwargs", {}):

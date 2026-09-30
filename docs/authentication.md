@@ -82,8 +82,11 @@ Two ways, and neither is OIDC:
   the MFA checks above apply;
 - the **API keys** partners send as `Authorization: Bearer <key>`, declared per
   viewset (`OperatorExternalManagementApiKeyAuthentication`,
-  `ServiceExternalManagementApiKeyAuthentication`) and matched before anything
+  `ServiceExternalManagementApiKeyAuthentication`,
+  `ServiceSubscriptionsApiKeyAuthentication`) and matched before anything
   else. A few endpoints check their own key in a permission class instead.
+  The service subscriptions key is described in
+  [service_subscriptions_api.md](service_subscriptions_api.md).
 
 `mozilla_django_oidc.contrib.drf.OIDCAuthentication` used to sit first in
 `DEFAULT_AUTHENTICATION_CLASSES` and accept a raw ProConnect access token as a
