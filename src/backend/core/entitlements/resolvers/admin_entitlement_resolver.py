@@ -7,6 +7,29 @@ from core.entitlements.resolvers.entitlement_resolver import (
 )
 
 
+def get_admin_operators(account_email):
+    """Return the active operators whose admins include a user matching
+    account_email (case-insensitive), as a list of {"name", "id", "url"} sorted
+    by name.
+    """
+    if not account_email:
+        return []
+
+    operators = (
+        models.Operator.objects.filter(
+            is_active=True,
+            user_roles__role="admin",
+            user_roles__user__email__iexact=account_email,
+        )
+        .order_by("name", "id")
+        .values("name", "id", "url")
+        .distinct()
+    )
+    return [
+        {"name": op["name"], "id": str(op["id"]), "url": op["url"]} for op in operators
+    ]
+
+
 class AdminEntitlementResolver(EntitlementResolver):
     """
     Admin entitlement resolver.

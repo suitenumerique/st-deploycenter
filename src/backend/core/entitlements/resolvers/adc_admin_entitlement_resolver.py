@@ -3,6 +3,9 @@
 from django.db.models import Q
 
 from core import models
+from core.entitlements.resolvers.admin_entitlement_resolver import (
+    get_admin_operators,
+)
 from core.entitlements.resolvers.extended_admin_entitlement_resolver import (
     ExtendedAdminEntitlementResolver,
 )
@@ -19,9 +22,12 @@ class AdcAdminEntitlementResolver(ExtendedAdminEntitlementResolver):
     commune it has an OperatorOrganizationRole on. Service subscriptions and
     operator_admins_have_admin_role are not considered.
 
-    Because can_admin_collectivites spans all organizations, this resolver also runs
-    when the queried organization has no active subscription. is_admin is
-    only resolved when it has one.
+    Also returns can_admin_operators: the same active operators, as
+    {"name", "id", "url"} dicts (see get_admin_operators).
+
+    Because both span all organizations, this resolver also runs when the
+    queried organization has no active subscription. is_admin is only
+    resolved when it has one.
     """
 
     runs_without_active_subscription = True
@@ -31,11 +37,13 @@ class AdcAdminEntitlementResolver(ExtendedAdminEntitlementResolver):
         result = (
             super().resolve(context) if subscription and subscription.is_active else {}
         )
+        account_email = context.get("account_email") or ""
         return {
             **result,
             "can_admin_collectivites": self._get_operator_admin_collectivites(
-                context.get("account_email") or ""
+                account_email
             ),
+            "can_admin_operators": get_admin_operators(account_email),
         }
 
     @staticmethod

@@ -29,7 +29,7 @@ Which resolver runs depends on the service type (`TYPE_TO_ADMIN_RESOLVER` in
 
 | Service type | Resolver |
 |---|---|
-| `adc` | `AdcAdminEntitlementResolver`: `ExtendedAdminEntitlementResolver` plus `can_admin_collectivites` (below) |
+| `adc` | `AdcAdminEntitlementResolver`: `ExtendedAdminEntitlementResolver` plus `can_admin_collectivites` and `can_admin_operators` (below) |
 | `esd` | `ExtendedAdminEntitlementResolver` (below) |
 | `meet` | `NoopAdminEntitlementResolver` — returns `{}`, no admin entitlement at all |
 | `messages` | `MessagesAdminEntitlementResolver` — returns `can_admin_maildomains` (a list of mail domains) instead of `is_admin` |
@@ -73,8 +73,18 @@ operators have an `OperatorOrganizationRole` on. Service subscriptions and
 `operator_admins_have_admin_role` are not considered, and EPCIs grant nothing
 on their member communes.
 
-It is returned even when the queried organization has no active subscription;
-`is_admin` is only returned when it has one.
+### `can_admin_operators` (ADC service)
+
+The `adc` resolver also returns `can_admin_operators`: the active operators the
+user is a `UserOperatorRole` admin of, matched by `account_email`
+(case-insensitive), as `[{"name": ..., "id": ..., "url": ...}]` sorted by
+name. `url` is the operator homepage and may be `null`. It is
+computed by `get_admin_operators` in `admin_entitlement_resolver.py` so other
+resolvers can reuse it.
+
+Both `can_admin_collectivites` and `can_admin_operators` are returned even when
+the queried organization has no active subscription; `is_admin` is only
+returned when it has one.
 
 ### Resolution priority order
 
