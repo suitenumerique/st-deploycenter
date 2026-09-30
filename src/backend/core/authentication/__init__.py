@@ -1,6 +1,7 @@
 """Custom authentication classes for the deploycenter core app"""
 
 import secrets
+from dataclasses import dataclass
 
 from django.conf import settings
 
@@ -155,3 +156,41 @@ class ServiceExternalManagementApiKeyAuthentication(
 
     model = models.Service
     realm = "Service external management API"
+
+
+@dataclass(frozen=True)
+class ServiceSubscriptionsApiKey:
+    """request.auth of a request authenticated with a subscriptions API key.
+
+    Not a bare Service, so that the permissions written for
+    ServiceExternalManagementApiKeyAuthentication never accept it.
+    """
+
+    service: models.Service
+
+
+class ServiceSubscriptionsApiKeyAuthentication(BaseAuthentication):
+    """Validates a Service subscriptions API key (Service.subscriptions_api_key_hash)."""
+
+    AUTH_HEADER = "Authorization"
+    TOKEN_TYPE = "Bearer"  # noqa S105
+
+    def authenticate(self, request):
+        auth_parts = request.headers.get(self.AUTH_HEADER, "").split(" ")
+        if len(auth_parts) != 2 or auth_parts[0] != self.TOKEN_TYPE:
+            return None
+
+        token = auth_parts[1]
+        if not token:
+            return None
+
+        service = models.Service.objects.filter(
+            subscriptions_api_key_hash=models.Service.hash_subscriptions_api_key(token)
+        ).first()
+        if service is None:
+            raise AuthenticationFailed("Invalid subscriptions API key.")
+
+        return (None, ServiceSubscriptionsApiKey(service=service))
+
+    def authenticate_header(self, request):
+        return f"{self.TOKEN_TYPE} realm='Service subscriptions API'"

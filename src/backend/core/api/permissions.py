@@ -8,6 +8,7 @@ from django.conf import settings
 from rest_framework import permissions
 
 from core import models
+from core.authentication import ServiceSubscriptionsApiKey
 
 logger = logging.getLogger(__name__)
 
@@ -288,6 +289,18 @@ class ServiceExternalManagementPermission(permissions.BasePermission):
                 return False
 
         return True
+
+
+class ServiceSubscriptionsApiKeyPermission(permissions.BasePermission):
+    """
+    Grants access when authenticated via a Service subscriptions API key, and only
+    on the URLs of that service (service_id in URL).
+    """
+
+    def has_permission(self, request, view):
+        if not isinstance(request.auth, ServiceSubscriptionsApiKey):
+            return False
+        return str(request.auth.service.id) == str(view.kwargs.get("service_id"))
 
 
 class StaticApiKeyPermission(permissions.BasePermission):

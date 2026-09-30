@@ -26,6 +26,10 @@ from .api.viewsets.service import (
     ServiceLogoViewSet,
     SubscriptionEntitlementViewSet,
 )
+from .api.viewsets.service_subscriptions import (
+    ServiceOperatorsView,
+    ServiceSubscriptionsViewSet,
+)
 from .api.viewsets.user import UserViewSet
 
 # Create router and register viewsets
@@ -88,6 +92,36 @@ urlpatterns = [
                     "metrics/subscriptions-by-service/",
                     SubscriptionsByServiceView.as_view(),
                     name="api-metrics-subscriptions-by-service",
+                ),
+                path(
+                    "services/<int:service_id>/",
+                    include(
+                        [
+                            path(
+                                "subscriptions/",
+                                ServiceSubscriptionsViewSet.as_view(
+                                    {"get": "list", "post": "create"}
+                                ),
+                                name="service-subscriptions",
+                            ),
+                            path(
+                                "subscriptions/<uuid:pk>/",
+                                ServiceSubscriptionsViewSet.as_view(
+                                    {
+                                        "get": "retrieve",
+                                        "patch": "partial_update",
+                                        "delete": "destroy",
+                                    }
+                                ),
+                                name="service-subscription-detail",
+                            ),
+                            path(
+                                "operators/",
+                                ServiceOperatorsView.as_view(),
+                                name="service-operators",
+                            ),
+                        ]
+                    ),
                 ),
                 re_path(
                     r"^operators/(?P<operator_id>[0-9a-z-]*)/",
