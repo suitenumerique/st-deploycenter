@@ -104,20 +104,28 @@ def _admin_key_url(service, action):
 
 
 def test_admin_generate_subscriptions_api_key():
-    """The admin generates a key, shown once in the success message."""
+    """The admin generates a key, shown once in the POST response itself: not
+    stored in a message (cookie or session), and not cacheable."""
     service = factories.ServiceFactory()
+    client = _admin_client()
 
-    response = _admin_client().post(_admin_key_url(service, "generate"), follow=True)
+    response = client.post(_admin_key_url(service, "generate"))
 
     assert response.status_code == 200
+    key = response.context["key"]
+    assert key in response.content.decode()
+    assert "no-store" in response["Cache-Control"]
+    assert not list(response.context["messages"])
+    assert all(key not in cookie.value for cookie in response.cookies.values())
     service.refresh_from_db()
-    assert service.subscriptions_api_key_hash
-    [message] = [str(m) for m in response.context["messages"]]
-    key = message.rsplit(" ", 1)[-1]
     assert models.Service.hash_subscriptions_api_key(key) == (
         service.subscriptions_api_key_hash
     )
     assert _client(key).get(_list_url(service)).status_code == 200
+
+    # Not shown on the next page either.
+    page = client.get(reverse("admin:core_service_change", args=[service.pk]))
+    assert key not in page.content.decode()
 
 
 def test_admin_regenerate_replaces_subscriptions_api_key(setup):
@@ -506,6 +514,40 @@ def test_create_subscription_already_subscribed(setup, same_operator):
     existing.refresh_from_db()
     assert existing.is_active is False
     assert existing.operator == operator
+
+
+@pytest.mark.parametrize("refused_by", ["model", "database"])
+def test_create_subscription_concurrent_duplicate(setup, monkeypatch, refused_by):
+    """A subscription created by a concurrent request after the pre-check still
+    answers 409, whether the model's unique check or the database refuses it."""
+    existing = factories.ServiceSubscriptionFactory(
+        organization=setup["organization"],
+        service=setup["service"],
+        operator=setup["operator"],
+        is_active=False,
+    )
+    viewset = service_subscriptions.ServiceSubscriptionsViewSet
+    real_is_subscribed = viewset._is_subscribed  # pylint: disable=protected-access
+    calls = []
+
+    def is_subscribed(organization, service):
+        calls.append(None)
+        # The pre-check runs before the concurrent insert.
+        return len(calls) > 1 and real_is_subscribed(organization, service)
+
+    monkeypatch.setattr(viewset, "_is_subscribed", staticmethod(is_subscribed))
+    if refused_by == "database":
+        monkeypatch.setattr(
+            models.ServiceSubscription, "validate_unique", lambda self, **kw: None
+        )
+
+    response = setup["client"].post(
+        _list_url(setup["service"]), _create_body(setup), format="json"
+    )
+
+    assert response.status_code == 409
+    assert len(calls) == 2
+    assert list(models.ServiceSubscription.objects.all()) == [existing]
 
 
 def test_create_active_subscription_checks_activation_rules(setup):

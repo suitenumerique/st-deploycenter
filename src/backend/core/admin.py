@@ -17,6 +17,7 @@ from django.http import Http404, HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import path, reverse
 from django.utils import timezone
+from django.utils.cache import add_never_cache_headers
 from django.utils.translation import gettext_lazy as _
 
 from rest_framework import serializers as drf_serializers
@@ -1024,17 +1025,24 @@ class ServiceAdmin(admin.ModelAdmin):
 
         if action == "generate":
             key = service.generate_subscriptions_api_key()
-            messages.success(
+            # Rendered in this response only, never stored (message storage keeps
+            # messages in a cookie or the session until displayed).
+            response = render(
                 request,
-                _(
-                    "Subscriptions API key generated. Copy it now, it will not be "
-                    "shown again: {}"
-                ).format(key),
+                "admin/core/service/subscriptions_api_key.html",
+                {
+                    **self.admin_site.each_context(request),
+                    "title": _("Subscriptions API key generated"),
+                    "key": key,
+                    "original": service,
+                    "opts": self.model._meta,  # pylint: disable=protected-access # noqa: SLF001
+                },
             )
-        else:
-            service.revoke_subscriptions_api_key()
-            messages.success(request, _("Subscriptions API key revoked."))
+            add_never_cache_headers(response)
+            return response
 
+        service.revoke_subscriptions_api_key()
+        messages.success(request, _("Subscriptions API key revoked."))
         return HttpResponseRedirect(
             reverse("admin:core_service_change", args=[service.pk])
         )

@@ -3,7 +3,8 @@ API endpoints for a service to manage its own subscriptions, authenticated with
 its subscriptions API key (see docs/service_subscriptions_api.md).
 """
 
-from django.db import transaction
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import IntegrityError, transaction
 
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
@@ -231,6 +232,12 @@ class ServiceSubscriptionsViewSet(
             .order_by("organization__name", "id")
         )
 
+    @staticmethod
+    def _is_subscribed(organization, service):
+        return models.ServiceSubscription.objects.filter(
+            organization=organization, service=service
+        ).exists()
+
     @extend_schema(
         request=ServiceKeySubscriptionCreateSerializer,
         responses={
@@ -246,39 +253,43 @@ class ServiceSubscriptionsViewSet(
         )
         body.is_valid(raise_exception=True)
         organization = body.validated_data["organization"]
+        conflict = Response(
+            {"detail": "This organization is already subscribed to this service."},
+            status=status.HTTP_409_CONFLICT,
+        )
 
-        with transaction.atomic():
-            if models.ServiceSubscription.objects.filter(
-                organization=organization, service=service
-            ).exists():
-                return Response(
-                    {
-                        "detail": "This organization is already subscribed to this service."
+        try:
+            with transaction.atomic():
+                if self._is_subscribed(organization, service):
+                    return conflict
+
+                # Same business validation as the operator API (service-specific
+                # metadata, activation rules).
+                data = {"is_active": body.validated_data["is_active"]}
+                if body.validated_data["metadata"]:
+                    data["metadata"] = body.validated_data["metadata"]
+                write = ServiceSubscriptionSerializer(
+                    data=data,
+                    context={
+                        "request": request,
+                        "organization": organization,
+                        "service": service,
                     },
-                    status=status.HTTP_409_CONFLICT,
                 )
-
-            # Same business validation as the operator API (service-specific
-            # metadata, activation rules).
-            data = {"is_active": body.validated_data["is_active"]}
-            if body.validated_data["metadata"]:
-                data["metadata"] = body.validated_data["metadata"]
-            write = ServiceSubscriptionSerializer(
-                data=data,
-                context={
-                    "request": request,
-                    "organization": organization,
-                    "service": service,
-                },
-            )
-            write.is_valid(raise_exception=True)
-            subscription = models.ServiceSubscription.objects.create(
-                organization=organization,
-                service=service,
-                operator=body.validated_data["operator"],
-                is_active=body.validated_data["is_active"],
-                metadata=write.validated_data.get("metadata", {}),
-            )
+                write.is_valid(raise_exception=True)
+                subscription = models.ServiceSubscription.objects.create(
+                    organization=organization,
+                    service=service,
+                    operator=body.validated_data["operator"],
+                    is_active=body.validated_data["is_active"],
+                    metadata=write.validated_data.get("metadata", {}),
+                )
+        except (IntegrityError, DjangoValidationError):
+            # A concurrent request subscribed the organization after the check
+            # above: the model's unique check or the database refused this one.
+            if self._is_subscribed(organization, service):
+                return conflict
+            raise
 
         return Response(
             self.get_serializer(subscription).data, status=status.HTTP_201_CREATED

@@ -7,8 +7,9 @@ form on the service side.
 
 Each `Service` can have one subscriptions API key. None exists by default: a
 staff member generates it from the service's page in the Django admin
-("Generate subscriptions API key"). The key is shown once, in the confirmation
-message. Only its SHA-256 is stored (`Service.subscriptions_api_key_hash`).
+("Generate subscriptions API key"). The key is shown once, on the page that
+answers that button, and is not kept anywhere (not even in a message cookie).
+Only its SHA-256 is stored (`Service.subscriptions_api_key_hash`).
 Generating again replaces the key, "Revoke subscriptions API key" removes it.
 
 It is sent as `Authorization: Bearer <key>` and only works on the endpoints
