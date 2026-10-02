@@ -470,3 +470,50 @@ def test_external_api_update_subscription_quotas():
 
     # Verify domains were not affected
     assert content["metadata"]["domains"] == ["example.com"]
+
+
+def test_external_api_operator_services():
+    """The operator API key can list the services configured for its operator."""
+    operator = factories.OperatorFactory()
+    api_key = "test-external-api-key-12345"
+    operator.external_management_api_key = api_key
+    operator.save()
+
+    configured = factories.ServiceFactory(name="Configured")
+    factories.OperatorServiceConfigFactory(operator=operator, service=configured)
+    factories.ServiceFactory(name="Not configured")
+
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {api_key}")
+
+    response = client.get(f"/api/v1.0/operators/{operator.id}/services/")
+    assert response.status_code == 200
+    assert [s["id"] for s in response.json()["results"]] == [configured.id]
+
+
+def test_external_api_operator_scoped_to_own_operator():
+    """The operator API key only sees its own operator."""
+    operator1 = factories.OperatorFactory()
+    operator2 = factories.OperatorFactory()
+    api_key = "test-external-api-key-12345"
+    operator1.external_management_api_key = api_key
+    operator1.save()
+
+    service = factories.ServiceFactory()
+    factories.OperatorServiceConfigFactory(operator=operator2, service=service)
+
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {api_key}")
+
+    response = client.get("/api/v1.0/operators/")
+    assert response.status_code == 200
+    assert [o["id"] for o in response.json()["results"]] == [str(operator1.id)]
+
+    response = client.get(f"/api/v1.0/operators/{operator1.id}/")
+    assert response.status_code == 200
+
+    response = client.get(f"/api/v1.0/operators/{operator2.id}/")
+    assert response.status_code == 404
+
+    response = client.get(f"/api/v1.0/operators/{operator2.id}/services/")
+    assert response.status_code == 404

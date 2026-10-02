@@ -5,8 +5,10 @@ API endpoints for Operator model.
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.settings import api_settings
 
 from core import models
+from core.authentication import OperatorExternalManagementApiKeyAuthentication
 
 from .. import permissions, serializers
 from . import Pagination
@@ -27,6 +29,9 @@ class OperatorViewSet(viewsets.ReadOnlyModelViewSet):
 
     queryset = models.Operator.objects.all()
     serializer_class = serializers.OperatorSerializer
+    authentication_classes = [
+        OperatorExternalManagementApiKeyAuthentication,
+    ] + list(api_settings.DEFAULT_AUTHENTICATION_CLASSES)
     permission_classes = [permissions.IsAuthenticatedWithAnyMethod]
     pagination_class = Pagination
 
