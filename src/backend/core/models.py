@@ -3,6 +3,8 @@ Declare and configure the models for the deploycenter core application
 """
 # pylint: disable=too-many-lines,too-many-instance-attributes,import-outside-toplevel,cyclic-import
 
+import hashlib
+import secrets
 import uuid
 from enum import StrEnum
 from logging import getLogger
@@ -904,6 +906,19 @@ class Service(BaseModel):
         help_text=_("API key for external management via this service"),
     )
 
+    # Only the hash is stored: the key is shown once, when generated in the admin.
+    subscriptions_api_key_hash = models.CharField(
+        _("subscriptions API key hash"),
+        max_length=64,
+        blank=True,
+        null=True,
+        unique=True,
+        editable=False,
+        help_text=_(
+            "SHA-256 of the API key this service uses to manage its own subscriptions"
+        ),
+    )
+
     is_active = models.BooleanField(
         _("active"),
         default=True,
@@ -951,6 +966,23 @@ class Service(BaseModel):
 
     def __str__(self):
         return f"{self.name} ({self.instance_name})"
+
+    @staticmethod
+    def hash_subscriptions_api_key(key):
+        """Return the stored form of a subscriptions API key."""
+        return hashlib.sha256(key.encode()).hexdigest()
+
+    def generate_subscriptions_api_key(self):
+        """Replace the subscriptions API key and return the new one, in clear."""
+        key = secrets.token_urlsafe(32)
+        self.subscriptions_api_key_hash = self.hash_subscriptions_api_key(key)
+        self.save(update_fields=["subscriptions_api_key_hash", "updated_at"])
+        return key
+
+    def revoke_subscriptions_api_key(self):
+        """Remove the subscriptions API key."""
+        self.subscriptions_api_key_hash = None
+        self.save(update_fields=["subscriptions_api_key_hash", "updated_at"])
 
     def get_logo_url(self):
         """

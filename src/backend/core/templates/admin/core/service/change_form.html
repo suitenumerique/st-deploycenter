@@ -1,8 +1,16 @@
-{% extends "admin/change_form.html" %} 
+{% extends "admin/change_form.html" %}
 
 {% block submit_buttons_bottom %}
 {{ block.super }}
 <div class="submit-row">
   <input type="submit" value="Generate API Key" name="_generate_entitlements_api_key" />
 </div>
+{% if original.pk %}
+<div class="submit-row">
+  <input type="submit" value="Generate subscriptions API key" formaction="{% url 'admin:core_service_subscriptions_api_key' original.pk 'generate' %}" formnovalidate onclick="return confirm('Any existing subscriptions API key stops working. Continue?');" />
+  {% if original.subscriptions_api_key_hash %}
+  <input type="submit" value="Revoke subscriptions API key" formaction="{% url 'admin:core_service_subscriptions_api_key' original.pk 'revoke' %}" formnovalidate class="deletelink" onclick="return confirm('Revoke the subscriptions API key?');" />
+  {% endif %}
+</div>
+{% endif %}
 {% endblock %}

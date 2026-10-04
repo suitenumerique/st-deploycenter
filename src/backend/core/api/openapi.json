@@ -504,7 +504,7 @@
                         "name": "page",
                         "required": false,
                         "in": "query",
-                        "description": "A page number within the paginated result set.",
+                        "description": "Un numéro de page de l'ensemble des résultats.",
                         "schema": {
                             "type": "integer"
                         }
@@ -513,7 +513,7 @@
                         "name": "page_size",
                         "required": false,
                         "in": "query",
-                        "description": "Number of results to return per page.",
+                        "description": "Nombre de résultats à retourner par page.",
                         "schema": {
                             "type": "integer"
                         }
@@ -619,7 +619,7 @@
                         "name": "ordering",
                         "required": false,
                         "in": "query",
-                        "description": "Which field to use when ordering the results.",
+                        "description": "Quel champ utiliser pour classer les résultats.",
                         "schema": {
                             "type": "string"
                         }
@@ -628,7 +628,7 @@
                         "name": "page",
                         "required": false,
                         "in": "query",
-                        "description": "A page number within the paginated result set.",
+                        "description": "Un numéro de page de l'ensemble des résultats.",
                         "schema": {
                             "type": "integer"
                         }
@@ -674,7 +674,7 @@
                         "name": "ordering",
                         "required": false,
                         "in": "query",
-                        "description": "Which field to use when ordering the results.",
+                        "description": "Quel champ utiliser pour classer les résultats.",
                         "schema": {
                             "type": "string"
                         }
@@ -692,7 +692,7 @@
                         "name": "page",
                         "required": false,
                         "in": "query",
-                        "description": "A page number within the paginated result set.",
+                        "description": "Un numéro de page de l'ensemble des résultats.",
                         "schema": {
                             "type": "integer"
                         }
@@ -708,7 +708,7 @@
                         "name": "search",
                         "required": false,
                         "in": "query",
-                        "description": "A search term.",
+                        "description": "Un terme de recherche.",
                         "schema": {
                             "type": "string"
                         }
@@ -879,7 +879,7 @@
                         "name": "page",
                         "required": false,
                         "in": "query",
-                        "description": "A page number within the paginated result set.",
+                        "description": "Un numéro de page de l'ensemble des résultats.",
                         "schema": {
                             "type": "integer"
                         }
@@ -1174,7 +1174,7 @@
                         "name": "page",
                         "required": false,
                         "in": "query",
-                        "description": "A page number within the paginated result set.",
+                        "description": "Un numéro de page de l'ensemble des résultats.",
                         "schema": {
                             "type": "integer"
                         }
@@ -1507,6 +1507,276 @@
                 ],
                 "responses": {
                     "200": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/v1.0/services/{service_id}/operators/": {
+            "get": {
+                "operationId": "services_operators_list",
+                "description": "Operators a service can subscribe organizations with.\n\nGET /api/v1.0/services/<service_id>/operators/[?siret=<siret>]\n\nWith siret, only the operators managing that organization: the valid\noperator_id values to create its subscription.",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "required": false,
+                        "in": "query",
+                        "description": "Un numéro de page de l'ensemble des résultats.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "path",
+                        "name": "service_id",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "siret",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Only the operators managing this organization."
+                    }
+                ],
+                "tags": [
+                    "services"
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PaginatedServiceKeyOperatorList"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/services/{service_id}/subscriptions/": {
+            "get": {
+                "operationId": "services_subscriptions_list",
+                "description": "Subscriptions of a service, managed by that service.\n\nGET    /api/v1.0/services/<service_id>/subscriptions/\nPOST   /api/v1.0/services/<service_id>/subscriptions/\nGET    /api/v1.0/services/<service_id>/subscriptions/<id>/\nPATCH  /api/v1.0/services/<service_id>/subscriptions/<id>/\nDELETE /api/v1.0/services/<service_id>/subscriptions/<id>/",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "is_active",
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "operator_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "page",
+                        "required": false,
+                        "in": "query",
+                        "description": "Un numéro de page de l'ensemble des résultats.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "path",
+                        "name": "service_id",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "siret",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "tags": [
+                    "services"
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PaginatedServiceKeySubscriptionList"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "post": {
+                "operationId": "services_subscriptions_create",
+                "description": "Create a subscription. 409 if the organization already has one.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "service_id",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "services"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ServiceKeySubscriptionCreateRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServiceKeySubscription"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "409": {
+                        "description": "Organization already subscribed."
+                    }
+                }
+            }
+        },
+        "/api/v1.0/services/{service_id}/subscriptions/{id}/": {
+            "get": {
+                "operationId": "services_subscriptions_retrieve",
+                "description": "Subscriptions of a service, managed by that service.\n\nGET    /api/v1.0/services/<service_id>/subscriptions/\nPOST   /api/v1.0/services/<service_id>/subscriptions/\nGET    /api/v1.0/services/<service_id>/subscriptions/<id>/\nPATCH  /api/v1.0/services/<service_id>/subscriptions/<id>/\nDELETE /api/v1.0/services/<service_id>/subscriptions/<id>/",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "service_id",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "services"
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServiceKeySubscription"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "services_subscriptions_partial_update",
+                "description": "Change is_active, the operator and/or the allowed metadata keys.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "service_id",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "services"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedServiceKeySubscriptionUpdateRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServiceKeySubscription"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "services_subscriptions_destroy",
+                "description": "Delete a subscription.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "service_id",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "services"
+                ],
+                "responses": {
+                    "204": {
                         "description": "No response body"
                     }
                 }
@@ -2543,6 +2813,68 @@
                     }
                 }
             },
+            "PaginatedServiceKeyOperatorList": {
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "example": 123
+                    },
+                    "next": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=4"
+                    },
+                    "previous": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=2"
+                    },
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ServiceKeyOperator"
+                        }
+                    }
+                }
+            },
+            "PaginatedServiceKeySubscriptionList": {
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "example": 123
+                    },
+                    "next": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=4"
+                    },
+                    "previous": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=2"
+                    },
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ServiceKeySubscription"
+                        }
+                    }
+                }
+            },
             "PatchedAccountRequest": {
                 "type": "object",
                 "description": "Serialize accounts.",
@@ -2620,6 +2952,23 @@
                             "type": "string",
                             "minLength": 1
                         }
+                    }
+                }
+            },
+            "PatchedServiceKeySubscriptionUpdateRequest": {
+                "type": "object",
+                "description": "PATCH body: is_active, operator_id and/or metadata.",
+                "properties": {
+                    "is_active": {
+                        "type": "boolean"
+                    },
+                    "operator_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "metadata": {
+                        "type": "object",
+                        "additionalProperties": {}
                     }
                 }
             },
@@ -2803,6 +3152,162 @@
                     "url"
                 ]
             },
+            "ServiceKeyOperator": {
+                "type": "object",
+                "description": "Operator, as exposed to a service.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "readOnly": true,
+                        "title": "Nom",
+                        "description": "Name of the operator organization"
+                    },
+                    "url": {
+                        "type": "string",
+                        "format": "uri",
+                        "readOnly": true,
+                        "nullable": true,
+                        "title": "Homepage",
+                        "description": "Homepage URL of the operator"
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "url"
+                ]
+            },
+            "ServiceKeyOrganization": {
+                "type": "object",
+                "description": "Organization, as exposed to a service.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "siret": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "SIRET code of the main establishment"
+                    },
+                    "name": {
+                        "type": "string",
+                        "readOnly": true,
+                        "title": "Nom",
+                        "description": "Official name of the collectivité"
+                    },
+                    "type": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "Type of collectivité (commune, epci, departement, region)"
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "siret",
+                    "type"
+                ]
+            },
+            "ServiceKeySubscription": {
+                "type": "object",
+                "description": "Subscription, as exposed to a service.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "organization": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/ServiceKeyOrganization"
+                            }
+                        ],
+                        "readOnly": true
+                    },
+                    "operator": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/ServiceKeyOperator"
+                            }
+                        ],
+                        "readOnly": true
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "readOnly": true,
+                        "title": "Actif",
+                        "description": "Whether this subscription is currently active"
+                    },
+                    "metadata": {
+                        "type": "object",
+                        "additionalProperties": {},
+                        "description": "Only the keys the service can write.",
+                        "readOnly": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "id",
+                    "is_active",
+                    "metadata",
+                    "operator",
+                    "organization",
+                    "updated_at"
+                ]
+            },
+            "ServiceKeySubscriptionCreateRequest": {
+                "type": "object",
+                "description": "POST body. Resolves the organization and checks the operator.",
+                "properties": {
+                    "siret": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 14
+                    },
+                    "operator_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "is_active": {
+                        "type": "boolean"
+                    },
+                    "metadata": {
+                        "type": "object",
+                        "additionalProperties": {}
+                    }
+                },
+                "required": [
+                    "is_active",
+                    "operator_id",
+                    "siret"
+                ]
+            },
             "ServiceSubscription": {
                 "type": "object",
                 "description": "Serialize service subscriptions.",
@@ -2982,7 +3487,7 @@
             "cookieAuth": {
                 "type": "apiKey",
                 "in": "cookie",
-                "name": "st_deploycenter_sessionid"
+                "name": "sessionid"
             }
         }
     }

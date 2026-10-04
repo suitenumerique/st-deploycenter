@@ -17,6 +17,7 @@ from django.http import Http404, HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import path, reverse
 from django.utils import timezone
+from django.utils.cache import add_never_cache_headers
 from django.utils.translation import gettext_lazy as _
 
 from rest_framework import serializers as drf_serializers
@@ -942,7 +943,13 @@ class ServiceAdmin(admin.ModelAdmin):
     list_filter = ("type", "is_active", "hidden", "created_at")
     search_fields = ("name", "type", "description")
     ordering = ("name", "type", "url")
-    readonly_fields = ("id", "created_at", "updated_at", "entitlements_api_key_display")
+    readonly_fields = (
+        "id",
+        "created_at",
+        "updated_at",
+        "entitlements_api_key_display",
+        "subscriptions_api_key_display",
+    )
 
     fieldsets = (
         (
@@ -966,7 +973,13 @@ class ServiceAdmin(admin.ModelAdmin):
         (_("Configuration"), {"fields": ("config",)}),
         (
             _("API Keys"),
-            {"fields": ("external_management_api_key", "entitlements_api_key_display")},
+            {
+                "fields": (
+                    "external_management_api_key",
+                    "entitlements_api_key_display",
+                    "subscriptions_api_key_display",
+                )
+            },
         ),
         (
             _("Metadata"),
@@ -981,6 +994,58 @@ class ServiceAdmin(admin.ModelAdmin):
         return _("No API key set")
 
     entitlements_api_key_display.short_description = _("API key")
+
+    @admin.display(description=_("Subscriptions API key"))
+    def subscriptions_api_key_display(self, obj):
+        """Only whether a key is set: it is stored hashed."""
+        if obj.subscriptions_api_key_hash:
+            return _("Set (only shown once, when generated)")
+        return _("Not set")
+
+    def get_urls(self):
+        """Add the subscriptions API key actions."""
+        custom_urls = [
+            path(
+                "<path:object_id>/subscriptions-api-key/<str:action>/",
+                self.admin_site.admin_view(self.subscriptions_api_key_view),
+                name="core_service_subscriptions_api_key",
+            ),
+        ]
+        return custom_urls + super().get_urls()
+
+    def subscriptions_api_key_view(self, request, object_id, action):
+        """Generate (or replace) or revoke the subscriptions API key."""
+        if request.method != "POST" or action not in ("generate", "revoke"):
+            raise Http404
+        service = self.get_object(request, unquote(object_id))
+        if service is None:
+            raise Http404
+        if not self.has_change_permission(request, service):
+            raise PermissionDenied
+
+        if action == "generate":
+            key = service.generate_subscriptions_api_key()
+            # Rendered in this response only, never stored (message storage keeps
+            # messages in a cookie or the session until displayed).
+            response = render(
+                request,
+                "admin/core/service/subscriptions_api_key.html",
+                {
+                    **self.admin_site.each_context(request),
+                    "title": _("Subscriptions API key generated"),
+                    "key": key,
+                    "original": service,
+                    "opts": self.model._meta,  # pylint: disable=protected-access # noqa: SLF001
+                },
+            )
+            add_never_cache_headers(response)
+            return response
+
+        service.revoke_subscriptions_api_key()
+        messages.success(request, _("Subscriptions API key revoked."))
+        return HttpResponseRedirect(
+            reverse("admin:core_service_change", args=[service.pk])
+        )
 
     def response_change(self, request, obj):
         """Handle the response after a change has been posted."""
@@ -1021,6 +1086,7 @@ class ServiceAdmin(admin.ModelAdmin):
             original.pk = None
             original.id = None
             original.name = f"{original.name} (copy)"
+            original.subscriptions_api_key_hash = None
             original.save()
 
             if original_required_services:

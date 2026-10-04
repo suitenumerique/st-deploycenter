@@ -36,3 +36,14 @@ class AccountFilter(django_filters.FilterSet):
                 ).distinct()
 
         return queryset.none()
+
+
+class ServiceKeySubscriptionFilter(django_filters.FilterSet):
+    """Filter a service's subscriptions (subscriptions API key endpoints)."""
+
+    siret = django_filters.CharFilter(field_name="organization__siret")
+    operator_id = django_filters.UUIDFilter(field_name="operator_id")
+
+    class Meta:
+        model = models.ServiceSubscription
+        fields = ["siret", "operator_id", "is_active"]
