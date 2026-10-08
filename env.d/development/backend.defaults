@@ -9,11 +9,9 @@ DB_PORT=5432
 DJANGO_ALLOWED_HOSTS=*
 DJANGO_SECRET_KEY=ThisIsAnExampleKeyForDevPurposeOnly
 DJANGO_SETTINGS_MODULE=deploycenter.settings
-DJANGO_SUPERUSER_PASSWORD=admin
 
 # Logging
 # Set to DEBUG level for dev only
-LOGGING_LEVEL_HANDLERS_CONSOLE=INFO
 LOGGING_LEVEL_LOGGERS_ROOT=INFO
 LOGGING_LEVEL_LOGGERS_APP=INFO
 
@@ -22,18 +20,11 @@ PYTHONPATH=/app
 
 # Deploy Center settings
 
-# Mail
-DJANGO_EMAIL_BRAND_NAME="La Suite territoriale"
-DJANGO_EMAIL_HOST="mailcatcher"
-DJANGO_EMAIL_LOGO_IMG="http://localhost:8960/assets/logo-suite-numerique.png"
-DJANGO_EMAIL_PORT=1025
-
 # API
 API_PUBLIC_URL="http://localhost:8961/api/v1.0/"
 
-# Media
+# Static files: no manifest needed in development
 STORAGES_STATICFILES_BACKEND=django.contrib.staticfiles.storage.StaticFilesStorage
-MEDIA_BASE_URL=http://localhost:8902
 
 # OIDC
 OIDC_OP_JWKS_ENDPOINT=http://keycloak:8802/realms/deploycenter/protocol/openid-connect/certs
@@ -52,6 +43,3 @@ LOGOUT_REDIRECT_URL=http://localhost:8960
 
 OIDC_REDIRECT_ALLOWED_HOSTS=["http://localhost:8962"]
 OIDC_AUTH_REQUEST_EXTRA_PARAMS={"acr_values": "eidas1"}
-
-# Frontend
-FRONTEND_THEME=dsfr

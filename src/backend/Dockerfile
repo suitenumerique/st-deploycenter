@@ -37,13 +37,15 @@ COPY --chmod=0755 strip-python.sh /usr/local/bin/strip-python
 
 # ---- Build-only system deps ----
 # Kept in this stage alone so no compiler reaches a runtime image. rdfind is used
-# by the static link collector below.
+# by the static link collector below, git by uv: dramatiq-redis-streams is
+# installed from its repository (see pyproject.toml).
 FROM uv AS uv-build
 
 RUN <<EOR
 apt-get update
 DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
     curl \
+    git \
     rdfind \
     build-essential
 rm -rf /var/lib/apt/lists/*
