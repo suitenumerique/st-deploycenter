@@ -15,7 +15,6 @@ name: Docker images
 
 permissions:
   contents: read
-  packages: write
 
 on:
   push:
@@ -60,6 +59,10 @@ jobs:
     # when it failed.
     if: ${{ !cancelled() && needs.check-release.result != 'failure' }}
     runs-on: ubuntu-latest
+    # Only this job writes: check-release keeps the read-only default.
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:

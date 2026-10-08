@@ -107,9 +107,10 @@ def parse_args():
     parser.add_argument(
         "--loglevel",
         "-l",
-        type=str,
+        type=lambda value: value.upper(),
+        choices=("INFO", "DEBUG"),
         default="INFO",
-        help="Logging level. Default: INFO",
+        help="Logging level: DEBUG turns on Dramatiq's verbose logs. Default: INFO.",
     )
     return parser.parse_args()
 

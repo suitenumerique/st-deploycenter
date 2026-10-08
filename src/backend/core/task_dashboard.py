@@ -51,9 +51,11 @@ def _is_same_origin(request):
         origin = referer
 
     parsed = urlparse(origin)
-    if not parsed.netloc:
+    if not parsed.scheme or not parsed.netloc:
         return False
-    return parsed.netloc == request.get_host()
+    # Scheme included, as Django's own CSRF check does: over HTTPS, a page
+    # served to the browser over plain HTTP on this host is another origin.
+    return (parsed.scheme, parsed.netloc) == (request.scheme, request.get_host())
 
 
 def _build_environ(request):

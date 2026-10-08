@@ -70,6 +70,14 @@ class TestSameOriginGuard:
 
         assert task_dashboard._is_same_origin(request) is True  # pylint: disable=protected-access
 
+    def test_a_plain_http_origin_is_rejected_on_a_secure_request(self):
+        """Same host, other scheme: another origin, as for Django's CSRF check."""
+        request = RequestFactory(headers={"origin": "http://testserver"}).post(
+            "/admin/tasks/api/queues/default/flush", secure=True
+        )
+
+        assert task_dashboard._is_same_origin(request) is False  # pylint: disable=protected-access
+
     def test_no_origin_and_no_referer_is_rejected(self):
         """A request that proves nothing about where it came from gets nothing."""
         assert task_dashboard._is_same_origin(self._post()) is False  # pylint: disable=protected-access
