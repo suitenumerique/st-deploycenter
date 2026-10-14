@@ -87,6 +87,7 @@ def test_external_api_create_subscription():
 
     organization = factories.OrganizationFactory(siret="12345678901234")
     service = factories.ServiceFactory()
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
     factories.OperatorOrganizationRoleFactory(
         operator=operator, organization=organization
     )
@@ -124,6 +125,7 @@ def test_external_api_create_subscription():
     # Test creating subscription with is_active=False
     organization2 = factories.OrganizationFactory(siret="98765432109876")
     service2 = factories.ServiceFactory()
+    factories.OperatorServiceConfigFactory(operator=operator, service=service2)
     factories.OperatorOrganizationRoleFactory(
         operator=operator, organization=organization2
     )
@@ -346,6 +348,7 @@ def test_external_api_create_messages_subscription_with_domains_and_quotas():
         siret="12345678901234", name="Test Mairie"
     )
     service = factories.ServiceFactory(type="messages", name="Messages")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
     factories.OperatorOrganizationRoleFactory(
         operator=operator, organization=organization
     )
@@ -421,6 +424,7 @@ def test_external_api_update_subscription_quotas():
     organization = factories.OrganizationFactory()
     # Use a service type that doesn't auto-create entitlements
     service = factories.ServiceFactory(type="test_service", name="Test Service")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
     factories.OperatorOrganizationRoleFactory(
         operator=operator, organization=organization
     )

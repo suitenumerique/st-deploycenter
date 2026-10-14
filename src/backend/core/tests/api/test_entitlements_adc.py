@@ -795,6 +795,7 @@ def test_api_subscription_patch_auto_admin_valid():
         type="adc",
         config={"entitlements_api_key": "test_token"},
     )
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
     factories.ServiceSubscriptionFactory(
         organization=organization,
         service=service,

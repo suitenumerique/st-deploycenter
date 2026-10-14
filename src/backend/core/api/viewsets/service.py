@@ -9,7 +9,7 @@ from django.http import HttpResponse
 
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import mixins, status, viewsets
-from rest_framework.exceptions import NotFound
+from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.settings import api_settings
@@ -219,14 +219,36 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
             organization = models.Organization.objects.get(
                 id=self.kwargs["organization_id"]
             )
-            service = models.Service.objects.get(id=self.kwargs["service_id"])
+            service = models.Service.objects.filter(
+                id=self.kwargs["service_id"]
+            ).first()
+            if service is None:
+                raise NotFound("Service not found.")
             operator = models.Operator.objects.get(id=self.kwargs["operator_id"])
+
+            is_configured = models.OperatorServiceConfig.objects.filter(
+                operator=operator, service=service
+            ).exists()
+            if subscription is None and not is_configured:
+                raise PermissionDenied(
+                    "This service is not available for this operator."
+                )
 
             # Validate request data
             serializer = self.get_serializer(
                 subscription, data=request.data, partial=True
             )
             serializer.is_valid(raise_exception=True)
+
+            # An existing subscription to a service no longer configured for the
+            # operator may still be deactivated, but not kept or made active.
+            is_active = serializer.validated_data.get(
+                "is_active", subscription.is_active if subscription else False
+            )
+            if is_active and not is_configured:
+                raise PermissionDenied(
+                    "This service is not available for this operator."
+                )
 
             if subscription:
                 created = False

@@ -14,11 +14,11 @@ class MessagesServiceHandler(ServiceHandler):
         {
             "type": Entitlement.EntitlementType.MESSAGES_STORAGE,
             "account_type": "mailbox",
-            "config": {"max_storage": 1000 * 1000 * 1000 * 5},  # 5GB
+            "config": {"max_storage": 1000 * 1000 * 1000 * 10},  # 10GB
         },
         {
             "type": Entitlement.EntitlementType.MESSAGES_STORAGE,
             "account_type": "organization",
-            "config": {"max_storage": 1000 * 1000 * 1000 * 10},  # 10GB
+            "config": {"max_storage": 1000 * 1000 * 1000 * 20},  # 20GB
         },
     ]

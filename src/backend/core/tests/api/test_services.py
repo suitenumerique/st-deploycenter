@@ -7,7 +7,7 @@ Test users API endpoints in the deploycenter core app.
 import pytest
 from rest_framework.test import APIClient
 
-from core import factories
+from core import factories, models
 
 pytestmark = pytest.mark.django_db
 
@@ -259,6 +259,7 @@ def test_api_organization_service_enable_delete():
     )
 
     service1 = factories.ServiceFactory()
+    factories.OperatorServiceConfigFactory(operator=operator, service=service1)
     service2 = factories.ServiceFactory()
     factories.ServiceSubscriptionFactory(
         organization=organization_nok1, service=service2, operator=operator2
@@ -338,6 +339,7 @@ def test_api_organization_service_inactive():
     )
 
     service1 = factories.ServiceFactory()
+    factories.OperatorServiceConfigFactory(operator=operator, service=service1)
     service2 = factories.ServiceFactory()
     factories.ServiceSubscriptionFactory(
         organization=organization_nok1, service=service2, operator=operator2
@@ -1191,3 +1193,112 @@ def test_api_organizations_services_subscription_includes_operator_info():
     assert subscription["is_active"] is True
     assert subscription["operator_id"] == str(operator1.id)
     assert subscription["operator_name"] == "Operator 1"
+
+
+def _operator_member_client():
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    return client, operator, organization
+
+
+def test_api_organizations_services_list_includes_own_unconfigured_subscription():
+    """
+    A subscription the operator holds on a service no longer configured for it is
+    listed, so it can still be deactivated.
+    """
+    client, operator, organization = _operator_member_client()
+    service = factories.ServiceFactory()
+    factories.ServiceSubscriptionFactory(
+        organization=organization, service=service, operator=operator
+    )
+
+    response = client.get(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/"
+    )
+    assert response.status_code == 200
+    assert service.id in [r["id"] for r in response.json()["results"]]
+
+
+@pytest.mark.parametrize("body", [{}, {"is_active": True}, {"is_active": False}])
+def test_api_organization_service_subscription_unconfigured_service(body):
+    """An operator cannot subscribe an organization to a service not configured for it."""
+    client, operator, organization = _operator_member_client()
+    service = factories.ServiceFactory()
+    factories.OperatorServiceConfigFactory(service=service)  # another operator
+
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/subscription/",
+        body,
+        format="json",
+    )
+    assert response.status_code == 403
+    assert not models.ServiceSubscription.objects.filter(
+        organization=organization, service=service
+    ).exists()
+
+
+def test_api_organization_service_subscription_unconfigured_service_api_key():
+    """Same as above with the operator external management API key."""
+    operator = factories.OperatorFactory(external_management_api_key="op-key")
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    service = factories.ServiceFactory()
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION="Bearer op-key")
+
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/subscription/",
+        {"is_active": True},
+        format="json",
+    )
+    assert response.status_code == 403
+    assert not models.ServiceSubscription.objects.filter(
+        organization=organization, service=service
+    ).exists()
+
+
+def test_api_organization_service_subscription_unknown_service():
+    """An unknown service id is a 404, not a 500."""
+    client, operator, organization = _operator_member_client()
+
+    response = client.patch(
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/999999/subscription/",
+        {"is_active": True},
+        format="json",
+    )
+    assert response.status_code == 404
+
+
+def test_api_organization_service_subscription_no_longer_configured():
+    """
+    An existing subscription to a service no longer configured for the operator
+    can be deactivated, but not kept active or reactivated.
+    """
+    client, operator, organization = _operator_member_client()
+    service = factories.ServiceFactory()
+    subscription = factories.ServiceSubscriptionFactory(
+        organization=organization, service=service, operator=operator, is_active=True
+    )
+    url = f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}/services/{service.id}/subscription/"
+
+    response = client.patch(url, {"metadata": {"foo": "bar"}}, format="json")
+    assert response.status_code == 403
+
+    response = client.patch(url, {"is_active": False}, format="json")
+    assert response.status_code == 200
+    subscription.refresh_from_db()
+    assert subscription.is_active is False
+
+    response = client.patch(url, {"is_active": True}, format="json")
+    assert response.status_code == 403
+    subscription.refresh_from_db()
+    assert subscription.is_active is False

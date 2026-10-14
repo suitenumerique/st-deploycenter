@@ -49,7 +49,7 @@ def test_subscription_entitlements_default():
         account_type="user",
         account=None,
     )
-    assert entitlement_user.config["max_storage"] == 1000 * 1000 * 1000 * 5
+    assert entitlement_user.config["max_storage"] == 1000 * 1000 * 1000 * 10
 
     entitlement_organization = models.Entitlement.objects.get(
         service_subscription__organization=organization,
@@ -59,7 +59,7 @@ def test_subscription_entitlements_default():
         account_type="organization",
         account=None,
     )
-    assert entitlement_organization.config["max_storage"] == 1000 * 1000 * 1000 * 10
+    assert entitlement_organization.config["max_storage"] == 1000 * 1000 * 1000 * 20
 
 
 @pytest.mark.django_db()
@@ -306,8 +306,8 @@ def test_api_entitlements_user_can_upload(
                 "can_access": True,
                 "can_upload": True,
                 "can_upload_resolve_level": "user",
-                "max_storage_account": 1000 * 1000 * 1000 * 5,
-                "max_storage_organization": 1000 * 1000 * 1000 * 10,
+                "max_storage_account": 1000 * 1000 * 1000 * 10,
+                "max_storage_organization": 1000 * 1000 * 1000 * 20,
             },
             "metrics": {
                 "account": {
@@ -424,8 +424,8 @@ def test_api_entitlements_user_can_upload(
             "entitlements": {
                 "can_upload": False,
                 "can_upload_resolve_level": "organization",
-                "max_storage_account": 1000 * 1000 * 1000 * 5,
-                "max_storage_organization": 1000 * 1000 * 1000 * 10,
+                "max_storage_account": 1000 * 1000 * 1000 * 10,
+                "max_storage_organization": 1000 * 1000 * 1000 * 20,
                 "can_access": True,
             },
             "metrics": {
@@ -618,8 +618,8 @@ def test_api_entitlements_organization_can_upload(
                 "can_access": True,
                 "can_upload": can_upload,
                 "can_upload_resolve_level": resolve_level,
-                "max_storage_account": 1000 * 1000 * 1000 * 5,
-                "max_storage_organization": 1000 * 1000 * 1000 * 10,
+                "max_storage_account": 1000 * 1000 * 1000 * 10,
+                "max_storage_organization": 1000 * 1000 * 1000 * 20,
             },
             "metrics": {
                 "account": {

@@ -47,7 +47,7 @@ def test_subscription_entitlements_default():
         account_type="mailbox",
         account=None,
     )
-    assert entitlement_mailbox.config["max_storage"] == 1000 * 1000 * 1000 * 5
+    assert entitlement_mailbox.config["max_storage"] == 1000 * 1000 * 1000 * 10
 
     entitlement_organization = models.Entitlement.objects.get(
         service_subscription__organization=organization,
@@ -57,7 +57,7 @@ def test_subscription_entitlements_default():
         account_type="organization",
         account=None,
     )
-    assert entitlement_organization.config["max_storage"] == 1000 * 1000 * 1000 * 10
+    assert entitlement_organization.config["max_storage"] == 1000 * 1000 * 1000 * 20
 
 
 @responses.activate

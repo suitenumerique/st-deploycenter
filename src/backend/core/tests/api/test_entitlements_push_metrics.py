@@ -175,8 +175,8 @@ def test_api_entitlements_post_without_metrics_matches_get(body):
                 "can_access": True,
                 "can_upload": True,
                 "can_upload_resolve_level": "user",
-                "max_storage_account": 1000 * 1000 * 1000 * 5,
-                "max_storage_organization": 1000 * 1000 * 1000 * 10,
+                "max_storage_account": 1000 * 1000 * 1000 * 10,
+                "max_storage_organization": 1000 * 1000 * 1000 * 20,
             },
             "metrics": {
                 "account": {"storage_used": 500},
