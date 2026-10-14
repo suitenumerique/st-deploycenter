@@ -20,7 +20,7 @@ convention, not an enforced invariant: the write path
 superuser's domains are well-formed and claimed by no other active subscription —
 it does **not** check them against `routable_domains()`. A routed domain also
 counts as its own provenance, so one put there by mistake becomes routable, is
-published in the generated allowlist as `# Source: routed`, and matches on both
+published in the generated allowlist as a `source: routed` row, and matches on both
 sides of `proconnect_detect_drift`. Nothing downstream will flag it.
 
 ## The buckets
@@ -75,9 +75,35 @@ never restates the rule:
 
 - The **generated** allowlist is ours: `GET /api/v1.0/proconnect/oidc_providers.yaml`
   renders every provider's routable domains as the YAML api-partenaires reads
-  (`allowed_attached_email_domains`, one entry per uid, each domain commented with
-  its provenance and the org's Service-Public URL). It is a superset of everything
-  we may ever push.
+  (`allowed_attached_email_domains`, one entry per uid). It is a superset of
+  everything we may ever push.
+
+  Each domain is a mapping, not a bare string, and api-partenaires only knows two
+  `source` values:
+
+  ```yaml
+  - domain: a.fr
+    fiche: https://lannuaire.service-public.gouv.fr/bretagne/morbihan/<uuid>
+    siret: "21560123400017"
+    source: dila
+  - domain: b.fr # candidates
+    source: routed
+  ```
+
+  - `dila` is for the `dpnt` bucket only (declared on service-public.gouv.fr). It
+    needs `fiche`, the organization's Service-Public URL, which must look like a
+    fiche (`https://lannuaire.service-public.gouv.fr/.../<uuid>`). A `dpnt` domain
+    whose organization has no such URL is sent as `routed` instead. `siret` is the
+    organization's SIRET, written (quoted: bare, 14 digits are a YAML integer) only
+    when it is 14 digits. api-partenaires does not read it today.
+  - `routed` is for everything else (`candidates`, `manual`, live domains). It is
+    their manual-exception source, with no fiche, and their CI warns on it. Our own
+    provenance stays visible as a trailing comment (`# candidates`) so the reviewer
+    of the api-partenaires PR can tell them apart.
+
+  The renderer refuses to write an unknown source, a `dila` row without a valid
+  fiche, or a SIRET that is not 14 digits: this file gates authentication, and
+  these values are imported data.
 
   Always gated: `Authorization: Bearer <PROCONNECT_ALLOWLIST_VIEW_API_KEY>`, and
   an unset key closes the route rather than opening it — same rule as every other
@@ -87,7 +113,9 @@ never restates the rule:
   It lags ours, and their API rejects any domain not yet in it.
 
 `proconnect_fetch_prevalidated` fetches the deployed one hourly (`cron.json`) and
-caches it per idp, so `proconnect_prevalidated` can tell the user which domains are
+caches it per idp (it only reads the `domain` of each row: `source`, `fiche` and
+`siret` are ignored, and a provider whose rows yield no readable domain keeps its
+previous cache entry), so `proconnect_prevalidated` can tell the user which domains are
 routable *now* ("pré-validé") and which are waiting for the next deploy ("pas
 encore pré-validé", up to a week). The cache TTL
 (`PROCONNECT_DOMAIN_ALLOWLIST_CACHE_TTL`, 4h) is the fallback if the cron stops,
@@ -123,7 +151,8 @@ so it holds exactly the names somebody thought to type. `gmail.com` is on it,
 criterion 1.1 only ("a website is declared on service-public.gouv.fr"). 2.2 is a
 *mail* criterion and never applies to the website domain, and 1.2 (sovereign
 extension) is not required either. Whatever a commune wrote in its `site_internet`
-field lands in `dpnt`, becomes routable, and is published as `# Source: DILA`.
+field lands in `dpnt`, becomes routable, and is published as a `source: dila` row
+with the organization's fiche.
 
 That is how the first PR ended up proposing `intramuros.org` (declared by 249
 organizations), `lapagelocale.fr` (102), `facebook.com` (49), `espace-citoyens.net`
@@ -148,7 +177,9 @@ name hands the routing to whoever registers it first, for the price of a domain.
 **4. The review script.** `scripts/validate_proconnect_allowlist.py` runs on the
 api-partenaires PR and puts every domain of the new file into exactly one of five
 categories, tried in order, so the counts always add up to the size of the file.
-Its own docstring is the reference; the short version is:
+It reads the `domain`, `source` and `fiche` fields of each entry, and flags any line
+it does not recognise rather than skipping it. Its own docstring is the reference;
+the short version is:
 
 | | |
 |---|---|

@@ -19,6 +19,7 @@ import sentry_sdk
 from core.services.domainnames import normalize_domains
 from core.services.proconnect import (
     ATTACHED_EMAIL_DOMAINS_KEY,
+    BATCH_MAX_RETRY_AFTER,
     ProConnectPartnersClient,
     ProConnectPartnersError,
     routed_domains_by_idp,
@@ -42,7 +43,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        client = ProConnectPartnersClient()
+        client = ProConnectPartnersClient(max_retry_after=BATCH_MAX_RETRY_AFTER)
         if not client.is_configured:
             raise CommandError("api-partenaires is not configured.")
 

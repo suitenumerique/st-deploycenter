@@ -13,7 +13,7 @@ nouvelle. Recuperer les deux versions est le travail du shell, pas du script ::
 
 Il telecharge deux fichiers publics, tous deux mis en cache dans ``--cache-dir``:
 l'export de l'annuaire DILA (service-public.gouv.fr), qui est la source meme que
-citent les commentaires de la liste, et le Code officiel geographique de l'INSEE,
+citent les champs ``fiche`` de la liste, et le Code officiel geographique de l'INSEE,
 qui dit comment chaque commune s'appelle reellement. Avec ``--dila-json`` et
 ``--cog-csv`` il utilise des copies locales et ne touche jamais au reseau.
 
@@ -127,6 +127,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
+from typing import NamedTuple
 from urllib.parse import urlparse
 
 # Seulement les champs que lisent les categories: l'export complet fait 280 Mo,
@@ -747,7 +748,12 @@ def domain_from_url(url):
     url = url.strip()
     if "://" not in url:
         url = "http://" + url
-    host = (urlparse(url).netloc or "").lower().split(":")[0]
+    try:
+        netloc = urlparse(url).netloc
+    except ValueError:
+        # Une saisie comme ``http://[x`` : pas de nom d'hote lisible.
+        return None
+    host = (netloc or "").lower().split(":")[0]
     if host.startswith("www."):
         host = host[4:]
     return host or None
@@ -944,7 +950,9 @@ def load_dila(path, cache_dir, cog=None):
 # --- lecture de la liste -----------------------------------------------------
 
 UID_RE = re.compile(r'^\s*-\s+uid:\s*"?([^"\s]+)"?\s*$')
-ENTRY_RE = re.compile(r"^\s*-\s+(\S+)\s*(?:#\s*(.*?))?\s*$")
+# Un domaine ouvre une entree: ``- domain: a.fr``, suivi de ses champs.
+DOMAIN_RE = re.compile(r"^\s*-\s+domain:\s+(\S+)\s*(?:#\s*(.*?))?\s*$")
+FIELD_RE = re.compile(r'^\s+(fiche|siret|source):\s+"?([^\s"#]+)"?\s*(?:#.*)?$')
 FICHE_RE = re.compile(
     r"lannuaire\.service-public\.gouv\.fr/(?:[^/\s]+/)*"
     r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
@@ -953,31 +961,30 @@ FICHE_RE = re.compile(
 
 @dataclass(slots=True)
 class Entry:
-    """Une ligne ``- domaine # Source: <src> | <url fiche>`` de la liste."""
+    """Une entree de la liste: ``domain`` et ses champs ``source`` et ``fiche``."""
 
     domain: str
-    source: str | None
-    url: str | None
     uid: str
     line: int
-    fiche: str | None = None
+    source: str | None = None
+    url: str | None = None
 
-    def __post_init__(self):
+    @property
+    def fiche(self):
+        """L'identifiant de la fiche DILA que cite ``url``, s'il y en a un."""
         match = FICHE_RE.search(self.url or "")
-        self.fiche = match.group(1) if match else None
+        return match.group(1) if match else None
 
 
-def parse_source_comment(comment):
-    """Decoupe ``"Source: <src> | <url>"`` en ``(source, url)``; l'un ou l'autre peut etre None."""
-    if not comment:
-        return None, None
-    text = comment.strip()
-    if text.lower().startswith("source:"):
-        text = text.split(":", 1)[1].strip()
-    parts = re.split(r"\s*\|\s*", text, maxsplit=1)
-    if len(parts) == 2:
-        return parts[0].strip() or None, parts[1].strip() or None
-    return text or None, None
+class Line(NamedTuple):
+    """Une ligne etiquetee par :func:`scan_allowlist`."""
+
+    kind: str
+    text: str
+    number: int
+    uid: str | None
+    domain: str | None
+    match: re.Match | None
 
 
 BLANK_RE = re.compile(r"^\s*$")
@@ -990,16 +997,27 @@ MAX_PROBLEMS = 20
 
 
 def scan_allowlist(text):
-    """Etiquette chaque ligne du fichier: ``(kind, line, number, uid, match)``.
+    """Etiquette chaque ligne du fichier: une :class:`Line`.
 
     Le seul endroit qui dit a quoi ressemble une liste d'autorisation. Le lecteur
     et l'ecrivain ci-dessous passent tous deux par ici: un relecteur verifie donc
     la grammaire une seule fois, et sait qu'aucun des deux ne peut s'en ecarter.
 
-    ``kind`` vaut ``uid``, ``domain``, ``key`` (la ligne
-    ``allowed_attached_email_domains:``), ``other`` (ligne vide, commentaire,
-    marqueur de document, cle racine) ou ``unknown``. ``uid`` est le fournisseur
-    auquel la ligne appartient, ``None`` avant le premier.
+    Une entree tient sur plusieurs lignes::
+
+        - domain: a.fr
+          fiche: https://lannuaire.service-public.gouv.fr/.../<uuid>
+          siret: "21560123400017"
+          source: dila
+
+    ``kind`` vaut ``uid``, ``domain`` (la ligne ``- domain:`` qui ouvre une
+    entree), ``field`` (une ligne ``fiche:``, ``siret:`` ou ``source:`` de
+    l'entree en cours), ``key`` (la ligne ``allowed_attached_email_domains:``),
+    ``other`` (ligne vide, commentaire, marqueur de document, cle racine) ou
+    ``unknown``. ``uid`` est le fournisseur auquel la ligne appartient, ``None``
+    avant le premier; ``domain`` est le domaine de l'entree a laquelle elle
+    appartient (``None`` hors d'une entree), ce qui permet de retirer une entree
+    en entier sans relire sa structure.
 
     Le risque d'un analyseur ecrit a la main est qu'un changement dans la sortie
     du generateur lui fasse sauter des lignes en silence, ce qui ferait de ce
@@ -1008,7 +1026,7 @@ def scan_allowlist(text):
     en ``unknown`` et est signalee. C'est une garantie plus forte qu'une
     comparaison avec une bibliotheque YAML, et elle ne coute aucune dependance.
     """
-    uid = None
+    uid = domain = None
     for number, line in enumerate(text.splitlines(keepends=True), start=1):
         if (
             BLANK_RE.match(line)
@@ -1016,48 +1034,66 @@ def scan_allowlist(text):
             or DOC_MARKER_RE.match(line)
             or ROOT_RE.match(line)
         ):
-            yield "other", line, number, uid, None
+            yield Line("other", line, number, uid, domain, None)
             continue
         if DOMAINS_KEY_RE.match(line):
-            yield "key", line, number, uid, None
+            domain = None
+            yield Line("key", line, number, uid, domain, None)
             continue
         match = UID_RE.match(line)
         if match:
-            uid = match.group(1)
-            yield "uid", line, number, uid, match
+            uid, domain = match.group(1), None
+            yield Line("uid", line, number, uid, domain, match)
             continue
-        match = ENTRY_RE.match(line)
-        if match and ":" not in match.group(1):
-            yield "domain", line, number, uid, match
+        match = DOMAIN_RE.match(line)
+        if match:
+            domain = match.group(1)
+            yield Line("domain", line, number, uid, domain, match)
             continue
-        yield "unknown", line, number, uid, None
+        match = FIELD_RE.match(line)
+        if match and domain is not None:
+            yield Line("field", line, number, uid, domain, match)
+            continue
+        yield Line("unknown", line, number, uid, domain, None)
 
 
 def parse_allowlist(text):
     """Lit une liste d'autorisation en ``(entries, uids, problems)``.
 
-    Ligne a ligne plutot qu'avec un chargeur YAML, parce que les commentaires en
-    fin de ligne ``# Source: ... | ...`` portent la fiche que chaque ligne invoque
-    et qu'un chargeur les supprime.
+    Ligne a ligne plutot qu'avec un chargeur YAML, pour qu'une forme que cet
+    analyseur ne reconnait pas soit signalee au lieu d'etre lue de travers (voir
+    :func:`scan_allowlist`).
     """
     entries, uids, problems = [], [], []
+    entry, fields = None, set()
 
     def note(number, line, why):
         if len(problems) < MAX_PROBLEMS:
             problems.append(f"ligne {number}: {why}: {line.strip()[:60]!r}")
 
-    for kind, line, number, uid, match in scan_allowlist(text):
-        if kind == "uid":
-            if uid not in uids:
-                uids.append(uid)
-        elif kind == "unknown":
-            note(number, line, "forme inconnue de cet analyseur")
-        elif kind == "domain":
-            if uid is None:
-                note(number, line, "un domaine avant tout uid de fournisseur")
+    for row in scan_allowlist(text):
+        if row.kind == "uid":
+            entry = None
+            if row.uid not in uids:
+                uids.append(row.uid)
+        elif row.kind == "unknown":
+            note(row.number, row.text, "forme inconnue de cet analyseur")
+        elif row.kind == "domain":
+            entry = None
+            if row.uid is None:
+                note(row.number, row.text, "un domaine avant tout uid de fournisseur")
                 continue
-            source, url = parse_source_comment(match.group(2))
-            entries.append(Entry(match.group(1), source, url, uid, number))
+            entry, fields = Entry(row.domain, row.uid, row.number), set()
+            entries.append(entry)
+        elif row.kind == "field" and entry is not None:
+            name, value = row.match.groups()
+            if name in fields:
+                note(row.number, row.text, f"champ {name} deux fois dans l'entree")
+            fields.add(name)
+            if name == "source":
+                entry.source = value
+            elif name == "fiche":
+                entry.url = value
 
     if not uids and text.strip():
         problems.append("aucun uid de fournisseur dans le fichier")

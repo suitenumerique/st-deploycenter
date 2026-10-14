@@ -67,20 +67,23 @@ def filter_allowlist(text, keep):
     # Premiere passe: quels fournisseurs ne gardent rien, et ont donc besoin de la
     # liste vide explicite sur leur ligne de cle. La seconde ecrit le fichier.
     survivors = defaultdict(int)
-    for kind, _, _, uid, match in scan_allowlist(text):
-        if kind == "uid":
-            survivors.setdefault(uid, 0)
-        elif kind == "domain" and uid is not None and match.group(1) in keep:
-            survivors[uid] += 1
+    for row in scan_allowlist(text):
+        if row.kind == "uid":
+            survivors.setdefault(row.uid, 0)
+        elif row.kind == "domain" and row.uid is not None and row.domain in keep:
+            survivors[row.uid] += 1
 
     out = []
-    for kind, line, _, uid, match in scan_allowlist(text):
-        if kind == "domain" and uid is not None and match.group(1) not in keep:
+    for row in scan_allowlist(text):
+        # Une entree s'etend sur plusieurs lignes (le domaine, puis ses champs):
+        # elles partent toutes ensemble.
+        if row.kind in ("domain", "field") and row.uid is not None:
+            if row.domain not in keep:
+                continue
+        if row.kind == "key" and row.uid is not None and not survivors[row.uid]:
+            out.append(row.text.rstrip("\r\n").rstrip() + " []\n")
             continue
-        if kind == "key" and uid is not None and not survivors[uid]:
-            out.append(line.rstrip("\r\n").rstrip() + " []\n")
-            continue
-        out.append(line)
+        out.append(row.text)
     return "".join(out)
 
 
@@ -112,11 +115,7 @@ def main(argv=None):
         )
 
     text = Path(args.head).read_text(encoding="utf-8")
-    seen = {
-        match.group(1)
-        for kind, _, _, _, match in scan_allowlist(text)
-        if kind == "domain"
-    }
+    seen = {row.domain for row in scan_allowlist(text) if row.kind == "domain"}
     unclassified = seen - set(categories)
     if unclassified:
         raise SystemExit(

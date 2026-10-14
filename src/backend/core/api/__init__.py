@@ -12,9 +12,34 @@ from rest_framework import views as drf_views
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from core.services.proconnect import DOMAIN_NOT_ALLOWED_ERROR, ProConnectPartnersError
+from core.services.proconnect import (
+    DOMAIN_NOT_ALLOWED_ERROR,
+    DOMAIN_TAKEN_ERROR,
+    DOMAIN_UNREACHABLE_ERROR,
+    ProConnectPartnersError,
+)
 
 logger = logging.getLogger(__name__)
+
+# User-facing text per api-partenaires error naming domains ({domains} is filled in).
+PROCONNECT_DOMAIN_ERROR_MESSAGES = {
+    DOMAIN_NOT_ALLOWED_ERROR: (
+        "Le(s) domaine(s) {domains} ne sont pas encore autorisés par "
+        "ProConnect. Leur pré-validation est en cours et peut prendre "
+        "jusqu'à une semaine. Veuillez réessayer plus tard."
+    ),
+    DOMAIN_UNREACHABLE_ERROR: (
+        "Le(s) domaine(s) {domains} ne semblent pas recevoir d'e-mails : "
+        "ProConnect n'y trouve ni enregistrement MX ni enregistrement A dans "
+        "le DNS. Vérifiez l'orthographe du domaine et sa configuration DNS, "
+        "puis réessayez."
+    ),
+    DOMAIN_TAKEN_ERROR: (
+        "Le(s) domaine(s) {domains} sont déjà rattachés à un autre "
+        "fournisseur d'identité ProConnect. Un domaine ne peut être rattaché "
+        "qu'à un seul fournisseur : contactez l'équipe ProConnect."
+    ),
+}
 
 
 def exception_handler(exc, context):
@@ -27,19 +52,18 @@ def exception_handler(exc, context):
     # A failed ProConnect push rolls back the change (raised in-transaction); tell
     # the user why rather than returning an opaque 500.
     if isinstance(exc, ProConnectPartnersError):
-        # api-partenaires rejects the push (422) when a domain isn't in its
-        # allowlist yet — a specific, non-transient, actionable case: name the
-        # domains and point at the allowlist sync rather than "retry".
-        if exc.error_code == DOMAIN_NOT_ALLOWED_ERROR:
+        # api-partenaires rejects the push when it dislikes specific domains — a
+        # non-transient, actionable case: name the domains and say what to do
+        # rather than "retry".
+        message = PROCONNECT_DOMAIN_ERROR_MESSAGES.get(exc.error_code)
+        if message:
             logger.warning("ProConnect rejected domains %s: %s", exc.domains, exc)
             sentry_sdk.capture_exception(exc)
             domains = ", ".join(exc.domains) if exc.domains else ""
-            detail = (
-                f"Le(s) domaine(s) {domains} ne sont pas encore autorisés par "
-                "ProConnect. Leur pré-validation est en cours et peut prendre "
-                "jusqu'à une semaine. Veuillez réessayer plus tard."
+            return Response(
+                {"detail": message.format(domains=domains)},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-            return Response({"detail": detail}, status=status.HTTP_400_BAD_REQUEST)
         logger.error("ProConnect synchronization failed: %s", exc, exc_info=exc)
         sentry_sdk.capture_exception(exc)
         return Response(

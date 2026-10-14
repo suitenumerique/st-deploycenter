@@ -252,7 +252,7 @@ def test_api_entitlements_post_pushed_metrics_drive_resolution():
 
     over_quota_organization_item = {
         **PUSHED_ORGANIZATION_ITEM,
-        "metrics": {"storage_used": 1000 * 1000 * 1000 * 11},
+        "metrics": {"storage_used": 1000 * 1000 * 1000 * 21},
     }
     response = _post_entitlements(
         service,

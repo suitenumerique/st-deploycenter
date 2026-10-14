@@ -5,6 +5,7 @@ Tests for the ProConnect api-partenaires allowlist generation:
 - the proconnect_regen_candidate_domains command (fills the "candidates" bucket)
 - the public allowlist API route (serves the YAML as text/plain, with comments)
 """
+# pylint: disable=too-many-lines
 
 from io import StringIO
 
@@ -65,6 +66,13 @@ def _active_subscription(service, operator, domains, departement="01"):
         is_active=True,
     )
     return org
+
+
+FICHE = (
+    "https://lannuaire.service-public.gouv.fr/bretagne/morbihan/"
+    "abab3da3-4cd6-42f1-ac88-9fa3f1bc4154"
+)
+SIRET = "21560123400017"
 
 
 def _domains(entry):
@@ -143,7 +151,10 @@ def test_build_allowlist_covers_whole_departement_with_sources():
 
     # Org A in the covered département contributes via "dpnt".
     factories.OrganizationFactory(
-        departement_code_insee="42", proconnect_domains={"dpnt": ["a.fr"]}
+        departement_code_insee="42",
+        service_public_url=FICHE,
+        siret=SIRET,
+        proconnect_domains={"dpnt": ["a.fr"]},
     )
     # Org B in the same département contributes via "candidates".
     factories.OrganizationFactory(
@@ -156,18 +167,82 @@ def test_build_allowlist_covers_whole_departement_with_sources():
 
     # A managed org outside the declared départements is also in scope.
     managed = factories.OrganizationFactory(
-        departement_code_insee="99", proconnect_domains={"dpnt": ["managed.fr"]}
+        departement_code_insee="99",
+        service_public_url=FICHE,
+        proconnect_domains={"dpnt": ["managed.fr"]},
     )
     factories.OperatorOrganizationRoleFactory(operator=operator, organization=managed)
 
     entries = build_proconnect_allowlist()
-    by_domain = {
-        i["domain"]: i["source"] for i in entries[0]["allowed_attached_email_domains"]
-    }
-    assert by_domain.get("a.fr") == "DILA"
-    assert by_domain.get("b.fr") == "candidates"
-    assert by_domain.get("managed.fr") == "DILA"  # managed org, dept not declared
+    by_domain = {i["domain"]: i for i in entries[0]["allowed_attached_email_domains"]}
+    assert by_domain["a.fr"]["source"] == "dila"
+    assert by_domain["a.fr"]["fiche"] == FICHE
+    assert by_domain["a.fr"]["siret"] == SIRET
+    # A candidate is a guess: it goes in as a "routed" exception, no fiche, no siret.
+    assert by_domain["b.fr"]["source"] == "routed"
+    assert by_domain["b.fr"]["fiche"] is None
+    assert by_domain["b.fr"]["siret"] is None
+    assert by_domain["b.fr"]["provenance"] == "candidates"
+    # managed org, dept not declared
+    assert by_domain["managed.fr"]["source"] == "dila"
     assert "c.fr" not in by_domain
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        None,
+        "",
+        "https://www.example.com/page",
+        "https://lannuaire.service-public.gouv.fr/bretagne/morbihan/not-a-uuid",
+        "http://lannuaire.service-public.gouv.fr/bretagne/morbihan/"
+        "abab3da3-4cd6-42f1-ac88-9fa3f1bc4154",
+        FICHE + "\n      - evil.fr",
+        FICHE.replace("morbihan", "a b"),
+        FICHE.replace("morbihan", 'a"b'),
+    ],
+)
+def test_build_allowlist_dila_domain_without_a_valid_fiche_is_routed(url):
+    """api-partenaires wants a fiche on every "dila" row: without a usable one
+    the DILA domain is sent as a "routed" exception instead."""
+    operator = factories.OperatorFactory(config={"departements": ["01"]})
+    service = _proconnect_service("idp-x")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+    org = factories.OrganizationFactory(
+        departement_code_insee="01", proconnect_domains={"dpnt": ["x.fr"]}
+    )
+    # The DILA import writes the URL without full_clean(): do the same.
+    type(org).objects.filter(pk=org.pk).update(service_public_url=url)
+
+    (item,) = build_proconnect_allowlist()[0]["allowed_attached_email_domains"]
+
+    assert item["source"] == "routed"
+    assert item["fiche"] is None
+    assert item["provenance"] == "dpnt"
+
+
+@pytest.mark.parametrize(
+    "siret", [None, "", "123", "1234567890123A", "２１５６０１２３４０００１７"]
+)
+def test_build_allowlist_dila_domain_without_a_valid_siret_has_none(siret):
+    """The SIRET is optional: a missing or malformed one is left out, and the
+    domain stays "dila" (the fiche is what api-partenaires requires)."""
+    operator = factories.OperatorFactory(config={"departements": ["01"]})
+    service = _proconnect_service("idp-x")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+    org = factories.OrganizationFactory(
+        departement_code_insee="01",
+        service_public_url=FICHE,
+        proconnect_domains={"dpnt": ["x.fr"]},
+    )
+    # Imported data is not always cleaned: write it as the import does.
+    type(org).objects.filter(pk=org.pk).update(siret=siret)
+
+    (item,) = build_proconnect_allowlist()[0]["allowed_attached_email_domains"]
+
+    assert item["source"] == "dila"
+    assert item["fiche"] == FICHE
+    assert item["siret"] is None
 
 
 def test_build_allowlist_source_priority_prefers_dila():
@@ -177,6 +252,7 @@ def test_build_allowlist_source_priority_prefers_dila():
     factories.OperatorServiceConfigFactory(operator=operator, service=service)
     factories.OrganizationFactory(
         departement_code_insee="01",
+        service_public_url=FICHE,
         proconnect_domains={
             "dpnt": ["x.fr"],
             "candidates": ["x.fr"],
@@ -188,7 +264,7 @@ def test_build_allowlist_source_priority_prefers_dila():
     by_domain = {
         i["domain"]: i["source"] for i in entries[0]["allowed_attached_email_domains"]
     }
-    assert by_domain["x.fr"] == "DILA"
+    assert by_domain["x.fr"] == "dila"
 
 
 def test_build_allowlist_discard_excludes_candidates_but_not_dila():
@@ -362,18 +438,32 @@ def test_routable_domains_keeps_a_discarded_domain_that_is_live():
 # --- YAML rendering ----------------------------------------------------------
 
 
-def test_render_yaml_with_comments():
-    """Each domain carries its source (and Service-Public URL) as a trailing comment."""
+def test_render_yaml_matches_the_api_partenaires_format():
+    """A dila row carries its fiche; a routed row carries our provenance as a comment."""
     entries = [
         {
             "uid": "x",
             "allowed_attached_email_domains": [
                 {
                     "domain": "a.fr",
-                    "source": "DILA",
-                    "service_public_url": "https://sp.fr/a",
+                    "source": "dila",
+                    "fiche": FICHE,
+                    "siret": SIRET,
+                    "provenance": "dpnt",
                 },
-                {"domain": "b.fr", "source": "candidates", "service_public_url": None},
+                {
+                    "domain": "c.fr",
+                    "source": "dila",
+                    "fiche": FICHE,
+                    "siret": None,
+                    "provenance": "dpnt",
+                },
+                {
+                    "domain": "b.fr",
+                    "source": "routed",
+                    "fiche": None,
+                    "provenance": "candidates",
+                },
             ],
         },
         {"uid": "y", "allowed_attached_email_domains": []},
@@ -382,12 +472,28 @@ def test_render_yaml_with_comments():
         "oidc_providers:\n"
         '  - uid: "x"\n'
         "    allowed_attached_email_domains:\n"
-        "      - a.fr # Source: DILA | https://sp.fr/a\n"
-        "      - b.fr # Source: candidates\n"
+        "      - domain: a.fr\n"
+        f"        fiche: {FICHE}\n"
+        f'        siret: "{SIRET}"\n'
+        "        source: dila\n"
+        "      - domain: c.fr\n"
+        f"        fiche: {FICHE}\n"
+        "        source: dila\n"
+        "      - domain: b.fr # candidates\n"
+        "        source: routed\n"
         '  - uid: "y"\n'
         "    allowed_attached_email_domains: []\n"
     )
-    assert render_proconnect_allowlist_yaml(entries) == expected
+    rendered = render_proconnect_allowlist_yaml(entries)
+    assert rendered == expected
+    # The SIRET stays a string, not a YAML integer.
+    assert yaml.safe_load(rendered)["oidc_providers"][0][
+        "allowed_attached_email_domains"
+    ] == [
+        {"domain": "a.fr", "fiche": FICHE, "siret": SIRET, "source": "dila"},
+        {"domain": "c.fr", "fiche": FICHE, "source": "dila"},
+        {"domain": "b.fr", "source": "routed"},
+    ]
 
 
 def test_render_yaml_escapes_uid():
@@ -404,26 +510,92 @@ def test_render_yaml_escapes_uid():
     assert yaml.safe_load(rendered)["oidc_providers"][0]["uid"] == 'a"b\nc'
 
 
-def test_render_yaml_comment_cannot_inject_a_line():
-    """A newline in the imported Service-Public URL must not add an entry."""
+def test_render_yaml_refuses_a_fiche_that_could_inject_a_line():
+    """A newline in a fiche URL must not add an entry: the renderer refuses it."""
     entries = [
         {
             "uid": "x",
             "allowed_attached_email_domains": [
                 {
                     "domain": "a.fr",
-                    "source": "DILA",
-                    "service_public_url": "https://sp.fr/a\n      - evil.fr # Source: DILA",
+                    "source": "dila",
+                    "fiche": FICHE + "\n      - domain: evil.fr",
                 }
             ],
         }
     ]
 
-    rendered = render_proconnect_allowlist_yaml(entries)
+    with pytest.raises(ValueError, match="Invalid fiche URL"):
+        render_proconnect_allowlist_yaml(entries)
 
-    assert "evil.fr" in rendered  # still visible, but only inside the comment
-    parsed = yaml.safe_load(rendered)["oidc_providers"][0]
-    assert parsed["allowed_attached_email_domains"] == ["a.fr"]
+
+def test_render_yaml_refuses_a_dila_row_without_a_fiche():
+    """api-partenaires rejects a dila row with no fiche: never render one."""
+    entries = [
+        {
+            "uid": "x",
+            "allowed_attached_email_domains": [
+                {"domain": "a.fr", "source": "dila", "fiche": None}
+            ],
+        }
+    ]
+
+    with pytest.raises(ValueError, match="Invalid fiche URL"):
+        render_proconnect_allowlist_yaml(entries)
+
+
+def test_render_yaml_refuses_a_siret_that_could_inject_a_line():
+    """Only 14 digits may be written as a SIRET."""
+    entries = [
+        {
+            "uid": "x",
+            "allowed_attached_email_domains": [
+                {
+                    "domain": "a.fr",
+                    "source": "dila",
+                    "fiche": FICHE,
+                    "siret": '1"\n      - domain: evil.fr',
+                }
+            ],
+        }
+    ]
+
+    with pytest.raises(ValueError, match="Invalid SIRET"):
+        render_proconnect_allowlist_yaml(entries)
+
+
+def test_render_yaml_refuses_an_unknown_source():
+    """Only the sources api-partenaires knows may reach the file."""
+    entries = [
+        {
+            "uid": "x",
+            "allowed_attached_email_domains": [{"domain": "a.fr", "source": "DILA"}],
+        }
+    ]
+
+    with pytest.raises(ValueError, match="Unknown allowlist source"):
+        render_proconnect_allowlist_yaml(entries)
+
+
+def test_render_yaml_comment_cannot_inject_a_line():
+    """A newline in the provenance comment must not add an entry."""
+    entries = [
+        {
+            "uid": "x",
+            "allowed_attached_email_domains": [
+                {
+                    "domain": "a.fr",
+                    "source": "routed",
+                    "provenance": "manual\n      - domain: evil.fr\n        source: routed",
+                }
+            ],
+        }
+    ]
+
+    parsed = yaml.safe_load(render_proconnect_allowlist_yaml(entries))
+    assert parsed["oidc_providers"][0]["allowed_attached_email_domains"] == [
+        {"domain": "a.fr", "source": "routed"}
+    ]
 
 
 # --- proconnect_regen_candidate_domains command --------------------------------------
@@ -624,7 +796,8 @@ def test_allowlist_api_route_serves_yaml_text_plain():
     service = _proconnect_service("idp-x")
     factories.OperatorServiceConfigFactory(operator=operator, service=service)
     org = _active_subscription(service, operator, ["sub.fr"], departement="42")
-    org.service_public_url = "https://service-public.fr/org"
+    org.service_public_url = FICHE
+    org.siret = SIRET
     org.proconnect_domains = {"dpnt": ["dila.fr"], "manual": ["manual.fr"]}
     org.save()
 
@@ -634,10 +807,18 @@ def test_allowlist_api_route_serves_yaml_text_plain():
     body = response.content.decode()
     assert body.startswith("oidc_providers:")
     assert 'uid: "idp-x"' in body
-    assert "- sub.fr" in body  # routed
-    assert "- dila.fr" in body  # dpnt (DILA) cache
-    assert "- manual.fr" in body  # manual
-    assert "# Source: DILA | https://service-public.fr/org" in body
+    parsed = yaml.safe_load(body)["oidc_providers"][0]["allowed_attached_email_domains"]
+    assert {item["domain"]: item for item in parsed} == {
+        "sub.fr": {"domain": "sub.fr", "source": "routed"},  # live
+        "dila.fr": {
+            "domain": "dila.fr",
+            "fiche": FICHE,
+            "siret": SIRET,
+            "source": "dila",
+        },
+        "manual.fr": {"domain": "manual.fr", "source": "routed"},
+    }
+    assert "- domain: manual.fr # manual\n" in body
 
 
 def test_allowlist_api_route_is_closed_without_a_key():
@@ -743,8 +924,11 @@ def test_fetch_prevalidated_caches_per_idp_allowlist():
         "oidc_providers:\n"
         '  - uid: "idp-x"\n'
         "    allowed_attached_email_domains:\n"
-        "      - b.fr\n"
-        "      - a.fr\n"  # stored normalized + sorted
+        "      - domain: b.fr\n"
+        f"        fiche: {FICHE}\n"
+        "        source: dila\n"
+        "      - domain: a.fr\n"  # stored normalized + sorted
+        "        source: routed\n"
         '  - uid: "idp-y"\n'
         "    allowed_attached_email_domains: []\n"
     )
@@ -780,7 +964,8 @@ def test_fetch_prevalidated_keeps_the_previous_entry_for_a_malformed_provider():
             "    allowed_attached_email_domains: null\n"
             '  - uid: "idp-y"\n'
             "    allowed_attached_email_domains:\n"
-            "      - y.fr\n"
+            "      - domain: y.fr\n"
+            "        source: routed\n"
         ),
         status=200,
     )
@@ -795,6 +980,37 @@ def test_fetch_prevalidated_keeps_the_previous_entry_for_a_malformed_provider():
 
     assert get_prevalidated_domains("idp-x") == ["kept.fr"]
     assert get_prevalidated_domains("idp-y") == ["y.fr"]
+
+
+@responses.activate
+def test_fetch_prevalidated_keeps_the_previous_entry_when_no_entry_is_readable():
+    """A non-empty list we cannot read a domain from (a format we do not know)
+    must not be cached as "nothing pre-validated"."""
+    store_prevalidated_domains("idp-x", ["kept.fr"])
+    responses.add(
+        responses.GET,
+        "https://allowlist.test/x.yaml",
+        body=(
+            "oidc_providers:\n"
+            '  - uid: "idp-x"\n'
+            "    allowed_attached_email_domains:\n"
+            "      - fqdn: new.fr\n"
+            "      - just-a-string.fr\n"
+        ),
+        status=200,
+    )
+    err = StringIO()
+
+    call_command(
+        "proconnect_fetch_prevalidated",
+        "--url",
+        "https://allowlist.test/x.yaml",
+        stdout=StringIO(),
+        stderr=err,
+    )
+
+    assert get_prevalidated_domains("idp-x") == ["kept.fr"]
+    assert "idp-x: no readable" in err.getvalue()
 
 
 @responses.activate

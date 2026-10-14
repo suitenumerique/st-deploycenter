@@ -8,6 +8,7 @@ Useful for the initial backfill and for periodic reconciliation.
 from django.core.management.base import BaseCommand, CommandError
 
 from core.services.proconnect import (
+    BATCH_MAX_RETRY_AFTER,
     ProConnectPartnersClient,
     routed_domains_by_idp,
     sync_proconnect_provider,
@@ -38,7 +39,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         dry_run = options["dry_run"]
 
-        client = ProConnectPartnersClient()
+        client = ProConnectPartnersClient(max_retry_after=BATCH_MAX_RETRY_AFTER)
         if not client.is_configured and not dry_run:
             raise CommandError(
                 "api-partenaires is not configured. Set "

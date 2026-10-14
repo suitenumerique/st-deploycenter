@@ -18,6 +18,7 @@ import requests
 import sentry_sdk
 import yaml
 
+from core.services.domainnames import normalize_domains
 from core.services.proconnect import (
     ALLOWED_DOMAINS_KEY,
     get_prevalidated_allowlist,
@@ -96,17 +97,25 @@ class Command(BaseCommand):
             uid = provider.get("uid") if isinstance(provider, dict) else None
             if not uid:
                 continue
-            domains = provider.get(ALLOWED_DOMAINS_KEY)
+            entries = provider.get(ALLOWED_DOMAINS_KEY)
+            domains = None
+            if isinstance(entries, list):
+                domains = [
+                    entry.get("domain") if isinstance(entry, dict) else None
+                    for entry in entries
+                ]
             # An explicit empty list is authoritative ("nothing pre-validated");
             # a missing/malformed key is not — caching [] for it would wrongly
-            # flag every domain as "not yet pre-validated" in the UI. Carry the
-            # previous entry over instead.
-            if not isinstance(domains, list):
+            # flag every domain as "not yet pre-validated" in the UI. The same
+            # goes for a non-empty list we cannot read a single domain from
+            # (entries are `{domain, source, ...}` mappings). Carry the previous
+            # entry over instead.
+            if domains is None or (entries and not normalize_domains(domains)):
                 skipped += 1
                 self.stderr.write(
                     self.style.WARNING(
-                        f"{uid}: no {ALLOWED_DOMAINS_KEY} list in the allowlist; "
-                        "keeping the previous cache entry"
+                        f"{uid}: no readable {ALLOWED_DOMAINS_KEY} list in the "
+                        "allowlist; keeping the previous cache entry"
                     )
                 )
                 if uid in previous:

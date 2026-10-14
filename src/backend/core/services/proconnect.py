@@ -18,6 +18,7 @@ message is::
 and is sent in the ``X-Timestamp`` / ``X-Signature`` headers. The body, when
 present, must be signed byte-for-byte as it is sent on the wire.
 """
+# pylint: disable=too-many-lines
 
 import hashlib
 import hmac
@@ -57,9 +58,20 @@ logger = logging.getLogger(__name__)
 # A timeout surfaces as a 502 and the user retries.
 DEFAULT_TIMEOUT = (3, 5)
 
-# Payload key and error code carrying the provider's domain list.
+# api-partenaires rate limits its signed routes (429 + Retry-After). A 429 is
+# retried when the server asks for a wait of at most ``max_retry_after`` seconds,
+# at most ``MAX_RETRIES`` times. The wait happens inside the request's transaction
+# like the call itself, so the default is short; batch commands that walk many
+# providers may afford a whole 60s rate-limit window.
+MAX_RETRIES = 2
+DEFAULT_MAX_RETRY_AFTER = 10
+BATCH_MAX_RETRY_AFTER = 65
+
+# Payload key and error codes carrying the provider's domain list.
 ATTACHED_EMAIL_DOMAINS_KEY = "attached_email_domains"
 DOMAIN_NOT_ALLOWED_ERROR = "attached_email_domain_not_allowed"
+DOMAIN_UNREACHABLE_ERROR = "attached_email_domain_unreachable"
+DOMAIN_TAKEN_ERROR = "attached_email_domain_taken"
 
 # Key of the per-provider domain list in the oidc_providers allowlist YAML (the
 # file that gates api-partenaires).
@@ -134,7 +146,12 @@ class ProConnectPartnersClient:
     """Minimal signed client for the api-partenaires OIDC providers API."""
 
     def __init__(
-        self, base_url=None, secret=None, timeout=DEFAULT_TIMEOUT, proxy_url=None
+        self,
+        base_url=None,
+        secret=None,
+        timeout=DEFAULT_TIMEOUT,
+        proxy_url=None,
+        max_retry_after=DEFAULT_MAX_RETRY_AFTER,
     ):
         base_url = (
             base_url
@@ -153,11 +170,64 @@ class ProConnectPartnersClient:
             else settings.PROCONNECT_API_PARTENAIRES_PROXY_URL
         )
         self.timeout = timeout
+        self.max_retry_after = max_retry_after
 
     @property
     def is_configured(self) -> bool:
         """Whether both a base URL and a secret are available."""
         return bool(self.base_url and self.secret)
+
+    def _send(self, method, path, url, signed_path, body):
+        """One signed HTTP call. Signed afresh each time: the timestamp expires."""
+        timestamp, signature = sign_request(self.secret, method, signed_path, "", body)
+        headers = {
+            "X-Timestamp": timestamp,
+            "X-Signature": signature,
+        }
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+
+        proxies = (
+            {"http": self.proxy_url, "https": self.proxy_url}
+            if self.proxy_url
+            else None
+        )
+        try:
+            return requests.request(
+                method,
+                url,
+                headers=headers,
+                # Send the exact bytes that were signed: a str body would be
+                # encoded latin-1 by http.client, while the signature is over
+                # its utf-8 encoding.
+                data=body.encode("utf-8") if body is not None else None,
+                timeout=self.timeout,
+                proxies=proxies,
+                # X-Signature is a custom header, so requests would replay it to
+                # the redirect target (it only strips Authorization). A 3xx must
+                # not be able to walk our signature to another host — and the
+                # signature covers the original path anyway, so following one
+                # could never authenticate. Treated as an error by the caller.
+                allow_redirects=False,
+            )
+        except requests.exceptions.RequestException as e:
+            raise ProConnectPartnersError(
+                redact_credentials(f"{method} {path} failed: {e}")
+            ) from e
+
+    def _retry_wait(self, response) -> Optional[int]:
+        """Seconds to wait before retrying a 429, or ``None`` to give up.
+
+        Gives up when the server's ``Retry-After`` is missing, not a number of
+        seconds, or longer than ``max_retry_after``.
+        """
+        if response.status_code != 429:
+            return None
+        try:
+            wait = int(response.headers.get("Retry-After", ""))
+        except ValueError:
+            return None
+        return wait if 0 <= wait <= self.max_retry_after else None
 
     def _request(self, method: str, path: str, body: Optional[str] = None) -> dict:
         if not self.is_configured:
@@ -182,41 +252,19 @@ class ProConnectPartnersClient:
         url = urljoin(self.base_url + "/", path.lstrip("/"))
         signed_path = urlsplit(url).path
 
-        timestamp, signature = sign_request(self.secret, method, signed_path, "", body)
-        headers = {
-            "X-Timestamp": timestamp,
-            "X-Signature": signature,
-        }
-        if body is not None:
-            headers["Content-Type"] = "application/json"
-
-        proxies = (
-            {"http": self.proxy_url, "https": self.proxy_url}
-            if self.proxy_url
-            else None
-        )
-        try:
-            response = requests.request(
+        response = self._send(method, path, url, signed_path, body)
+        for _ in range(MAX_RETRIES):
+            wait = self._retry_wait(response)
+            if wait is None:
+                break
+            logger.warning(
+                "api-partenaires rate limited %s %s, retrying in %ss",
                 method,
-                url,
-                headers=headers,
-                # Send the exact bytes that were signed: a str body would be
-                # encoded latin-1 by http.client, while the signature is over
-                # its utf-8 encoding.
-                data=body.encode("utf-8") if body is not None else None,
-                timeout=self.timeout,
-                proxies=proxies,
-                # X-Signature is a custom header, so requests would replay it to
-                # the redirect target (it only strips Authorization). A 3xx must
-                # not be able to walk our signature to another host — and the
-                # signature covers the original path anyway, so following one
-                # could never authenticate. Treated as an error below.
-                allow_redirects=False,
+                path,
+                wait,
             )
-        except requests.exceptions.RequestException as e:
-            raise ProConnectPartnersError(
-                redact_credentials(f"{method} {path} failed: {e}")
-            ) from e
+            time.sleep(wait)
+            response = self._send(method, path, url, signed_path, body)
 
         # Anything that is not a 2xx, redirects included: with allow_redirects
         # off, a 3xx reaches here and `>= 400` would let it fall through to
@@ -294,8 +342,32 @@ PROCONNECT_DOMAIN_BUCKETS = (
 # "routed" is not a bucket: it is what the org's active subscriptions send today.
 ROUTABLE_PROVENANCES = ("routed", "candidates", "manual", "dpnt")
 
-# Human label per provenance, for the allowlist YAML comment.
-PROVENANCE_LABELS = {"dpnt": "DILA"}
+# api-partenaires only knows two sources for an allowed domain: "dila" (tied to
+# its Service-Public fiche, so it needs a valid fiche URL) and "routed" (a manual
+# exception, no fiche). Only DILA (``dpnt``) domains can be "dila"; every other
+# provenance is sent as "routed".
+ALLOWLIST_SOURCE_DILA = "dila"
+ALLOWLIST_SOURCE_ROUTED = "routed"
+ALLOWLIST_SOURCES = (ALLOWLIST_SOURCE_DILA, ALLOWLIST_SOURCE_ROUTED)
+
+# What api-partenaires accepts as a fiche (it checks the id against DILA). Stricter
+# on the path than theirs: the URL is imported data written unquoted into a file
+# that gates authentication, so no whitespace, quote or YAML metacharacter may pass.
+_FICHE_URL_RE = re.compile(
+    r"https://lannuaire\.service-public\.gouv\.fr/[A-Za-z0-9._~%/-]+/"
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+)
+
+
+def valid_fiche_url(url) -> bool:
+    """Whether a Service-Public URL is safe and shaped like an api-partenaires fiche."""
+    return isinstance(url, str) and bool(_FICHE_URL_RE.fullmatch(url))
+
+
+def valid_siret(siret) -> bool:
+    """Whether a value is a SIRET: exactly 14 ASCII digits."""
+    return isinstance(siret, str) and bool(re.fullmatch(r"[0-9]{14}", siret))
+
 
 # Full RPNT compliance (no candidate domain is generated when all are satisfied).
 RPNT_COMPLETE_CRITERIA = frozenset({"1.1", "1.2", "2.1", "2.2", "2.3"})
@@ -822,9 +894,12 @@ def build_proconnect_allowlist() -> list[dict]:
     """Build the allowlist entries for every ProConnect provider.
 
     Each provider's ``allowed_attached_email_domains`` is the union of the routable
-    domains (:func:`domain_provenances`) of every organization in scope, each with
-    its provenance and its organization's Service-Public URL for an explanatory
-    YAML comment.
+    domains (:func:`domain_provenances`) of every organization in scope. Each is a
+    ``{domain, source, fiche, siret, provenance}`` item: ``source`` is what
+    api-partenaires accepts (see :data:`ALLOWLIST_SOURCES`), ``fiche`` the
+    organization's Service-Public URL and ``siret`` its SIRET (``dila`` rows only,
+    ``siret`` when it has a valid one) and ``provenance`` our own bucket, kept for
+    the reviewer's YAML comment.
     """
     with effective_config_memo():
         return _build_proconnect_allowlist()
@@ -834,8 +909,8 @@ def _build_proconnect_allowlist() -> list[dict]:
     """Body of :func:`build_proconnect_allowlist` (runs under the config memo)."""
     entries = []
     for idp_id, scope in _proconnect_idp_scopes().items():
-        # domain -> (priority, provenance, service_public_url, org_name)
-        domain_info: dict[str, tuple[int, str, Optional[str], str]] = {}
+        # domain -> (priority, provenance, service_public_url, org_name, siret)
+        domain_info: dict[str, tuple[int, str, Optional[str], str, Optional[str]]] = {}
         organizations = _scoped_organizations(
             scope["operator_ids"], scope["service_ids"]
         )
@@ -843,6 +918,7 @@ def _build_proconnect_allowlist() -> list[dict]:
         for organization in organizations.iterator(chunk_size=500):
             sp_url = organization.service_public_url or None
             org_name = organization.name or ""
+            siret = organization.siret or None
             # Per-idp, so this org only contributes what it routes to THIS provider.
             for domain, provenance in domain_provenances(organization, idp_id).items():
                 # Two organizations can claim the same domain; the strongest
@@ -850,19 +926,33 @@ def _build_proconnect_allowlist() -> list[dict]:
                 priority = ROUTABLE_PROVENANCES.index(provenance)
                 current = domain_info.get(domain)
                 if current is None or priority > current[0]:
-                    domain_info[domain] = (priority, provenance, sp_url, org_name)
+                    domain_info[domain] = (
+                        priority,
+                        provenance,
+                        sp_url,
+                        org_name,
+                        siret,
+                    )
 
         # Ordered by organization name ASC, then domain ASC.
-        allowed = [
-            {
-                "domain": domain,
-                "source": PROVENANCE_LABELS.get(info[1], info[1]),
-                "service_public_url": info[2],
-            }
-            for domain, info in sorted(
-                domain_info.items(), key=lambda kv: (kv[1][3].casefold(), kv[0])
+        allowed = []
+        for domain, (_, provenance, sp_url, _, siret) in sorted(
+            domain_info.items(), key=lambda kv: (kv[1][3].casefold(), kv[0])
+        ):
+            # A DILA domain without a usable fiche cannot be "dila" for
+            # api-partenaires: it goes in as a "routed" exception instead.
+            is_dila = provenance == "dpnt" and valid_fiche_url(sp_url)
+            allowed.append(
+                {
+                    "domain": domain,
+                    "source": ALLOWLIST_SOURCE_DILA
+                    if is_dila
+                    else ALLOWLIST_SOURCE_ROUTED,
+                    "fiche": sp_url if is_dila else None,
+                    "siret": siret if is_dila and valid_siret(siret) else None,
+                    "provenance": provenance,
+                }
             )
-        ]
         entries.append({"uid": idp_id, ALLOWED_DOMAINS_KEY: allowed})
 
     entries.sort(key=lambda entry: entry["uid"])
@@ -872,10 +962,8 @@ def _build_proconnect_allowlist() -> list[dict]:
 def _yaml_comment_text(value) -> str:
     """One line of comment text: no newline can escape it into a YAML entry.
 
-    The Service-Public URL is imported data (``core/tasks/dpnt.py`` writes it
-    without ``full_clean()``, so ``URLField`` never validates it) and it is
-    concatenated into a file that gates authentication. A value carrying a newline
-    would add a line of its own choosing to the published allowlist.
+    Anything concatenated into a file that gates authentication must not carry a
+    newline: it would add a line of its own choosing to the published allowlist.
     """
     return " ".join(str(value).split())
 
@@ -883,8 +971,9 @@ def _yaml_comment_text(value) -> str:
 def render_proconnect_allowlist_yaml(entries: list[dict]) -> str:
     """Render allowlist entries as YAML matching the api-partenaires format.
 
-    Each domain is followed by a ``# Source: <src> | <Service-Public URL>`` comment
-    (the URL part is omitted when unknown).
+    Each domain is a ``domain`` / ``fiche`` / ``siret`` / ``source`` mapping
+    (``fiche`` and ``siret`` only for ``dila``). A ``routed`` row carries our own provenance (``candidates``,
+    ``manual``...) as a trailing comment, for the reviewer of the api-partenaires PR.
     """
     lines = ["oidc_providers:"]
     for entry in entries:
@@ -897,12 +986,28 @@ def render_proconnect_allowlist_yaml(entries: list[dict]) -> str:
             continue
         lines.append(f"    {ALLOWED_DOMAINS_KEY}:")
         for item in domains:
-            comment = f"Source: {_yaml_comment_text(item['source'])}"
-            if item.get("service_public_url"):
-                comment += f" | {_yaml_comment_text(item['service_public_url'])}"
+            source = item["source"]
+            if source not in ALLOWLIST_SOURCES:
+                raise ValueError(f"Unknown allowlist source: {source!r}")
             # The domain itself is safe by construction: only normalize_domains()
             # values reach a bucket, and none of them can hold a space or a newline.
             # One space before the ``#``: prettier reformats two down to one, so
             # emitting two makes every generated file a diff against itself.
-            lines.append(f"      - {item['domain']} # {comment}")
+            line = f"      - domain: {item['domain']}"
+            if source == ALLOWLIST_SOURCE_ROUTED and item.get("provenance"):
+                line += f" # {_yaml_comment_text(item['provenance'])}"
+            lines.append(line)
+            if source == ALLOWLIST_SOURCE_DILA:
+                # Written unquoted: only a URL that passes the strict check may.
+                if not valid_fiche_url(item.get("fiche")):
+                    raise ValueError(f"Invalid fiche URL for {item['domain']}")
+                lines.append(f"        fiche: {item['fiche']}")
+                # Quoted: bare, 14 digits would parse as a YAML integer. A SIRET
+                # is optional (an organization may not have one); only 14 digits
+                # may be written, so nothing else can reach the file.
+                if item.get("siret"):
+                    if not valid_siret(item["siret"]):
+                        raise ValueError(f"Invalid SIRET for {item['domain']}")
+                    lines.append(f'        siret: "{item["siret"]}"')
+            lines.append(f"        source: {source}")
     return "\n".join(lines) + "\n"

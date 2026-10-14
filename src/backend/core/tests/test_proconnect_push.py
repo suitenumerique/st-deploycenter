@@ -25,6 +25,7 @@ from core import factories
 from core.models import ServiceSubscription
 from core.services.locks import advisory_lock_key
 from core.services.proconnect import (
+    BATCH_MAX_RETRY_AFTER,
     ProConnectPartnersClient,
     ProConnectPartnersError,
     idp_routed_domains,
@@ -178,6 +179,126 @@ def test_client_error_carries_structured_domain_not_allowed():
     assert excinfo.value.status_code == 422
     assert excinfo.value.error_code == "attached_email_domain_not_allowed"
     assert excinfo.value.domains == ["evil.fr", "bad.fr"]
+
+
+def _rate_limited(retry_after="3"):
+    headers = {"Retry-After": retry_after} if retry_after is not None else {}
+    return responses.Response(
+        responses.PATCH,
+        PATCH_URL,
+        json={"detail": "Too many requests"},
+        status=429,
+        headers=headers,
+    )
+
+
+def _ok():
+    return responses.Response(
+        responses.PATCH,
+        PATCH_URL,
+        json={"uid": IDP, "attached_email_domains": ["a.fr"]},
+        status=200,
+    )
+
+
+@responses.activate
+def test_client_retries_a_rate_limited_call_after_retry_after():
+    """A 429 is retried once the server's Retry-After has elapsed, signed afresh."""
+    responses.add(_rate_limited("3"))
+    responses.add(_ok())
+    client = ProConnectPartnersClient(base_url=BASE_URL, secret=SECRET)
+
+    with mock.patch("core.services.proconnect.time.sleep") as sleep:
+        result = client.set_attached_email_domains(IDP, ["a.fr"])
+
+    assert result["attached_email_domains"] == ["a.fr"]
+    sleep.assert_called_once_with(3)
+    assert len(responses.calls) == 2
+    retry = responses.calls[1].request
+    assert retry.headers["X-Signature"] == _expected_signature(
+        "PATCH",
+        f"/api/oidc_providers/{IDP}/configuration",
+        retry.headers["X-Timestamp"],
+        retry.body,
+    )
+
+
+@responses.activate
+def test_client_gives_up_after_max_retries():
+    """A provider that stays rate limited ends in an error, not an endless loop."""
+    for _ in range(5):
+        responses.add(_rate_limited("1"))
+    client = ProConnectPartnersClient(base_url=BASE_URL, secret=SECRET)
+
+    with mock.patch("core.services.proconnect.time.sleep") as sleep:
+        with pytest.raises(ProConnectPartnersError) as excinfo:
+            client.set_attached_email_domains(IDP, ["a.fr"])
+
+    assert excinfo.value.status_code == 429
+    assert len(responses.calls) == 3  # the call + MAX_RETRIES retries
+    assert sleep.call_count == 2
+
+
+@responses.activate
+@pytest.mark.parametrize("retry_after", ["30", "-1", "soon", "", None])
+def test_client_does_not_retry_when_retry_after_is_too_long_or_unusable(retry_after):
+    """The wait runs inside the caller's transaction: a long or unreadable
+    Retry-After fails fast instead of holding it."""
+    responses.add(_rate_limited(retry_after))
+    client = ProConnectPartnersClient(base_url=BASE_URL, secret=SECRET)
+
+    with mock.patch("core.services.proconnect.time.sleep") as sleep:
+        with pytest.raises(ProConnectPartnersError) as excinfo:
+            client.set_attached_email_domains(IDP, ["a.fr"])
+
+    assert excinfo.value.status_code == 429
+    assert len(responses.calls) == 1
+    sleep.assert_not_called()
+
+
+@responses.activate
+def test_client_max_retry_after_is_configurable():
+    """A batch client may wait out a longer rate-limit window."""
+    responses.add(_rate_limited("30"))
+    responses.add(_ok())
+    client = ProConnectPartnersClient(
+        base_url=BASE_URL, secret=SECRET, max_retry_after=BATCH_MAX_RETRY_AFTER
+    )
+
+    with mock.patch("core.services.proconnect.time.sleep") as sleep:
+        client.set_attached_email_domains(IDP, ["a.fr"])
+
+    sleep.assert_called_once_with(30)
+
+
+@proconnect_settings
+@responses.activate
+@pytest.mark.parametrize(
+    "command,method",
+    [("proconnect_sync", responses.PATCH), ("proconnect_detect_drift", responses.GET)],
+)
+def test_batch_commands_wait_out_a_rate_limit_window(command, method):
+    """The commands that walk providers accept a Retry-After a web request would not."""
+    _make_proconnect_subscription(IDP, ["a.fr"])
+    responses.add(
+        method,
+        PATCH_URL,
+        json={"detail": "Too many requests"},
+        status=429,
+        headers={"Retry-After": "30"},
+    )
+    responses.add(
+        method,
+        PATCH_URL,
+        json={"uid": IDP, "attached_email_domains": ["a.fr"]},
+        status=200,
+    )
+
+    with mock.patch("core.services.proconnect.time.sleep") as sleep:
+        call_command(command, stdout=StringIO())
+
+    sleep.assert_called_once_with(30)
+    assert len(responses.calls) == 2
 
 
 def test_client_routes_through_proxy_when_configured():
@@ -686,6 +807,59 @@ def test_activation_surfaces_domain_not_allowed_with_domains():
     assert not ServiceSubscription.objects.filter(
         service=service, organization=organization
     ).exists()
+
+
+@proconnect_settings
+@responses.activate
+@pytest.mark.parametrize(
+    "error,status,expected",
+    [
+        ("attached_email_domain_unreachable", 422, "MX"),
+        ("attached_email_domain_taken", 409, "autre fournisseur"),
+    ],
+)
+def test_activation_surfaces_unreachable_and_taken_domains(error, status, expected):
+    """Each rejection that names domains gets its own 400 message, and rolls back."""
+    responses.add(
+        responses.PATCH,
+        PATCH_URL,
+        json={"error": error, "attached_email_domains": ["commune.fr"]},
+        status=status,
+    )
+    client, operator, organization, service = _proconnect_api_setup()
+
+    response = client.patch(
+        _subscription_url(operator, organization, service),
+        {"is_active": True},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert "commune.fr" in detail
+    assert expected in detail
+    assert "pas encore autorisés" not in detail
+    assert not ServiceSubscription.objects.filter(
+        service=service, organization=organization
+    ).exists()
+
+
+@proconnect_settings
+@responses.activate
+def test_activation_keeps_the_generic_502_for_other_push_errors():
+    """Errors that name no domain (here a DNS outage upstream) stay a generic 502."""
+    responses.add(
+        responses.PATCH, PATCH_URL, json={"error": "dns_unavailable"}, status=502
+    )
+    client, operator, organization, service = _proconnect_api_setup()
+
+    response = client.patch(
+        _subscription_url(operator, organization, service),
+        {"is_active": True},
+        format="json",
+    )
+
+    assert response.status_code == 502
 
 
 @proconnect_settings

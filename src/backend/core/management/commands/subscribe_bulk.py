@@ -37,6 +37,8 @@ import sentry_sdk
 
 from core.models import Operator, Organization, Service, ServiceSubscription
 from core.services.proconnect import (
+    BATCH_MAX_RETRY_AFTER,
+    ProConnectPartnersClient,
     effective_config_memo,
     subscription_idp_id,
     sync_proconnect_provider,
@@ -398,8 +400,9 @@ class Command(BaseCommand):
     def _push_proconnect(self, idp_ids):
         """Push the full domain list once per affected ProConnect provider."""
         failures = []
+        client = ProConnectPartnersClient(max_retry_after=BATCH_MAX_RETRY_AFTER)
         for idp_id in sorted(idp_ids):
-            result = sync_proconnect_provider(idp_id)
+            result = sync_proconnect_provider(idp_id, client=client)
             if result.get("success"):
                 self.stdout.write(
                     self.style.SUCCESS(f"{idp_id}: pushed {result.get('domains')}")
