@@ -29,7 +29,7 @@ import time
 from collections import defaultdict
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Optional
+from typing import NamedTuple, Optional
 from urllib.parse import urljoin, urlsplit
 
 from django.conf import settings
@@ -342,13 +342,26 @@ PROCONNECT_DOMAIN_BUCKETS = (
 # "routed" is not a bucket: it is what the org's active subscriptions send today.
 ROUTABLE_PROVENANCES = ("routed", "candidates", "manual", "dpnt")
 
-# api-partenaires only knows two sources for an allowed domain: "dila" (tied to
-# its Service-Public fiche, so it needs a valid fiche URL) and "routed" (a manual
-# exception, no fiche). Only DILA (``dpnt``) domains can be "dila"; every other
-# provenance is sent as "routed".
+# Source of each allowed domain in the file api-partenaires reads:
+#   "dila"       declared on service-public.gouv.fr (``dpnt``); needs a valid fiche
+#   "routed"     already live: an active subscription sends it today
+#   "manual"     not live, added by a superuser (``manual``)
+#   "candidate"  everything else (``candidates``)
+# The best applicable wins, in that order.
 ALLOWLIST_SOURCE_DILA = "dila"
 ALLOWLIST_SOURCE_ROUTED = "routed"
-ALLOWLIST_SOURCES = (ALLOWLIST_SOURCE_DILA, ALLOWLIST_SOURCE_ROUTED)
+ALLOWLIST_SOURCE_MANUAL = "manual"
+ALLOWLIST_SOURCE_CANDIDATE = "candidate"
+ALLOWLIST_SOURCES = (
+    ALLOWLIST_SOURCE_DILA,
+    ALLOWLIST_SOURCE_ROUTED,
+    ALLOWLIST_SOURCE_MANUAL,
+    ALLOWLIST_SOURCE_CANDIDATE,
+)
+
+# Organization types that have a Service-Public fiche: a row of one of these
+# carries it whatever its source.
+FICHE_ORG_TYPES = ("commune", "epci", "departement", "region")
 
 # What api-partenaires accepts as a fiche (it checks the id against DILA). Stricter
 # on the path than theirs: the URL is imported data written unquoted into a file
@@ -895,62 +908,81 @@ def build_proconnect_allowlist() -> list[dict]:
 
     Each provider's ``allowed_attached_email_domains`` is the union of the routable
     domains (:func:`domain_provenances`) of every organization in scope. Each is a
-    ``{domain, source, fiche, siret, provenance}`` item: ``source`` is what
-    api-partenaires accepts (see :data:`ALLOWLIST_SOURCES`), ``fiche`` the
-    organization's Service-Public URL and ``siret`` its SIRET (``dila`` rows only,
-    ``siret`` when it has a valid one) and ``provenance`` our own bucket, kept for
-    the reviewer's YAML comment.
+    ``{domain, source, fiche, siret}`` item: ``source`` is one of
+    :data:`ALLOWLIST_SOURCES`, ``fiche`` the organization's Service-Public URL
+    (always on a ``dila`` row, otherwise when the organization is of a type in
+    :data:`FICHE_ORG_TYPES`) and ``siret`` its SIRET when it has a valid one.
     """
     with effective_config_memo():
         return _build_proconnect_allowlist()
+
+
+class _DomainOwner(NamedTuple):
+    """The organization whose provenance wins a domain in the allowlist build."""
+
+    priority: int
+    provenance: str
+    fiche_url: Optional[str]
+    org_name: str
+    siret: Optional[str]
+    org_type: str
 
 
 def _build_proconnect_allowlist() -> list[dict]:
     """Body of :func:`build_proconnect_allowlist` (runs under the config memo)."""
     entries = []
     for idp_id, scope in _proconnect_idp_scopes().items():
-        # domain -> (priority, provenance, service_public_url, org_name, siret)
-        domain_info: dict[str, tuple[int, str, Optional[str], str, Optional[str]]] = {}
+        domain_info: dict[str, _DomainOwner] = {}
+        live_domains: set[str] = set()
         organizations = _scoped_organizations(
             scope["operator_ids"], scope["service_ids"]
         )
         # An explicit chunk_size is required for .iterator() to honor the prefetch.
         for organization in organizations.iterator(chunk_size=500):
-            sp_url = organization.service_public_url or None
-            org_name = organization.name or ""
-            siret = organization.siret or None
             # Per-idp, so this org only contributes what it routes to THIS provider.
+            live_domains |= routed_domains(organization, idp_id)
             for domain, provenance in domain_provenances(organization, idp_id).items():
                 # Two organizations can claim the same domain; the strongest
                 # provenance wins, whatever order we walk them in.
                 priority = ROUTABLE_PROVENANCES.index(provenance)
                 current = domain_info.get(domain)
-                if current is None or priority > current[0]:
-                    domain_info[domain] = (
+                if current is None or priority > current.priority:
+                    domain_info[domain] = _DomainOwner(
                         priority,
                         provenance,
-                        sp_url,
-                        org_name,
-                        siret,
+                        organization.service_public_url or None,
+                        organization.name or "",
+                        organization.siret or None,
+                        organization.type,
                     )
 
         # Ordered by organization name ASC, then domain ASC.
         allowed = []
-        for domain, (_, provenance, sp_url, _, siret) in sorted(
-            domain_info.items(), key=lambda kv: (kv[1][3].casefold(), kv[0])
+        for domain, owner in sorted(
+            domain_info.items(), key=lambda kv: (kv[1].org_name.casefold(), kv[0])
         ):
+            has_fiche = valid_fiche_url(owner.fiche_url)
             # A DILA domain without a usable fiche cannot be "dila" for
-            # api-partenaires: it goes in as a "routed" exception instead.
-            is_dila = provenance == "dpnt" and valid_fiche_url(sp_url)
+            # api-partenaires: it falls through to the next source.
+            if owner.provenance == "dpnt" and has_fiche:
+                source = ALLOWLIST_SOURCE_DILA
+            elif domain in live_domains:
+                source = ALLOWLIST_SOURCE_ROUTED
+            elif owner.provenance == "manual":
+                source = ALLOWLIST_SOURCE_MANUAL
+            else:
+                source = ALLOWLIST_SOURCE_CANDIDATE
+            # Every row carries its fiche when the organization is one that has
+            # one (a commune, an EPCI...); a "dila" row always does.
+            with_fiche = source == ALLOWLIST_SOURCE_DILA or (
+                has_fiche and owner.org_type in FICHE_ORG_TYPES
+            )
             allowed.append(
                 {
                     "domain": domain,
-                    "source": ALLOWLIST_SOURCE_DILA
-                    if is_dila
-                    else ALLOWLIST_SOURCE_ROUTED,
-                    "fiche": sp_url if is_dila else None,
-                    "siret": siret if is_dila and valid_siret(siret) else None,
-                    "provenance": provenance,
+                    "source": source,
+                    "fiche": owner.fiche_url if with_fiche else None,
+                    "siret": owner.siret if valid_siret(owner.siret) else None,
                 }
             )
         entries.append({"uid": idp_id, ALLOWED_DOMAINS_KEY: allowed})
@@ -959,21 +991,11 @@ def _build_proconnect_allowlist() -> list[dict]:
     return entries
 
 
-def _yaml_comment_text(value) -> str:
-    """One line of comment text: no newline can escape it into a YAML entry.
-
-    Anything concatenated into a file that gates authentication must not carry a
-    newline: it would add a line of its own choosing to the published allowlist.
-    """
-    return " ".join(str(value).split())
-
-
 def render_proconnect_allowlist_yaml(entries: list[dict]) -> str:
     """Render allowlist entries as YAML matching the api-partenaires format.
 
     Each domain is a ``domain`` / ``fiche`` / ``siret`` / ``source`` mapping
-    (``fiche`` and ``siret`` only for ``dila``). A ``routed`` row carries our own provenance (``candidates``,
-    ``manual``...) as a trailing comment, for the reviewer of the api-partenaires PR.
+    (``fiche`` required for ``dila``, optional otherwise; ``siret`` optional).
     """
     lines = ["oidc_providers:"]
     for entry in entries:
@@ -991,23 +1013,19 @@ def render_proconnect_allowlist_yaml(entries: list[dict]) -> str:
                 raise ValueError(f"Unknown allowlist source: {source!r}")
             # The domain itself is safe by construction: only normalize_domains()
             # values reach a bucket, and none of them can hold a space or a newline.
-            # One space before the ``#``: prettier reformats two down to one, so
-            # emitting two makes every generated file a diff against itself.
-            line = f"      - domain: {item['domain']}"
-            if source == ALLOWLIST_SOURCE_ROUTED and item.get("provenance"):
-                line += f" # {_yaml_comment_text(item['provenance'])}"
-            lines.append(line)
-            if source == ALLOWLIST_SOURCE_DILA:
-                # Written unquoted: only a URL that passes the strict check may.
+            lines.append(f"      - domain: {item['domain']}")
+            # Written unquoted: only a URL that passes the strict check may. A
+            # "dila" row must have one, any other may.
+            if item.get("fiche") or source == ALLOWLIST_SOURCE_DILA:
                 if not valid_fiche_url(item.get("fiche")):
                     raise ValueError(f"Invalid fiche URL for {item['domain']}")
                 lines.append(f"        fiche: {item['fiche']}")
-                # Quoted: bare, 14 digits would parse as a YAML integer. A SIRET
-                # is optional (an organization may not have one); only 14 digits
-                # may be written, so nothing else can reach the file.
-                if item.get("siret"):
-                    if not valid_siret(item["siret"]):
-                        raise ValueError(f"Invalid SIRET for {item['domain']}")
-                    lines.append(f'        siret: "{item["siret"]}"')
+            # Quoted: bare, 14 digits would parse as a YAML integer. A SIRET is
+            # optional (an organization may not have one); only 14 digits may be
+            # written, so nothing else can reach the file.
+            if item.get("siret"):
+                if not valid_siret(item["siret"]):
+                    raise ValueError(f"Invalid SIRET for {item['domain']}")
+                lines.append(f'        siret: "{item["siret"]}"')
             lines.append(f"        source: {source}")
     return "\n".join(lines) + "\n"

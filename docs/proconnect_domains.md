@@ -20,7 +20,7 @@ convention, not an enforced invariant: the write path
 superuser's domains are well-formed and claimed by no other active subscription —
 it does **not** check them against `routable_domains()`. A routed domain also
 counts as its own provenance, so one put there by mistake becomes routable, is
-published in the generated allowlist as a `source: routed` row, and matches on both
+published in the generated allowlist as a `source: routed` row (it is live), and matches on both
 sides of `proconnect_detect_drift`. Nothing downstream will flag it.
 
 ## The buckets
@@ -78,32 +78,47 @@ never restates the rule:
   (`allowed_attached_email_domains`, one entry per uid). It is a superset of
   everything we may ever push.
 
-  Each domain is a mapping, not a bare string, and api-partenaires only knows two
-  `source` values:
+  Each domain is a mapping, not a bare string, with a `source`:
 
   ```yaml
   - domain: a.fr
     fiche: https://lannuaire.service-public.gouv.fr/bretagne/morbihan/<uuid>
     siret: "21560123400017"
     source: dila
-  - domain: b.fr # candidates
+  - domain: b.fr
+    fiche: https://lannuaire.service-public.gouv.fr/bretagne/morbihan/<uuid>
+    siret: "21560123400025"
+    source: candidate
+  - domain: c.fr
+    fiche: https://lannuaire.service-public.gouv.fr/bretagne/morbihan/<uuid>
+    siret: "21560123400033"
     source: routed
   ```
 
-  - `dila` is for the `dpnt` bucket only (declared on service-public.gouv.fr). It
-    needs `fiche`, the organization's Service-Public URL, which must look like a
-    fiche (`https://lannuaire.service-public.gouv.fr/.../<uuid>`). A `dpnt` domain
-    whose organization has no such URL is sent as `routed` instead. `siret` is the
-    organization's SIRET, written (quoted: bare, 14 digits are a YAML integer) only
-    when it is 14 digits. api-partenaires does not read it today.
-  - `routed` is for everything else (`candidates`, `manual`, live domains). It is
-    their manual-exception source, with no fiche, and their CI warns on it. Our own
-    provenance stays visible as a trailing comment (`# candidates`) so the reviewer
-    of the api-partenaires PR can tell them apart.
+  - `dila`: the `dpnt` bucket (declared on service-public.gouv.fr). A `dila` row
+    must have a `fiche`.
+  - `routed`: the domain is already live, an active subscription sends it today.
+    This is checked against the live subscriptions, not the buckets: a live domain
+    that also sits in `candidates` or `manual` is `routed`.
+  - `manual`: not live, added by a superuser (the `manual` bucket).
+  - `candidate`: not live, generated from the collectivité's name (the
+    `candidates` bucket). A `dpnt` domain whose organization has no valid fiche
+    ends up here too, or in `routed` if it is live.
 
-  The renderer refuses to write an unknown source, a `dila` row without a valid
-  fiche, or a SIRET that is not 14 digits: this file gates authentication, and
-  these values are imported data.
+  The best applicable source wins, in the order `dila`, `routed`, `manual`,
+  `candidate`.
+
+  - `siret` is the organization's SIRET, on every row that has a valid one (14
+    digits). It is quoted: bare, 14 digits are a YAML integer.
+  - `fiche` is the organization's Service-Public URL, on every row whose
+    organization is a commune, an EPCI, a département or a région. It must look
+    like a fiche (`https://lannuaire.service-public.gouv.fr/.../<uuid>`).
+
+  Their schema (`src/oidc_providers_config.ts` in api-partenaires) currently knows
+  `dila` and `routed` only (`candidate` was removed in #90 and `manual` renamed to
+  `routed` in #80), so the file we generate is not accepted by it as is. The renderer refuses to write an
+  unknown source, a `dila` row without a valid fiche, or a fiche or SIRET with an
+  invalid shape: this file gates authentication, and these values are imported data.
 
   Always gated: `Authorization: Bearer <PROCONNECT_ALLOWLIST_VIEW_API_KEY>`, and
   an unset key closes the route rather than opening it — same rule as every other

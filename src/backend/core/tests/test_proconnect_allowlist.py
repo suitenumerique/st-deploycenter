@@ -3,7 +3,7 @@ Tests for the ProConnect api-partenaires allowlist generation:
 
 - domain-building logic in core/services/proconnect.py
 - the proconnect_regen_candidate_domains command (fills the "candidates" bucket)
-- the public allowlist API route (serves the YAML as text/plain, with comments)
+- the public allowlist API route (serves the YAML as text/plain)
 """
 # pylint: disable=too-many-lines
 
@@ -158,7 +158,10 @@ def test_build_allowlist_covers_whole_departement_with_sources():
     )
     # Org B in the same département contributes via "candidates".
     factories.OrganizationFactory(
-        departement_code_insee="42", proconnect_domains={"candidates": ["b.fr"]}
+        departement_code_insee="42",
+        service_public_url=FICHE,
+        siret="21350001000011",
+        proconnect_domains={"candidates": ["b.fr"]},
     )
     # Org C in another département -> excluded.
     factories.OrganizationFactory(
@@ -178,11 +181,10 @@ def test_build_allowlist_covers_whole_departement_with_sources():
     assert by_domain["a.fr"]["source"] == "dila"
     assert by_domain["a.fr"]["fiche"] == FICHE
     assert by_domain["a.fr"]["siret"] == SIRET
-    # A candidate is a guess: it goes in as a "routed" exception, no fiche, no siret.
-    assert by_domain["b.fr"]["source"] == "routed"
-    assert by_domain["b.fr"]["fiche"] is None
-    assert by_domain["b.fr"]["siret"] is None
-    assert by_domain["b.fr"]["provenance"] == "candidates"
+    # A candidate is not live: "candidate", with the fiche and SIRET of its commune.
+    assert by_domain["b.fr"]["source"] == "candidate"
+    assert by_domain["b.fr"]["fiche"] == FICHE
+    assert by_domain["b.fr"]["siret"] == "21350001000011"
     # managed org, dept not declared
     assert by_domain["managed.fr"]["source"] == "dila"
     assert "c.fr" not in by_domain
@@ -202,9 +204,9 @@ def test_build_allowlist_covers_whole_departement_with_sources():
         FICHE.replace("morbihan", 'a"b'),
     ],
 )
-def test_build_allowlist_dila_domain_without_a_valid_fiche_is_routed(url):
+def test_build_allowlist_dila_domain_without_a_valid_fiche_is_a_candidate(url):
     """api-partenaires wants a fiche on every "dila" row: without a usable one
-    the DILA domain is sent as a "routed" exception instead."""
+    the DILA domain is not "dila" (here not live either, so "candidate")."""
     operator = factories.OperatorFactory(config={"departements": ["01"]})
     service = _proconnect_service("idp-x")
     factories.OperatorServiceConfigFactory(operator=operator, service=service)
@@ -216,9 +218,63 @@ def test_build_allowlist_dila_domain_without_a_valid_fiche_is_routed(url):
 
     (item,) = build_proconnect_allowlist()[0]["allowed_attached_email_domains"]
 
-    assert item["source"] == "routed"
+    assert item["source"] == "candidate"
     assert item["fiche"] is None
-    assert item["provenance"] == "dpnt"
+
+
+def test_build_allowlist_routed_means_live_only():
+    """A live domain is `routed` whatever bucket also holds it; the others are
+    `manual` or `candidate` after their bucket."""
+    operator = factories.OperatorFactory(config={"departements": ["01"]})
+    service = _proconnect_service("idp-x")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+    org = _active_subscription(
+        service, operator, ["live.fr", "live-cand.fr", "live-manual.fr"]
+    )
+    org.proconnect_domains = {
+        "candidates": ["live-cand.fr", "cand.fr"],
+        "manual": ["manual.fr", "live-manual.fr"],
+    }
+    org.save()
+
+    by_domain = {
+        i["domain"]: i["source"]
+        for i in build_proconnect_allowlist()[0]["allowed_attached_email_domains"]
+    }
+
+    assert by_domain == {
+        "live.fr": "routed",
+        "live-cand.fr": "routed",  # live wins over its candidates bucket
+        "live-manual.fr": "routed",  # and over its manual bucket
+        "cand.fr": "candidate",
+        "manual.fr": "manual",
+    }
+
+
+@pytest.mark.parametrize(
+    "org_type,with_fiche",
+    [("commune", True), ("epci", True), ("departement", True), ("region", True)]
+    + [("ccas", False), ("syndicat", False)],
+)
+def test_build_allowlist_fiche_follows_the_organization_type(org_type, with_fiche):
+    """A non-DILA row carries its fiche when the organization is a commune, an
+    EPCI, a département or a région; its SIRET is there whatever the type."""
+    operator = factories.OperatorFactory(config={"departements": ["01"]})
+    service = _proconnect_service("idp-x")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+    factories.OrganizationFactory(
+        departement_code_insee="01",
+        type=org_type,
+        service_public_url=FICHE,
+        siret=SIRET,
+        proconnect_domains={"candidates": ["x.fr"]},
+    )
+
+    (item,) = build_proconnect_allowlist()[0]["allowed_attached_email_domains"]
+
+    assert item["source"] == "candidate"
+    assert item["fiche"] == (FICHE if with_fiche else None)
+    assert item["siret"] == SIRET
 
 
 @pytest.mark.parametrize(
@@ -439,31 +495,21 @@ def test_routable_domains_keeps_a_discarded_domain_that_is_live():
 
 
 def test_render_yaml_matches_the_api_partenaires_format():
-    """A dila row carries its fiche; a routed row carries our provenance as a comment."""
+    """Fiche and SIRET come out in this order, each only when the row has it."""
     entries = [
         {
             "uid": "x",
             "allowed_attached_email_domains": [
-                {
-                    "domain": "a.fr",
-                    "source": "dila",
-                    "fiche": FICHE,
-                    "siret": SIRET,
-                    "provenance": "dpnt",
-                },
-                {
-                    "domain": "c.fr",
-                    "source": "dila",
-                    "fiche": FICHE,
-                    "siret": None,
-                    "provenance": "dpnt",
-                },
+                {"domain": "a.fr", "source": "dila", "fiche": FICHE, "siret": SIRET},
+                {"domain": "c.fr", "source": "dila", "fiche": FICHE, "siret": None},
                 {
                     "domain": "b.fr",
-                    "source": "routed",
-                    "fiche": None,
-                    "provenance": "candidates",
+                    "source": "candidate",
+                    "fiche": FICHE,
+                    "siret": SIRET,
                 },
+                {"domain": "m.fr", "source": "manual", "fiche": None, "siret": SIRET},
+                {"domain": "d.fr", "source": "routed", "fiche": None, "siret": None},
             ],
         },
         {"uid": "y", "allowed_attached_email_domains": []},
@@ -479,7 +525,14 @@ def test_render_yaml_matches_the_api_partenaires_format():
         "      - domain: c.fr\n"
         f"        fiche: {FICHE}\n"
         "        source: dila\n"
-        "      - domain: b.fr # candidates\n"
+        "      - domain: b.fr\n"
+        f"        fiche: {FICHE}\n"
+        f'        siret: "{SIRET}"\n'
+        "        source: candidate\n"
+        "      - domain: m.fr\n"
+        f'        siret: "{SIRET}"\n'
+        "        source: manual\n"
+        "      - domain: d.fr\n"
         "        source: routed\n"
         '  - uid: "y"\n'
         "    allowed_attached_email_domains: []\n"
@@ -492,7 +545,9 @@ def test_render_yaml_matches_the_api_partenaires_format():
     ] == [
         {"domain": "a.fr", "fiche": FICHE, "siret": SIRET, "source": "dila"},
         {"domain": "c.fr", "fiche": FICHE, "source": "dila"},
-        {"domain": "b.fr", "source": "routed"},
+        {"domain": "b.fr", "fiche": FICHE, "siret": SIRET, "source": "candidate"},
+        {"domain": "m.fr", "siret": SIRET, "source": "manual"},
+        {"domain": "d.fr", "source": "routed"},
     ]
 
 
@@ -575,27 +630,6 @@ def test_render_yaml_refuses_an_unknown_source():
 
     with pytest.raises(ValueError, match="Unknown allowlist source"):
         render_proconnect_allowlist_yaml(entries)
-
-
-def test_render_yaml_comment_cannot_inject_a_line():
-    """A newline in the provenance comment must not add an entry."""
-    entries = [
-        {
-            "uid": "x",
-            "allowed_attached_email_domains": [
-                {
-                    "domain": "a.fr",
-                    "source": "routed",
-                    "provenance": "manual\n      - domain: evil.fr\n        source: routed",
-                }
-            ],
-        }
-    ]
-
-    parsed = yaml.safe_load(render_proconnect_allowlist_yaml(entries))
-    assert parsed["oidc_providers"][0]["allowed_attached_email_domains"] == [
-        {"domain": "a.fr", "source": "routed"}
-    ]
 
 
 # --- proconnect_regen_candidate_domains command --------------------------------------
@@ -791,7 +825,7 @@ def _get_allowlist(**kwargs):
 
 @allowlist_key_settings
 def test_allowlist_api_route_serves_yaml_text_plain():
-    """The route renders the built allowlist as text/plain YAML with source comments."""
+    """The route renders the built allowlist as text/plain YAML."""
     operator = factories.OperatorFactory()
     service = _proconnect_service("idp-x")
     factories.OperatorServiceConfigFactory(operator=operator, service=service)
@@ -809,16 +843,25 @@ def test_allowlist_api_route_serves_yaml_text_plain():
     assert 'uid: "idp-x"' in body
     parsed = yaml.safe_load(body)["oidc_providers"][0]["allowed_attached_email_domains"]
     assert {item["domain"]: item for item in parsed} == {
-        "sub.fr": {"domain": "sub.fr", "source": "routed"},  # live
+        "sub.fr": {  # live
+            "domain": "sub.fr",
+            "fiche": FICHE,
+            "siret": SIRET,
+            "source": "routed",
+        },
         "dila.fr": {
             "domain": "dila.fr",
             "fiche": FICHE,
             "siret": SIRET,
             "source": "dila",
         },
-        "manual.fr": {"domain": "manual.fr", "source": "routed"},
+        "manual.fr": {
+            "domain": "manual.fr",
+            "fiche": FICHE,
+            "siret": SIRET,
+            "source": "manual",
+        },
     }
-    assert "- domain: manual.fr # manual\n" in body
 
 
 def test_allowlist_api_route_is_closed_without_a_key():
