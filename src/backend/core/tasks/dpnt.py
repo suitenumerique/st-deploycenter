@@ -8,9 +8,11 @@ import gzip
 import json
 import logging
 from collections import defaultdict
+from io import StringIO
 from typing import Any, Dict
 
 from django.core.exceptions import ValidationError
+from django.core.management import call_command
 from django.db import transaction
 
 import requests
@@ -194,6 +196,13 @@ def import_dpnt_dataset(self, force_update: bool = True, max_rows: int = None): 
     # every organization the loop above merged.
     with transaction.atomic():
         stats["auto_join"] = _process_auto_join()
+
+    # Last, once every "dpnt" bucket is up to date: a domain DILA just gave to an
+    # organization must leave its homonyms' candidates. One transaction per
+    # organization inside the command, so no lock is held across the run.
+    output = StringIO()
+    call_command("proconnect_regen_candidate_domains", stdout=output)
+    stats["candidates"] = output.getvalue().strip()
 
     logger.info("DPNT import completed. Stats: %s", stats)
     return stats

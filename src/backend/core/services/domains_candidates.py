@@ -15,7 +15,7 @@ from typing import Optional
 
 from django.utils.text import slugify
 
-from core.models import Organization
+from core.models import Organization, ServiceSubscription
 from core.services.domainnames import normalize_domains
 from core.services.domains import DOMAIN_EXTENSIONS_DEPARTEMENTS
 from core.services.proconnect import domain_bucket
@@ -75,11 +75,13 @@ def _slug_without_article(name: str) -> Optional[str]:
 def claimed_domains() -> dict[str, str]:
     """Map every domain a collectivité provably owns to that organization's id.
 
-    "Provably" means DILA said so (``dpnt``) or a superuser validated it
-    (``manual``). Requested and candidate domains are guesses and are left out.
+    "Provably" means DILA said so (``dpnt``), a superuser validated it (``manual``)
+    or it is live (routed by an active ProConnect subscription). Requested and
+    candidate domains are guesses and are left out.
 
-    One query over every organization, so build it once per batch and pass it to
-    :func:`candidate_domains_for_organization` — never call it in a loop.
+    Two queries over every organization and subscription, so build it once per
+    batch and pass it to :func:`candidate_domains_for_organization` — never call it
+    in a loop.
     """
     owners: dict[str, str] = {}
     rows = Organization.objects.exclude(proconnect_domains={}).values_list(
@@ -94,6 +96,12 @@ def claimed_domains() -> dict[str, str]:
                 # data problem of its own, and picking either one suppresses the
                 # candidate for the other, which is what we want here.
                 owners.setdefault(domain, pk)
+    subscriptions = ServiceSubscription.objects.filter(
+        service__type="proconnect", is_active=True
+    ).values_list("organization_id", "metadata")
+    for pk, metadata in subscriptions.iterator():
+        for domain in normalize_domains((metadata or {}).get("domains")):
+            owners.setdefault(domain, pk)
     return owners
 
 

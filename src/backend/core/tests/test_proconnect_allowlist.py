@@ -408,6 +408,116 @@ def test_build_allowlist_routed_domain_does_not_leak_across_idps():
     assert "onlya.fr" not in by_uid.get("idp-b", set())
 
 
+def _sources_by_uid():
+    return {
+        entry["uid"]: {
+            item["domain"]: item["source"]
+            for item in entry["allowed_attached_email_domains"]
+        }
+        for entry in build_proconnect_allowlist()
+    }
+
+
+def test_build_allowlist_domain_live_on_one_idp_is_not_proposed_on_another():
+    """A commune routed to xyz.bzh on idp-a, with xyz.bzh also in its manual bucket,
+    gets the `routed` row on idp-a only: idp-b would reject it as already taken."""
+    operator = factories.OperatorFactory(config={"departements": ["22"]})
+    svc_a = _proconnect_service("idp-a")
+    svc_b = _proconnect_service("idp-b")
+    factories.OperatorServiceConfigFactory(operator=operator, service=svc_a)
+    factories.OperatorServiceConfigFactory(operator=operator, service=svc_b)
+    org = factories.OrganizationFactory(
+        departement_code_insee="22",
+        service_public_url=FICHE,
+        proconnect_domains={"dpnt": ["xyz.fr"], "manual": ["xyz.bzh"]},
+    )
+    factories.ServiceSubscriptionFactory(
+        organization=org,
+        service=svc_a,
+        operator=operator,
+        metadata={"domains": ["xyz.bzh"]},
+        is_active=True,
+    )
+
+    assert _sources_by_uid() == {
+        "idp-a": {"xyz.fr": "dila", "xyz.bzh": "routed"},
+        "idp-b": {"xyz.fr": "dila"},
+    }
+
+
+def test_build_allowlist_candidate_live_for_another_org_on_another_idp_is_dropped():
+    """A candidate guess that another collectivité already routes elsewhere is not
+    proposed, wherever that collectivité sits."""
+    op_a = factories.OperatorFactory(config={"departements": ["01"]})
+    op_b = factories.OperatorFactory(config={"departements": ["42"]})
+    svc_a = _proconnect_service("idp-a")
+    svc_b = _proconnect_service("idp-b")
+    factories.OperatorServiceConfigFactory(operator=op_a, service=svc_a)
+    factories.OperatorServiceConfigFactory(operator=op_b, service=svc_b)
+    factories.ServiceSubscriptionFactory(
+        organization=factories.OrganizationFactory(departement_code_insee="01"),
+        service=svc_a,
+        operator=op_a,
+        metadata={"domains": ["taken.fr"]},
+        is_active=True,
+    )
+    factories.OrganizationFactory(
+        departement_code_insee="42",
+        proconnect_domains={"candidates": ["taken.fr", "free.fr"]},
+    )
+
+    assert _sources_by_uid() == {
+        "idp-a": {"taken.fr": "routed"},
+        "idp-b": {"free.fr": "candidate"},
+    }
+
+
+def test_build_allowlist_candidate_is_dropped_when_another_org_has_it_at_dila():
+    """crozet.fr is DILA for the commune of the Ain; the Loire's Le Crozet must not
+    get it as a candidate on its own provider, which the Ain's org is not scoped to."""
+    op_a = factories.OperatorFactory(config={"departements": ["01"]})
+    op_b = factories.OperatorFactory(config={"departements": ["42"]})
+    svc_a = _proconnect_service("idp-a")
+    svc_b = _proconnect_service("idp-b")
+    factories.OperatorServiceConfigFactory(operator=op_a, service=svc_a)
+    factories.OperatorServiceConfigFactory(operator=op_b, service=svc_b)
+    factories.OrganizationFactory(
+        departement_code_insee="01",
+        service_public_url=FICHE,
+        proconnect_domains={"dpnt": ["crozet.fr"]},
+    )
+    factories.OrganizationFactory(
+        departement_code_insee="42",
+        proconnect_domains={"candidates": ["crozet.fr", "le-crozet.fr"]},
+    )
+
+    assert _sources_by_uid() == {
+        "idp-a": {"crozet.fr": "dila"},
+        "idp-b": {"le-crozet.fr": "candidate"},
+    }
+
+
+def test_build_allowlist_manual_domain_stays_when_another_org_has_it_at_dila():
+    """Unlike a guess, a domain a superuser added by hand is kept."""
+    op_a = factories.OperatorFactory(config={"departements": ["01"]})
+    op_b = factories.OperatorFactory(config={"departements": ["42"]})
+    svc_a = _proconnect_service("idp-a")
+    svc_b = _proconnect_service("idp-b")
+    factories.OperatorServiceConfigFactory(operator=op_a, service=svc_a)
+    factories.OperatorServiceConfigFactory(operator=op_b, service=svc_b)
+    factories.OrganizationFactory(
+        departement_code_insee="01",
+        service_public_url=FICHE,
+        proconnect_domains={"dpnt": ["shared.fr"]},
+    )
+    factories.OrganizationFactory(
+        departement_code_insee="42",
+        proconnect_domains={"manual": ["shared.fr"]},
+    )
+
+    assert _sources_by_uid()["idp-b"] == {"shared.fr": "manual"}
+
+
 def test_domain_bucket_rejects_non_hostname_values():
     """Junk (spaces, newlines, YAML metachars) is dropped from buckets so it can
     never be injected into the allowlist YAML."""

@@ -26,6 +26,22 @@ from core.tasks.dpnt import import_dpnt_dataset
 logger = logging.getLogger(__name__)
 
 
+@pytest.fixture(name="real_candidate_regen")
+def real_candidate_regen_fixture():
+    """Ask for this to run the candidate regeneration the import ends with."""
+
+
+@pytest.fixture(autouse=True)
+def _skip_candidate_regen(request):
+    """The padded datasets hold 30 000 communes: regenerating their candidates
+    would add most of a minute to each test that does not look at them."""
+    if "real_candidate_regen" in request.fixturenames:
+        yield
+        return
+    with patch("core.tasks.dpnt.call_command"):
+        yield
+
+
 @pytest.mark.django_db
 def test_import_real_dpnt_data():
     """Test importing real DPNT data (first 100 rows) and verify the import."""
@@ -371,6 +387,66 @@ def test_dpnt_import_survives_a_malformed_email(_mock_dl):
     # The rest of the dataset was still imported.
     assert result["created"] > 0
     assert Organization.objects.filter(siret="11111111100001").exists()
+
+
+def _mock_download_with_homonyms():
+    """Two communes named Crozet; only the first one declares crozet.fr."""
+    declared = {
+        "type": "commune",
+        "libelle": "Crozet",
+        "siret": "80000000000001",
+        "siren": "800000000",
+        "code_insee": "80001",
+        "code_postal": "01170",
+        "departement_code_insee": "01",
+        "population": 100,
+        "rpnt": ["1.1"],
+        "site_internet": "https://crozet.fr",
+    }
+    homonym = {
+        "type": "commune",
+        "libelle": "Crozet",
+        "siret": "80000000000002",
+        "siren": "800000001",
+        "code_insee": "80002",
+        "code_postal": "42310",
+        "departement_code_insee": "42",
+        "population": 100,
+    }
+    # EPCIs get no candidates, so the padding costs the regeneration nothing.
+    padding = [
+        {
+            "type": "epci",
+            "libelle": f"EPCI padding {i}",
+            "siret": f"{90000000000000 + i}",
+            "siren": f"{900000000 + i:09d}",
+            "population": 100,
+        }
+        for i in range(30000)
+    ]
+    return {
+        "status": "success",
+        "message": "Downloaded fake records",
+        "data": [declared, homonym, *padding],
+    }
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("real_candidate_regen")
+@patch(
+    "core.tasks.dpnt.download_dpnt_dataset", side_effect=_mock_download_with_homonyms
+)
+def test_dpnt_import_regenerates_candidates_once_dila_domains_are_known(_mock_dl):
+    """A homonym is not offered the domain another commune declares, as of the
+    very import that brings that declaration."""
+    result = import_dpnt_dataset.apply(kwargs={"force_update": True}).get()
+
+    declared = Organization.objects.get(siret="80000000000001")
+    homonym = Organization.objects.get(siret="80000000000002")
+    assert declared.proconnect_domains["dpnt"] == ["crozet.fr"]
+    assert "crozet.fr" not in homonym.proconnect_domains["candidates"]
+    assert "mairie-crozet.fr" in homonym.proconnect_domains["candidates"]
+    assert "updated out of" in result["candidates"]
 
 
 def _mock_download_with_malformed_rows():

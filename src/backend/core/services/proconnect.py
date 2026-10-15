@@ -27,7 +27,7 @@ import logging
 import re
 import time
 from collections import defaultdict
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 from typing import NamedTuple, Optional
 from urllib.parse import urljoin, urlsplit
@@ -578,7 +578,9 @@ def routed_domains_by_idp() -> dict[str, list[str]]:
         service__type="proconnect", is_active=True
     ).select_related("service", "operator")
 
-    with effective_config_memo():
+    # Join the caller's memo when there is one, so a build does not resolve twice.
+    memo = nullcontext() if _effective_config_memo.get() is not None else None
+    with memo or effective_config_memo():
         for subscription in subscriptions:
             idp_id = subscription_idp_id(subscription)
             if not idp_id:
@@ -928,9 +930,39 @@ class _DomainOwner(NamedTuple):
     org_type: str
 
 
+def dila_domain_owners() -> dict[str, set]:
+    """Map every ``dpnt`` (DILA) domain to the ids of the organizations declaring it.
+
+    One query over every organization, whatever provider it is scoped to.
+    """
+    owners: dict[str, set] = defaultdict(set)
+    rows = Organization.objects.exclude(proconnect_domains={}).values_list(
+        "pk", "proconnect_domains"
+    )
+    for pk, buckets in rows.iterator():
+        if isinstance(buckets, dict):
+            for domain in normalize_domains(buckets.get("dpnt")):
+                owners[domain].add(pk)
+    return owners
+
+
+def live_domain_idps() -> dict[str, set[str]]:
+    """Map every live domain to the providers it is routed to (see
+    :func:`routed_domains_by_idp`)."""
+    idps: dict[str, set[str]] = defaultdict(set)
+    for idp_id, domains in routed_domains_by_idp().items():
+        for domain in domains:
+            idps[domain].add(idp_id)
+    return idps
+
+
 def _build_proconnect_allowlist() -> list[dict]:
     """Body of :func:`build_proconnect_allowlist` (runs under the config memo)."""
     entries = []
+    # Global, not per provider: a domain can be taken by an organization this
+    # provider is not scoped to.
+    dila_owners = dila_domain_owners()
+    live_idps = live_domain_idps()
     for idp_id, scope in _proconnect_idp_scopes().items():
         domain_info: dict[str, _DomainOwner] = {}
         live_domains: set[str] = set()
@@ -942,6 +974,15 @@ def _build_proconnect_allowlist() -> list[dict]:
             # Per-idp, so this org only contributes what it routes to THIS provider.
             live_domains |= routed_domains(organization, idp_id)
             for domain, provenance in domain_provenances(organization, idp_id).items():
+                if provenance in ("candidates", "manual"):
+                    # Already live on another provider: it would be rejected as taken.
+                    if live_idps.get(domain, set()) - {idp_id}:
+                        continue
+                if provenance == "candidates":
+                    # A guess must not land on a domain DILA gives to another
+                    # collectivité (a homonym), in or out of this provider's scope.
+                    if dila_owners.get(domain, set()) - {organization.pk}:
+                        continue
                 # Two organizations can claim the same domain; the strongest
                 # provenance wins, whatever order we walk them in.
                 priority = ROUTABLE_PROVENANCES.index(provenance)

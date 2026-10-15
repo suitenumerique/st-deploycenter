@@ -44,6 +44,14 @@ exempt, since a discard is a tombstone rather than a provenance — and one plac
 a DILA domain has no effect anyway (see the routable rule). The admin shows the
 field read-only for the same reason.
 
+`candidates` is rebuilt for every commune by `proconnect_regen_candidate_domains`,
+which the `import_dpnt_dataset` task (daily, `cron.json`) runs as its last step. It
+runs after the `dpnt` buckets are up to date because a candidate is dropped when
+another organization has the domain in `dpnt` or `manual`, or routes it. Between two
+imports, a domain that becomes live or is added to `manual` stays in other
+organizations' `candidates` until the next one; run the command by hand to refresh
+sooner.
+
 ## The routable rule
 
 One function, `domain_provenances()`, decides what may be routed, and everything
@@ -107,6 +115,16 @@ never restates the rule:
 
   The best applicable source wins, in the order `dila`, `routed`, `manual`,
   `candidate`.
+
+  A domain is looked up across all organizations, not only those scoped to the
+  provider being written:
+
+  - a `manual` or `candidate` row is not written for a provider when the domain is
+    live on another provider (it would be refused as taken). A `dila` row is kept on
+    every provider whose scope holds the organization;
+  - a `candidate` row is not written when another organization has the domain in
+    `dpnt`, which is how a homonym's guess stops overwriting a `dila` row. A
+    `manual` row is kept: a superuser chose it.
 
   - `siret` is the organization's SIRET, on every row that has a valid one (14
     digits). It is quoted: bare, 14 digits are a YAML integer.
@@ -179,7 +197,7 @@ collectivité, and a commune whose website is a Wix page has no mailbox on
 
 **3. `claimed_domains()`, for candidates.** Candidate domains are guesses derived
 from the commune's name, and the only filter on them is that another *collectivité*
-does not provably own the name. That filter cannot see a domain owned by anyone
+does not provably own the name (in `dpnt` or `manual`, or live). That filter cannot see a domain owned by anyone
 else, so the generator proposed `ens.fr` to the commune of Ens (65), `vogue.fr` to
 Vogüé (07), `lancome.fr` to Lancôme (41), `lapeyre.fr` to Lapeyre (65) and
 `lamontagne.fr` to La Montagne (70). It also proposed the same name to two or three

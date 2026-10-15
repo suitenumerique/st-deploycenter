@@ -9,9 +9,11 @@ import uuid
 
 import pytest
 
+from core import factories
 from core.models import Organization
 from core.services.domains_candidates import (
     candidate_domains_for_organization,
+    claimed_domains,
     slugify_org_domain,
 )
 
@@ -188,6 +190,40 @@ def test_an_org_own_claimed_domain_is_still_proposed():
     claimed = {"sainte-colombe.fr": org.pk}
 
     assert "sainte-colombe.fr" in candidate_domains_for_organization(org, claimed)
+
+
+@pytest.mark.django_db
+def test_claimed_domains_covers_dila_manual_and_live_domains():
+    """What a collectivité routes today is as taken as what DILA gives it, but only
+    an active ProConnect subscription counts."""
+    dila = factories.OrganizationFactory(proconnect_domains={"dpnt": ["dila.fr"]})
+    manual = factories.OrganizationFactory(proconnect_domains={"manual": ["man.fr"]})
+    guess = factories.OrganizationFactory(proconnect_domains={"candidates": ["g.fr"]})
+    live = factories.OrganizationFactory()
+    service = factories.ServiceFactory(type="proconnect", config={"idp_id": "idp-x"})
+    operator = factories.OperatorFactory()
+    factories.ServiceSubscriptionFactory(
+        organization=live,
+        service=service,
+        operator=operator,
+        metadata={"domains": ["live.fr"]},
+        is_active=True,
+    )
+    stopped = factories.OrganizationFactory()
+    factories.ServiceSubscriptionFactory(
+        organization=stopped,
+        service=service,
+        operator=operator,
+        metadata={"domains": ["stopped.fr"]},
+        is_active=False,
+    )
+
+    assert claimed_domains() == {
+        "dila.fr": dila.pk,
+        "man.fr": manual.pk,
+        "live.fr": live.pk,
+    }
+    assert guess.pk not in claimed_domains().values()
 
 
 def test_claimed_map_is_optional():
