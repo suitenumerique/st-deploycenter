@@ -33,7 +33,7 @@ from urllib.parse import urljoin, urlsplit
 from django.conf import settings
 from django.core.cache import caches
 from django.db import transaction
-from django.db.models import Prefetch, Q
+from django.db.models import Q
 
 import requests
 import sentry_sdk
@@ -387,9 +387,16 @@ def domain_bucket(organization: Organization, key: str) -> list[str]:
     return normalize_domains(value.get(key)) if isinstance(value, dict) else []
 
 
+def _normalized_buckets(value) -> dict:
+    """All normalized buckets of a raw ``proconnect_domains`` value."""
+    if not isinstance(value, dict):
+        return {key: [] for key in PROCONNECT_DOMAIN_BUCKETS}
+    return {key: normalize_domains(value.get(key)) for key in PROCONNECT_DOMAIN_BUCKETS}
+
+
 def proconnect_domains(organization: Organization) -> dict:
     """Return all normalized buckets: ``{requested, manual, dpnt, candidates, discarded}``."""
-    return {key: domain_bucket(organization, key) for key in PROCONNECT_DOMAIN_BUCKETS}
+    return _normalized_buckets(organization.proconnect_domains)
 
 
 def update_proconnect_domains(organization: Organization, **overrides):
@@ -472,9 +479,15 @@ def domain_provenances(
     With ``idp_id``, "routed" means routed *to that provider*, so one provider's
     allowlist never inherits another's live domains.
     """
-    buckets = proconnect_domains(organization)
+    return _provenances(
+        proconnect_domains(organization), routed_domains(organization, idp_id)
+    )
+
+
+def _provenances(buckets: dict, routed: set[str]) -> dict[str, str]:
+    """The rule of :func:`domain_provenances`, on already normalized inputs."""
     sources = {
-        "routed": routed_domains(organization, idp_id),
+        "routed": routed,
         "candidates": set(buckets["candidates"]),
         "manual": set(buckets["manual"]),
         "dpnt": set(buckets["dpnt"]),
@@ -508,9 +521,13 @@ def known_domains(organization: Organization) -> set[str]:
     return domains
 
 
+def _config_idp_id(config) -> Optional[str]:
+    return (config or {}).get("idp_id")
+
+
 def service_idp_id(service: Service) -> Optional[str]:
     """The ``idp_id`` of a service. Operators cannot override it."""
-    return (service.config or {}).get("idp_id")
+    return _config_idp_id(service.config)
 
 
 def subscription_idp_id(subscription: ServiceSubscription) -> Optional[str]:
@@ -936,8 +953,8 @@ def _covered_departement_codes(operator_ids) -> set[str]:
     return codes
 
 
-def _scoped_organizations(operator_ids, service_ids):
-    """Organizations whose domains feed a provider's allowlist.
+def _scoped_organization_ids(operator_ids, service_ids) -> set:
+    """Ids of the organizations whose domains feed a provider's allowlist.
 
     For the operators/services resolving to a given idp, this is the union of:
     - orgs in one of the operators' declared ``config["departements"]``,
@@ -957,23 +974,8 @@ def _scoped_organizations(operator_ids, service_ids):
         query |= Q(departement_code_insee__in=covered)
     if operator_ids:
         query |= Q(operators__in=operator_ids)
-    return (
-        Organization.objects.filter(query)
-        .distinct()
-        # A stable walk: homonyms tie on name, and a tie on a domain goes to the
-        # first organization walked.
-        .order_by("pk")
-        # routed_domains() walks every org's subscriptions (and their service /
-        # operator, to resolve the effective idp): prefetch to keep the allowlist
-        # build from issuing three queries per organization.
-        .prefetch_related(
-            Prefetch(
-                "service_subscriptions",
-                queryset=ServiceSubscription.objects.select_related(
-                    "service", "operator"
-                ),
-            )
-        )
+    return set(
+        Organization.objects.filter(query).distinct().values_list("pk", flat=True)
     )
 
 
@@ -987,7 +989,7 @@ def build_proconnect_allowlist() -> list[dict]:
     (always on a ``dila`` row, otherwise when the organization is of a type in
     :data:`FICHE_ORG_TYPES`) and ``siret`` its SIRET when it has a valid one.
     """
-    return _build_proconnect_allowlist()
+    return list(iter_proconnect_allowlist())
 
 
 class _DomainOwner(NamedTuple):
@@ -1017,35 +1019,96 @@ def dila_domain_owners() -> dict[str, set]:
     return owners
 
 
-def live_domain_idps() -> dict[str, set[str]]:
-    """Map every live domain to the providers it is routed to (see
-    :func:`routed_domains_by_idp`)."""
-    idps: dict[str, set[str]] = defaultdict(set)
-    for idp_id, domains in routed_domains_by_idp().items():
+def _live_domains() -> tuple[dict, dict[str, set[str]]]:
+    """What the active ProConnect subscriptions route, from a single scan.
+
+    Returns ``({organization id: {idp_id: domains}}, {domain: idp_ids})``: what
+    each organization routes to each provider, and every provider each live
+    domain is routed to (see :func:`routed_domains_by_idp`).
+    """
+    by_organization: dict = {}
+    by_domain: dict[str, set[str]] = defaultdict(set)
+    rows = ServiceSubscription.objects.filter(
+        service__type="proconnect", is_active=True
+    ).values_list("organization_id", "metadata", "service__config")
+    for organization_id, metadata, config in rows:
+        idp_id = _config_idp_id(config)
+        if not idp_id:
+            continue
+        domains = normalize_domains((metadata or {}).get("domains"))
+        by_organization.setdefault(organization_id, {}).setdefault(
+            idp_id, set()
+        ).update(domains)
         for domain in domains:
-            idps[domain].add(idp_id)
-    return idps
+            by_domain[domain].add(idp_id)
+    return by_organization, by_domain
 
 
-def _build_proconnect_allowlist() -> list[dict]:
-    """Body of :func:`build_proconnect_allowlist` (runs under the config memo)."""
-    entries = []
+# Ids per query when fetching the organizations in scope.
+ORGANIZATION_CHUNK = 2000
+
+
+def _iter_scoped_organizations(organization_ids):
+    """Yield the in-scope organizations in pk order, as plain row tuples.
+
+    ``(pk, proconnect_domains, service_public_url, name, siret, type)``: nothing
+    else of the model is read, and no model instance is built.
+    """
+    ordered = sorted(organization_ids)
+    for start in range(0, len(ordered), ORGANIZATION_CHUNK):
+        yield from (
+            Organization.objects.filter(
+                pk__in=ordered[start : start + ORGANIZATION_CHUNK]
+            )
+            .order_by("pk")
+            .values_list(
+                "pk",
+                "proconnect_domains",
+                "service_public_url",
+                "name",
+                "siret",
+                "type",
+            )
+        )
+
+
+def iter_proconnect_allowlist():
+    """Yield the entries of :func:`build_proconnect_allowlist`, one provider at a time.
+
+    Entries come in ``uid`` order and each provider's rows are released as soon as
+    it is yielded, so a caller that streams them never holds the whole file.
+    """
     # Global, not per provider: a domain can be taken by an organization this
     # provider is not scoped to.
     dila_owners = dila_domain_owners()
-    live_idps = live_domain_idps()
-    for idp_id, scope in _proconnect_idp_scopes().items():
-        domain_info: dict[str, _DomainOwner] = {}
-        live_domains: set[str] = set()
-        organizations = _scoped_organizations(
+    live_by_organization, live_idps = _live_domains()
+    scopes = _proconnect_idp_scopes()
+
+    # An organization in the scope of several providers is read once, not once per
+    # provider.
+    idps_by_organization: dict = defaultdict(list)
+    for idp_id, scope in scopes.items():
+        for organization_id in _scoped_organization_ids(
             scope["operator_ids"], scope["service_ids"]
-        )
-        # An explicit chunk_size is required for .iterator() to honor the prefetch.
-        for organization in organizations.iterator(chunk_size=500):
+        ):
+            idps_by_organization[organization_id].append(idp_id)
+
+    domain_info: dict[str, dict[str, _DomainOwner]] = {idp_id: {} for idp_id in scopes}
+    live_domains: dict[str, set[str]] = {idp_id: set() for idp_id in scopes}
+    # In pk order, so that each provider sees its organizations the way a walk of
+    # its own would: homonyms tie on name, and a tie on a domain goes to the first
+    # organization walked.
+    for pk, value, fiche_url, name, siret, org_type in _iter_scoped_organizations(
+        idps_by_organization
+    ):
+        buckets = _normalized_buckets(value)
+        routed = live_by_organization.get(pk, {})
+        for idp_id in idps_by_organization[pk]:
             # Per-idp, so this org only contributes what it routes to THIS provider.
-            org_live = routed_domains(organization, idp_id)
-            live_domains |= org_live
-            for domain, provenance in domain_provenances(organization, idp_id).items():
+            org_live = routed.get(idp_id, set())
+            live_domains[idp_id] |= org_live
+            info = domain_info[idp_id]
+            for domain, provenance in _provenances(buckets, org_live).items():
                 if provenance in ("candidates", "manual"):
                     # Already live on another provider: it would be rejected as taken.
                     if live_idps.get(domain, set()) - {idp_id}:
@@ -1053,40 +1116,48 @@ def _build_proconnect_allowlist() -> list[dict]:
                 if provenance == "candidates":
                     # A guess must not land on a domain DILA gives to another
                     # collectivité (a homonym), in or out of this provider's scope.
-                    if dila_owners.get(domain, set()) - {organization.pk}:
+                    if dila_owners.get(domain, set()) - {pk}:
                         continue
                 # Two organizations can claim the same domain (homonyms). The row
                 # takes its fiche and SIRET from the one DILA gives it to, else
                 # the one routing it, else the strongest provenance; a full tie
-                # goes to the first walked (see _scoped_organizations).
+                # goes to the first walked.
                 rank = (
                     provenance == "dpnt",
                     domain in org_live,
                     ROUTABLE_PROVENANCES.index(provenance),
                 )
-                current = domain_info.get(domain)
+                current = info.get(domain)
                 if current is None or rank > current.rank:
-                    domain_info[domain] = _DomainOwner(
+                    info[domain] = _DomainOwner(
                         rank,
                         provenance,
-                        organization.service_public_url or None,
-                        organization.name or "",
-                        organization.siret or None,
-                        organization.type,
+                        fiche_url or None,
+                        name or "",
+                        siret or None,
+                        org_type,
                     )
 
+    fiche_is_valid: dict = {}
+    for idp_id in sorted(scopes):
+        info = domain_info.pop(idp_id)
+        live = live_domains.pop(idp_id)
         # Ordered by organization name ASC, then domain ASC.
         allowed = []
         for domain, owner in sorted(
-            domain_info.items(), key=lambda kv: (kv[1].org_name.casefold(), kv[0])
+            info.items(), key=lambda kv: (kv[1].org_name.casefold(), kv[0])
         ):
-            has_fiche = valid_fiche_url(owner.fiche_url)
+            has_fiche = fiche_is_valid.get(owner.fiche_url)
+            if has_fiche is None:
+                has_fiche = fiche_is_valid[owner.fiche_url] = valid_fiche_url(
+                    owner.fiche_url
+                )
             # A live domain is "routed" even when DILA declares it: api-partenaires
             # checks every "dila" row against DILA and refuses the ones that fail
             # (shared domain, name not carried...), while "routed" is accepted as is.
             # A DILA domain without a usable fiche cannot be "dila" for
             # api-partenaires: it falls through to the next source.
-            if domain in live_domains:
+            if domain in live:
                 source = ALLOWLIST_SOURCE_ROUTED
             elif owner.provenance == "dpnt" and has_fiche:
                 source = ALLOWLIST_SOURCE_DILA
@@ -1107,47 +1178,65 @@ def _build_proconnect_allowlist() -> list[dict]:
                     "siret": owner.siret if valid_siret(owner.siret) else None,
                 }
             )
-        entries.append({"uid": idp_id, ALLOWED_DOMAINS_KEY: allowed})
-
-    entries.sort(key=lambda entry: entry["uid"])
-    return entries
+        yield {"uid": idp_id, ALLOWED_DOMAINS_KEY: allowed}
 
 
-def render_proconnect_allowlist_yaml(entries: list[dict]) -> str:
-    """Render allowlist entries as YAML matching the api-partenaires format.
+# Lines per chunk of the streamed YAML.
+YAML_CHUNK_LINES = 5000
 
-    Each domain is a ``domain`` / ``fiche`` / ``siret`` / ``source`` mapping
-    (``fiche`` required for ``dila``, optional otherwise; ``siret`` optional).
-    """
-    lines = ["oidc_providers:"]
+
+def _allowlist_yaml_lines(entries):
+    """The lines of :func:`render_proconnect_allowlist_yaml`, one at a time."""
+    yield "oidc_providers:"
     for entry in entries:
         # json.dumps yields a valid double-quoted YAML scalar (JSON is a YAML
         # subset), so a uid containing a quote or newline can't break out.
-        lines.append(f"  - uid: {json.dumps(entry['uid'])}")
+        yield f"  - uid: {json.dumps(entry['uid'])}"
         domains = entry[ALLOWED_DOMAINS_KEY]
         if not domains:
-            lines.append(f"    {ALLOWED_DOMAINS_KEY}: []")
+            yield f"    {ALLOWED_DOMAINS_KEY}: []"
             continue
-        lines.append(f"    {ALLOWED_DOMAINS_KEY}:")
+        yield f"    {ALLOWED_DOMAINS_KEY}:"
         for item in domains:
             source = item["source"]
             if source not in ALLOWLIST_SOURCES:
                 raise ValueError(f"Unknown allowlist source: {source!r}")
             # The domain itself is safe by construction: only normalize_domains()
             # values reach a bucket, and none of them can hold a space or a newline.
-            lines.append(f"      - domain: {item['domain']}")
+            yield f"      - domain: {item['domain']}"
             # Written unquoted: only a URL that passes the strict check may. A
             # "dila" row must have one, any other may.
             if item.get("fiche") or source == ALLOWLIST_SOURCE_DILA:
                 if not valid_fiche_url(item.get("fiche")):
                     raise ValueError(f"Invalid fiche URL for {item['domain']}")
-                lines.append(f"        fiche: {item['fiche']}")
+                yield f"        fiche: {item['fiche']}"
             # Quoted: bare, 14 digits would parse as a YAML integer. A SIRET is
             # optional (an organization may not have one); only 14 digits may be
             # written, so nothing else can reach the file.
             if item.get("siret"):
                 if not valid_siret(item["siret"]):
                     raise ValueError(f"Invalid SIRET for {item['domain']}")
-                lines.append(f'        siret: "{item["siret"]}"')
-            lines.append(f"        source: {source}")
-    return "\n".join(lines) + "\n"
+                yield f'        siret: "{item["siret"]}"'
+            yield f"        source: {source}"
+
+
+def iter_proconnect_allowlist_yaml(entries):
+    """Render allowlist entries as YAML chunks, in the api-partenaires format.
+
+    Each domain is a ``domain`` / ``fiche`` / ``siret`` / ``source`` mapping
+    (``fiche`` required for ``dila``, optional otherwise; ``siret`` optional).
+    The chunks, joined, are what :func:`render_proconnect_allowlist_yaml` returns.
+    """
+    chunk = []
+    for line in _allowlist_yaml_lines(entries):
+        chunk.append(line)
+        if len(chunk) >= YAML_CHUNK_LINES:
+            yield "\n".join(chunk) + "\n"
+            chunk = []
+    if chunk:
+        yield "\n".join(chunk) + "\n"
+
+
+def render_proconnect_allowlist_yaml(entries: list[dict]) -> str:
+    """Render allowlist entries as YAML matching the api-partenaires format."""
+    return "".join(iter_proconnect_allowlist_yaml(entries))

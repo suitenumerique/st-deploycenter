@@ -1,13 +1,17 @@
 """API route serving the ProConnect api-partenaires allowlist YAML."""
 
+import itertools
+
+from django.http import StreamingHttpResponse
+
 import rest_framework as drf
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework.renderers import BaseRenderer
 
 from core.api import permissions
 from core.services.proconnect import (
-    build_proconnect_allowlist,
-    render_proconnect_allowlist_yaml,
+    iter_proconnect_allowlist,
+    iter_proconnect_allowlist_yaml,
 )
 
 
@@ -40,7 +44,8 @@ class ProConnectAllowlistView(drf.views.APIView):
 
     Built on every request. It is a full-DB scan, but the caller is a key holder
     fetching it to open a PR, not traffic — and a cache in front of it only bought
-    staleness the reader could not see.
+    staleness the reader could not see. The YAML is streamed, so the response is
+    never held in memory as a whole.
     """
 
     # Same static-key permission as the other key-guarded routes.
@@ -68,6 +73,10 @@ class ProConnectAllowlistView(drf.views.APIView):
     )
     def get(self, request):
         """GET /api/v1.0/proconnect/oidc_providers.yaml"""
-        return drf.response.Response(
-            render_proconnect_allowlist_yaml(build_proconnect_allowlist())
+        chunks = iter_proconnect_allowlist_yaml(iter_proconnect_allowlist())
+        # The first chunk is only ready once the database has been read: pulling
+        # it here makes a failure a plain 500, not a truncated 200.
+        first = next(chunks)
+        return StreamingHttpResponse(
+            itertools.chain([first], chunks), content_type="text/plain; charset=utf-8"
         )

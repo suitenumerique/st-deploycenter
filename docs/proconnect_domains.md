@@ -213,7 +213,7 @@ Nor does it ask whether the name exists: 94 % of the candidates in the first PR
 name hands the routing to whoever registers it first, for the price of a domain.
 
 **4. The review script.** `scripts/validate_proconnect_allowlist.py` runs on the
-api-partenaires PR and puts every domain of the new file into exactly one of five
+api-partenaires PR and puts every domain of the new file into exactly one of six
 categories, tried in order, so the counts always add up to the size of the file.
 It reads the `domain`, `source` and `fiche` fields of each entry, and flags any line
 it does not recognise rather than skipping it. Its own docstring is the reference;
@@ -224,8 +224,9 @@ the short version is:
 | `not_allowed` | on the deny list in the script, or under a domain that is. An error whatever else is true, which is why it is tested first: `orange.fr` is a perfect reconstruction of the name of the commune of Orange, and `vogue.fr` of Vogüé. |
 | `reconstructible` | the suggest rules could have built it from the collectivité's name. A guess, not evidence. |
 | `previous_allowlist` | already deployed, so this PR is not granting it. |
-| `dila_ok` | declared on service-public.gouv.fr by *exactly one* collectivité, and that declaration passes RPNT 1.2, 2.2 and 2.3. |
-| `to_be_validated` | everything else. A human decides. |
+| `dila_ok` | declared on service-public.gouv.fr by *exactly one* collectivité, the name carries the collectivité's (RPNT 2.2) and is not internationalized (RPNT 1.2). Neither the extension nor 2.3 (site and mail on the same domain) is checked. |
+| `dila_not_reconstructible` | declared by *exactly one* collectivité like `dila_ok`, but the name does not carry the collectivité's (an acronym, a neighbouring place). Allowed all the same: the single declaration is the evidence. |
+| `to_be_validated` | everything else: shared or undeclared domains, and internationalized names. A human decides. |
 
 The deny list is hand-maintained, and deliberately narrower than st-home's
 `GENERIC_EMAIL_DOMAINS`: that one also holds mutualised *public* domains, which are

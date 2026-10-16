@@ -18,7 +18,7 @@ qui dit comment chaque commune s'appelle reellement. Avec ``--dila-json`` et
 ``--cog-csv`` il utilise des copies locales et ne touche jamais au reseau.
 
 
-LES CINQ CATEGORIES
+LES SIX CATEGORIES
 ===================
 
 Router un domaine vers un fournisseur d'identite revient a dire "toute personne
@@ -28,7 +28,7 @@ script est de dire ce qui la fonde.
 
 Chaque domaine de la nouvelle version tombe dans exactement une categorie. Elles
 sont essayees dans l'ordre ci-dessous et la premiere qui correspond gagne: les
-cinq totaux font donc toujours le compte des domaines du fichier.
+six totaux font donc toujours le compte des domaines du fichier.
 
 1. not_allowed
    Le domaine, ou un domaine qui le porte, figure sur la liste de refus de ce
@@ -73,21 +73,27 @@ cinq totaux font donc toujours le compte des domaines du fichier.
 
 4. dila_ok
    Le domaine est declare sur service-public.gouv.fr par exactement une
-   collectivite (mairie, EPCI, conseil departemental ou conseil regional), et
-   cette declaration satisfait les trois criteres RPNT qui se lisent sur un
-   domaine:
+   collectivite (mairie, EPCI, conseil departemental ou conseil regional), que le
+   domaine porte le nom de cette collectivite (RPNT 2.2, que le RPNT formule par
+   "un nom de domaine est dit generique lorsqu'il ne comporte pas le nom de la
+   collectivite") et que le nom n'est pas internationalise (RPNT 1.2).
 
-     1.2  l'extension est souveraine et le nom n'est pas internationalise;
-     2.2  le domaine porte le nom de la collectivite, ce que le RPNT formule par
-          "un nom de domaine est dit generique lorsqu'il ne comporte pas le nom de
-          la collectivite";
-     2.3  le meme domaine sert le site web et l'adresse de messagerie de la fiche.
+   Ni l'extension (une commune qui a depose un .com le garde) ni le 2.3 (le meme
+   domaine sert le site et la messagerie de la fiche) ne sont exiges.
 
    "Exactement une" est ce qui distingue un domaine d'une infrastructure partagee
    sans aucune liste a maintenir: ``facebook.com`` est declare par 49
    collectivites, ``intramuros.org`` par 249, ``wanadoo.fr`` par 10 800.
 
-5. to_be_validated
+5. dila_not_reconstructible
+   Declare par exactement une collectivite comme ci-dessus, mais le domaine ne
+   porte pas son nom (RPNT 2.2): un sigle, le nom d'un lieu voisin. Une
+   collectivite qui declare seule le domaine en est le candidat naturel: ces
+   domaines sont acceptes, la categorie les separe seulement pour que le
+   relecteur puisse les parcourir. Un nom internationalise reste en
+   ``to_be_validated``.
+
+6. to_be_validated
    Tout le reste. Un humain doit trancher. Typiquement un domaine declare par
    plusieurs collectivites (celui d'un EPCI, d'un departement, d'un CDG), un
    domaine dont la fiche ne donne aucune adresse de messagerie correspondante, ou
@@ -421,7 +427,11 @@ CATEGORIES = [
     ("not_allowed", "on the deny list in this script, or under a domain that is"),
     ("reconstructible", "the suggest rules could have produced it from the name"),
     ("previous_allowlist", "already in the deployed allowlist"),
-    ("dila_ok", "declared by exactly one collectivite, RPNT 1.2 + 2.2 + 2.3"),
+    ("dila_ok", "declared by exactly one collectivite"),
+    (
+        "dila_not_reconstructible",
+        "declared by exactly one collectivite, but the name does not carry theirs",
+    ),
     ("to_be_validated", "none of the above; a human has to decide"),
 ]
 CATEGORY_ORDER = {name: index for index, (name, _) in enumerate(CATEGORIES)}
@@ -860,10 +870,6 @@ class Fiche:
     def domains(self):
         return self.sites | self.mails
 
-    def serves(self, domain):
-        """RPNT 2.3: ce domaine est ici a la fois celui du site et de la messagerie."""
-        return domain in self.sites and domain in self.mails
-
 
 class Dila:
     """L'export DILA, indexe des deux facons dont les categories ont besoin."""
@@ -1183,15 +1189,13 @@ def classify(domain, previous, dila):
 
     owner = dila.sole_owner(name)
     if owner is not None:
-        extension = name.rsplit(".", 1)[-1]
-        if extension not in SOVEREIGN_EXTENSIONS or is_internationalized(name):
-            return "to_be_validated", "RPNT 1.2: extension is not sovereign", owner.name
+        if is_internationalized(name):
+            return "to_be_validated", "RPNT 1.2: internationalized name", owner.name
+        # Allowed either way; the name test only separates the two categories.
         if not any(carries_name(name, spelling) for spelling in owner.names):
-            return "to_be_validated", "RPNT 2.2: does not carry the name", owner.name
-        if not owner.serves(name):
             return (
-                "to_be_validated",
-                "RPNT 2.3: site and mail domains differ",
+                "dila_not_reconstructible",
+                "RPNT 2.2: does not carry the name",
                 owner.name,
             )
         return "dila_ok", "declared by one collectivite", owner.name
@@ -1234,21 +1238,21 @@ def render(meta, domains, problems):
     total_domains = len(domains)
     total_rows = sum(domain.rows for domain in domains)
 
-    head = f"  +{'-' * 22}+{'-' * 11}+{'-' * 11}+{'-' * 9}+"
+    head = f"  +{'-' * 26}+{'-' * 11}+{'-' * 11}+{'-' * 9}+"
     out.append(head)
-    out.append(f"  | {'category':<20} | {'domains':>9} | {'rows':>9} | {'share':>7} |")
+    out.append(f"  | {'category':<24} | {'domains':>9} | {'rows':>9} | {'share':>7} |")
     out.append(head)
     for name, _ in CATEGORIES:
         rows = sum(d.rows for d in buckets.get(name, ()))
         count = len(buckets.get(name, ()))
         share = (100.0 * count / total_domains) if total_domains else 0.0
         out.append(
-            f"  | {name:<20} | {thousands(count):>9} | {thousands(rows):>9} "
+            f"  | {name:<24} | {thousands(count):>9} | {thousands(rows):>9} "
             f"| {share:>6.1f}% |"
         )
     out.append(head)
     out.append(
-        f"  | {'total':<20} | {thousands(total_domains):>9} "
+        f"  | {'total':<24} | {thousands(total_domains):>9} "
         f"| {thousands(total_rows):>9} | {100.0 if total_domains else 0.0:>6.1f}% |"
     )
     out.append(head)

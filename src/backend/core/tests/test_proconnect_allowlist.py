@@ -8,6 +8,7 @@ Tests for the ProConnect api-partenaires allowlist generation:
 # pylint: disable=too-many-lines
 
 from io import StringIO
+from unittest import mock
 
 from django.core.cache import cache
 from django.core.management import call_command
@@ -30,6 +31,7 @@ from core.services.proconnect import (
     domain_bucket,
     domain_provenances,
     get_prevalidated_domains,
+    iter_proconnect_allowlist_yaml,
     known_domains,
     org_rpnt_valid_domains,
     proconnect_domains,
@@ -1080,6 +1082,11 @@ def _get_allowlist(**kwargs):
     )
 
 
+def _body(response):
+    """The text of a streamed response."""
+    return b"".join(response.streaming_content).decode()
+
+
 @allowlist_key_settings
 def test_allowlist_api_route_serves_yaml_text_plain():
     """The route renders the built allowlist as text/plain YAML."""
@@ -1095,7 +1102,7 @@ def test_allowlist_api_route_serves_yaml_text_plain():
     response = _get_allowlist()
     assert response.status_code == 200
     assert response["Content-Type"].startswith("text/plain")
-    body = response.content.decode()
+    body = _body(response)
     assert body.startswith("oidc_providers:")
     assert 'uid: "idp-x"' in body
     parsed = yaml.safe_load(body)["oidc_providers"][0]["allowed_attached_email_domains"]
@@ -1163,7 +1170,7 @@ def test_allowlist_api_route_accepts_the_matching_bearer_token():
     _proconnect_service("idp-x")
     response = _get_allowlist()
     assert response.status_code == 200
-    assert response.content.decode().startswith("oidc_providers:")
+    assert _body(response).startswith("oidc_providers:")
 
 
 @allowlist_key_settings
@@ -1172,11 +1179,87 @@ def test_allowlist_api_route_reflects_a_change_immediately():
     operator = factories.OperatorFactory()
     service = _proconnect_service("idp-x")
     factories.OperatorServiceConfigFactory(operator=operator, service=service)
-    assert 'uid: "idp-x"' in _get_allowlist().content.decode()
+    assert 'uid: "idp-x"' in _body(_get_allowlist())
 
     late = _proconnect_service("idp-late")
     factories.OperatorServiceConfigFactory(operator=operator, service=late)
-    assert 'uid: "idp-late"' in _get_allowlist().content.decode()
+    assert 'uid: "idp-late"' in _body(_get_allowlist())
+
+
+@allowlist_key_settings
+def test_allowlist_api_route_fails_before_streaming_when_the_build_fails():
+    """A build error is a 500, not a 200 cut short: the first chunk is read first."""
+
+    def failing_build():
+        raise RuntimeError("database down")
+        yield  # pylint: disable=unreachable
+
+    with mock.patch(
+        "core.api.viewsets.proconnect.iter_proconnect_allowlist",
+        side_effect=failing_build,
+    ):
+        with pytest.raises(RuntimeError):
+            _get_allowlist()
+
+
+def test_streamed_yaml_is_the_rendered_yaml():
+    """The chunks, however small, join into exactly what render returns."""
+    entries = [
+        {
+            "uid": "idp-x",
+            "allowed_attached_email_domains": [
+                {
+                    "domain": f"d{i}.fr",
+                    "source": "candidate",
+                    "fiche": None,
+                    "siret": None,
+                }
+                for i in range(7)
+            ],
+        },
+        {"uid": "idp-empty", "allowed_attached_email_domains": []},
+    ]
+    with mock.patch("core.services.proconnect.YAML_CHUNK_LINES", 3):
+        chunks = list(iter_proconnect_allowlist_yaml(entries))
+
+    assert len(chunks) > 1
+    assert "".join(chunks) == render_proconnect_allowlist_yaml(entries)
+    assert chunks[0].startswith("oidc_providers:\n")
+
+
+def test_build_allowlist_issues_the_same_queries_whatever_the_organization_count():
+    """No per-organization query: subscriptions and organizations are read in bulk."""
+    operator = factories.OperatorFactory(config={"departements": ["42"]})
+    service = _proconnect_service("idp-x")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+    _active_subscription(service, operator, ["a.fr"], departement="42")
+
+    with CaptureQueriesContext(connection) as ctx:
+        build_proconnect_allowlist()
+    few = len(ctx.captured_queries)
+
+    for i in range(10):
+        _active_subscription(service, operator, [f"b{i}.fr"], departement="42")
+    with CaptureQueriesContext(connection) as ctx:
+        build_proconnect_allowlist()
+
+    assert len(ctx.captured_queries) == few
+
+
+def test_organization_in_the_scope_of_two_providers_feeds_both():
+    """One read of the organization, a row for each provider that covers it."""
+    operator_a = factories.OperatorFactory(config={"departements": ["42"]})
+    operator_b = factories.OperatorFactory(config={"departements": ["42"]})
+    service_a = _proconnect_service("idp-a")
+    service_b = _proconnect_service("idp-b")
+    factories.OperatorServiceConfigFactory(operator=operator_a, service=service_a)
+    factories.OperatorServiceConfigFactory(operator=operator_b, service=service_b)
+    org = factories.OrganizationFactory(departement_code_insee="42")
+    update_proconnect_domains(org, candidates=["shared-scope.fr"])
+
+    entries = {e["uid"]: _domains(e) for e in build_proconnect_allowlist()}
+
+    assert entries == {"idp-a": ["shared-scope.fr"], "idp-b": ["shared-scope.fr"]}
 
 
 def test_build_allowlist_does_not_query_the_operator_config_per_subscription():
