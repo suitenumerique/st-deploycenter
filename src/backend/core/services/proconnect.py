@@ -703,21 +703,27 @@ def update_out_of_sync(report: DriftReport) -> None:
     """Set ``config["out_of_sync"]`` of the services from a drift report.
 
     A service is out of sync when its provider drifted, and back in sync when the
-    provider was read and matches. An unreadable provider changes nothing.
+    provider was read and matches. A provider the report does not cover, or could
+    not read, changes nothing.
     """
-    flag, clear = [], []
-    for service_id, idp_id in service_idp_ids().items():
-        if idp_id in report.drifted:
-            flag.append(service_id)
-        elif idp_id in report.in_sync:
-            clear.append(service_id)
-    # Row-locked: this rewrites the whole config, which an admin may edit too.
+    # Row-locked: this rewrites the whole config, which an admin may edit too. The
+    # provider is read from the locked row, so a service moved to another provider
+    # meanwhile is judged by the one it has now.
     with transaction.atomic():
-        for service in Service.objects.select_for_update().filter(pk__in=flag + clear):
-            if service.out_of_sync == (service.pk in flag):
+        for service in (
+            Service.objects.select_for_update().filter(type="proconnect").order_by("pk")
+        ):
+            idp_id = service_idp_id(service)
+            if idp_id in report.drifted:
+                flagged = True
+            elif idp_id in report.in_sync:
+                flagged = False
+            else:
+                continue
+            if service.out_of_sync == flagged:
                 continue
             config = dict(service.config or {})
-            if service.pk in flag:
+            if flagged:
                 config["out_of_sync"] = True
             else:
                 config.pop("out_of_sync", None)

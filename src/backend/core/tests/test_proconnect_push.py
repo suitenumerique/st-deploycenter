@@ -26,8 +26,10 @@ from core.models import OperatorServiceConfig, ServiceSubscription
 from core.services.locks import advisory_lock_key
 from core.services.proconnect import (
     BATCH_MAX_RETRY_AFTER,
+    DriftReport,
     ProConnectPartnersClient,
     ProConnectPartnersError,
+    ProviderDrift,
     check_providers_drift,
     idp_routed_domains,
     redact_credentials,
@@ -786,6 +788,37 @@ def test_detect_drift_does_not_flag_what_a_locked_recheck_finds_in_sync():
     subscription.service.refresh_from_db()
     assert subscription.service.out_of_sync is False
     assert IDP in report.in_sync
+
+
+def test_update_out_of_sync_judges_a_service_by_the_provider_it_has_now():
+    """A service moved to another provider is not flagged for the one it left."""
+    subscription = _make_proconnect_subscription(IDP, ["a.fr"])
+    service = subscription.service
+    report = DriftReport(
+        drifted={"left-provider": ProviderDrift(missing=["x.fr"], unexpected=[])},
+        in_sync={IDP: 1},
+        unreadable={},
+    )
+    # The mapping an earlier read would have given, before the move.
+    with mock.patch(
+        "core.services.proconnect.service_idp_ids",
+        return_value={service.pk: "left-provider"},
+    ):
+        update_out_of_sync(report)
+
+    service.refresh_from_db()
+    assert service.out_of_sync is False
+
+
+def test_update_out_of_sync_leaves_a_service_the_report_does_not_cover():
+    """Neither drifted nor in sync (unreadable, not checked): nothing changes."""
+    subscription = _make_proconnect_subscription(IDP, ["a.fr"])
+    _flag_out_of_sync(subscription.service)
+
+    update_out_of_sync(DriftReport(drifted={}, in_sync={}, unreadable={}))
+
+    subscription.service.refresh_from_db()
+    assert subscription.service.out_of_sync is True
 
 
 @proconnect_settings
