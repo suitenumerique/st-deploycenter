@@ -167,6 +167,7 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
   const canSwitch =
     !isExternallyManaged &&
     props.service.can_activate &&
+    !props.service.out_of_sync &&
     !props.disabled &&
     !props.isManagedByOtherOperator;
 
@@ -178,7 +179,9 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
         ? t("organizations.services.missing_required_services")
         : props.isManagedByOtherOperator
           ? t("organizations.services.managed_by_other_operator")
-          : t("organizations.services.cannot_activate");
+          : props.service.out_of_sync
+            ? t("organizations.services.out_of_sync")
+            : t("organizations.services.cannot_activate");
 
   return (
     <div

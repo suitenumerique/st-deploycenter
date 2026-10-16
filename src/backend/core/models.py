@@ -797,10 +797,26 @@ class OperatorServiceConfig(BaseModel):
     def __str__(self):
         return f"{self.operator.name} - {self.service.name} (priority: {self.display_priority})"
 
+    def clean(self):
+        super().clean()
+        if "idp_id" in (self.config_override or {}):
+            raise ValidationError(
+                {
+                    "config_override": _(
+                        "An operator cannot override the idp_id of a service."
+                    )
+                }
+            )
+
     def get_effective_config(self):
-        """Return the service config with this operator's overrides merged on top."""
+        """Return the service config with this operator's overrides merged on top.
+
+        ``idp_id`` is never overridden: a service has one identity provider.
+        """
         base = dict(self.service.config or {})
-        base.update(self.config_override or {})
+        base.update(
+            {k: v for k, v in (self.config_override or {}).items() if k != "idp_id"}
+        )
         return base
 
     @classmethod
@@ -951,6 +967,15 @@ class Service(BaseModel):
 
     def __str__(self):
         return f"{self.name} ({self.instance_name})"
+
+    @property
+    def out_of_sync(self):
+        """ProConnect only: the provider serves a domain list that differs from ours.
+
+        Kept in ``config["out_of_sync"]`` by proconnect_detect_drift; subscription
+        writes are blocked until it is fixed.
+        """
+        return bool((self.config or {}).get("out_of_sync"))
 
     def get_logo_url(self):
         """
@@ -1133,8 +1158,7 @@ class ServiceSubscription(BaseModel):
                 "Mail domain is required for ProConnect subscription."
             )
 
-        service_config = self.get_effective_service_config()
-        if not service_config.get("idp_id"):
+        if not (self.service.config or {}).get("idp_id"):
             raise ValidationError("IDP is required for ProConnect subscription.")
 
     def validate_can_activate(self):

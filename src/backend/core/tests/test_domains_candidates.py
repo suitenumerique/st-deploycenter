@@ -146,11 +146,19 @@ def test_regional_extension_stays_in_its_departements():
     assert not [d for d in candidates if d.endswith(".bzh")]
 
 
-def test_no_alternatives_when_dila_already_has_the_canonical_domain():
-    """A collectivité with its official {slug}.fr needs no suggested spellings."""
+def test_alternatives_are_proposed_when_dila_has_the_canonical_domain():
+    """A collectivité with its official {slug}.fr still gets the other spellings,
+    just not the DILA domain itself."""
     org = _commune("Château-Gaillard", "01", dpnt=["chateau-gaillard.fr"])
-    # Only the nationwide/regional {slug}.<ext> forms remain, minus the DILA domain.
-    assert candidate_domains_for_organization(org) == []
+    assert candidate_domains_for_organization(org) == [
+        "chateau-gaillard01.fr",
+        "chateaugaillard.fr",
+        "chateaugaillard01.fr",
+        "mairie-chateau-gaillard.fr",
+        "mairie-chateaugaillard.fr",
+        "ville-chateau-gaillard.fr",
+        "ville-chateaugaillard.fr",
+    ]
 
 
 def test_dila_domains_are_never_proposed():

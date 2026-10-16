@@ -45,7 +45,9 @@ a DILA domain has no effect anyway (see the routable rule). The admin shows the
 field read-only for the same reason.
 
 `candidates` is rebuilt for every commune by `proconnect_regen_candidate_domains`,
-which the `import_dpnt_dataset` task (daily, `cron.json`) runs as its last step. It
+which the `import_dpnt_dataset` task (daily, `cron.json`) runs as its last step. A
+commune that already has DILA domains of its own still gets candidates (alternate
+spellings, other extensions), minus its own DILA domains. It
 runs after the `dpnt` buckets are up to date because a candidate is dropped when
 another organization has the domain in `dpnt` or `manual`, or routes it. Between two
 imports, a domain that becomes live or is added to `manual` stays in other
@@ -103,17 +105,20 @@ never restates the rule:
     source: routed
   ```
 
-  - `dila`: the `dpnt` bucket (declared on service-public.gouv.fr). A `dila` row
-    must have a `fiche`.
   - `routed`: the domain is already live, an active subscription sends it today.
     This is checked against the live subscriptions, not the buckets: a live domain
-    that also sits in `candidates` or `manual` is `routed`.
+    that also sits in `dpnt`, `candidates` or `manual` is `routed`. api-partenaires
+    checks every `dila` row against DILA and refuses the ones that fail, but accepts
+    a `routed` row as is (with a warning), so a live domain must never depend on
+    that check.
+  - `dila`: not live, in the `dpnt` bucket (declared on service-public.gouv.fr). A
+    `dila` row must have a `fiche`.
   - `manual`: not live, added by a superuser (the `manual` bucket).
   - `candidate`: not live, generated from the collectivité's name (the
     `candidates` bucket). A `dpnt` domain whose organization has no valid fiche
     ends up here too, or in `routed` if it is live.
 
-  The best applicable source wins, in the order `dila`, `routed`, `manual`,
+  The best applicable source wins, in the order `routed`, `dila`, `manual`,
   `candidate`.
 
   A domain is looked up across all organizations, not only those scoped to the
@@ -241,19 +246,48 @@ collectivité" test to the website domain as well as the email one.
 Any change to an active ProConnect subscription's domains pushes the provider's full
 list synchronously, inside the request's transaction (`core/signals.py` →
 `sync_proconnect_provider`), so a failed push rolls the change back instead of
-drifting. Reassigning a subscription's **operator** pushes too, and pushes *both*
-providers: the effective `idp_id` is resolved per operator, so the subscription
-moves provider with its domains untouched — the one it left has to be recomputed as
-well. Bulk writes bypass signals: reconcile with `manage.py proconnect_sync`.
-`manage.py proconnect_detect_drift` compares what each provider serves with what we
-intend and exits non-zero on any difference.
+drifting. A provider is the `idp_id` of the **service**: operators cannot override
+it (`OperatorServiceConfig` refuses the key, and ignores one saved before that rule).
+Reassigning a subscription's **service** pushes too, and pushes *both* providers: the
+subscription moves provider with its domains untouched, so the one it left has to be
+recomputed as well. Bulk writes bypass signals: reconcile with
+`manage.py proconnect_sync`.
 
-**Neither is scheduled.** `cron.json` runs `proconnect_fetch_prevalidated` and
-nothing else for ProConnect, so both reconciliation commands are manual today —
-even though several code paths (`_sync_proconnect`'s docstring,
-`_create_service_subscriptions` in `core/tasks/dpnt.py`) describe them as the net
-that catches what the synchronous push cannot. Until one of them runs on a
-schedule, drift from a bulk write is caught only when someone thinks to look.
+### Drift detection and the `out_of_sync` flag
+
+`manage.py proconnect_detect_drift` compares what each provider serves with what we
+intend to route, and exits non-zero on any difference. It runs every hour, right
+after `proconnect_fetch_prevalidated`, in the same `cron.json` job (a failed fetch
+does not skip it).
+
+It also maintains `Service.config["out_of_sync"]` (read as `Service.out_of_sync`):
+
+- **Set** when the service's provider drifted. A provider that looks drifted is
+  checked again under its push lock first, so a request that pushed but has not
+  committed yet is not read as drift.
+- **Effect.** The API refuses PATCH (which also creates a subscription) and DELETE
+  on a subscription of that service (409, `ProConnectOutOfSync`), and the interface
+  disables the switch and the domain editor. Editing an organization's
+  `proconnect_domains` buckets is not blocked: they are an inventory, not what is
+  pushed.
+- **Cleared** by the next run that reads the provider and finds it in sync, or at
+  once by saving the subscription's *ProConnect manual actions* page in the admin,
+  which pushes the database state to ProConnect and rechecks it. With *Skip the
+  ProConnect push* ticked nothing is pushed: the provider is still rechecked, so the
+  flag only clears if it already matches.
+- An unreadable provider changes nothing: no reading is no evidence.
+- Providers of flagged services are rechecked even without an active subscription,
+  otherwise nothing could ever clear their flag.
+
+Every other push rechecks the provider too, so the flag follows the push instead of
+waiting for the next hourly run:
+
+- `proconnect_sync` and `subscribe_bulk` recheck each provider they pushed, failed
+  pushes included (a failed push leaves the provider drifted, which sets the flag).
+  `proconnect_sync --dry-run` pushes nothing and rechecks nothing.
+- A subscription saved or deleted through the signals (the standard admin form, for
+  instance) rechecks the providers it pushed, after the commit, only when one of
+  them is flagged.
 
 Pushes are serialized per provider by an advisory lock, and each routed domain is
 locked before the uniqueness check, so two subscriptions cannot both claim it.

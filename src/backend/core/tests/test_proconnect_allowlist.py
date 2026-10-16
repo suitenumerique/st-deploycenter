@@ -23,13 +23,12 @@ import yaml
 from rest_framework.test import APIClient
 
 from core import factories
+from core.models import OperatorServiceConfig
 from core.services.domains_candidates import slugify_org_domain
 from core.services.proconnect import (
-    _effective_service_config,
     build_proconnect_allowlist,
     domain_bucket,
     domain_provenances,
-    effective_config_memo,
     get_prevalidated_domains,
     known_domains,
     org_rpnt_valid_domains,
@@ -73,6 +72,11 @@ FICHE = (
     "abab3da3-4cd6-42f1-ac88-9fa3f1bc4154"
 )
 SIRET = "21560123400017"
+FICHE_OTHER = (
+    "https://lannuaire.service-public.gouv.fr/auvergne-rhone-alpes/ain/"
+    "0b3f1a52-7c1e-4d8b-9a46-2e5d6f7a8b90"
+)
+SIRET_OTHER = "21010123400019"
 
 
 def _domains(entry):
@@ -323,6 +327,95 @@ def test_build_allowlist_source_priority_prefers_dila():
     assert by_domain["x.fr"] == "dila"
 
 
+def test_build_allowlist_live_dila_domain_is_routed():
+    """A live domain is "routed" even when DILA declares it: api-partenaires checks
+    every "dila" row against DILA and refuses the ones that fail, but takes
+    "routed" as is. A DILA domain that is not live stays "dila"."""
+    operator = factories.OperatorFactory(config={"departements": ["01"]})
+    service = _proconnect_service("idp-x")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+    org = factories.OrganizationFactory(
+        departement_code_insee="01",
+        service_public_url=FICHE,
+        proconnect_domains={"dpnt": ["live.fr", "idle.fr"]},
+    )
+    factories.ServiceSubscriptionFactory(
+        organization=org,
+        service=service,
+        operator=operator,
+        metadata={"domains": ["live.fr"]},
+        is_active=True,
+    )
+
+    assert _sources_by_uid() == {"idp-x": {"live.fr": "routed", "idle.fr": "dila"}}
+
+
+def _homonyms(**overrides):
+    """Two communes named Xyz in one provider, ordered by primary key, each with
+    its own fiche and SIRET."""
+    operator = factories.OperatorFactory(config={"departements": ["01"]})
+    service = _proconnect_service("idp-x")
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+    orgs = [
+        factories.OrganizationFactory(
+            name="Xyz",
+            type="commune",
+            departement_code_insee="01",
+            service_public_url=fiche,
+            siret=siret,
+            **overrides,
+        )
+        for fiche, siret in ((FICHE, SIRET), (FICHE_OTHER, SIRET_OTHER))
+    ]
+    first, second = sorted(orgs, key=lambda org: org.pk)
+    return operator, service, first, second
+
+
+def _xyz_row():
+    entry = build_proconnect_allowlist()[0]
+    (item,) = [
+        i for i in entry["allowed_attached_email_domains"] if i["domain"] == "xyz.fr"
+    ]
+    return item
+
+
+def test_build_allowlist_homonym_candidates_go_to_the_first_organization():
+    """Two homonyms both guess xyz.fr in one provider: one row, always the lowest
+    primary key's fiche and SIRET, never whichever the database returned first."""
+    _, _, first, _ = _homonyms(proconnect_domains={"candidates": ["xyz.fr"]})
+
+    item = _xyz_row()
+
+    assert item["source"] == "candidate"
+    assert item["fiche"] == first.service_public_url
+    assert item["siret"] == first.siret
+
+
+@pytest.mark.parametrize("also_a_candidate", [True, False])
+def test_build_allowlist_routing_homonym_owns_the_row(also_a_candidate):
+    """Once one of two homonyms routes xyz.fr, the row carries its fiche and SIRET,
+    even when it is not the first organization walked."""
+    operator, service, _, second = _homonyms(
+        proconnect_domains={"candidates": ["xyz.fr"]}
+    )
+    if not also_a_candidate:
+        second.proconnect_domains = {}
+        second.save()
+    factories.ServiceSubscriptionFactory(
+        organization=second,
+        service=service,
+        operator=operator,
+        metadata={"domains": ["xyz.fr"]},
+        is_active=True,
+    )
+
+    item = _xyz_row()
+
+    assert item["source"] == "routed"
+    assert item["fiche"] == second.service_public_url
+    assert item["siret"] == second.siret
+
+
 def test_build_allowlist_discard_excludes_candidates_but_not_dila():
     """A discarded candidates domain is excluded; a discarded DILA (dpnt) domain stays."""
     operator = factories.OperatorFactory(config={"departements": ["01"]})
@@ -548,13 +641,15 @@ def test_update_proconnect_domains_promotes_domain_to_dpnt_only():
     assert buckets["candidates"] == ["keep-cand.fr"]
 
 
-def test_build_allowlist_uses_effective_idp_override():
-    """The allowlist is keyed by the *effective* idp (operator override wins),
-    matching what the push path (subscription_idp_id) actually targets."""
+def test_build_allowlist_ignores_an_operator_idp_override():
+    """The allowlist is keyed by the service's idp, matching what the push path
+    (subscription_idp_id) targets; an operator override (legacy data) is inert."""
     operator = factories.OperatorFactory(config={"departements": ["45"]})
     service = _proconnect_service("base-idp")
-    factories.OperatorServiceConfigFactory(
-        operator=operator, service=service, config_override={"idp_id": "override-idp"}
+    config = factories.OperatorServiceConfigFactory(operator=operator, service=service)
+    # Written around save(), which refuses the key.
+    OperatorServiceConfig.objects.filter(pk=config.pk).update(
+        config_override={"idp_id": "override-idp"}
     )
     factories.OrganizationFactory(
         departement_code_insee="45", proconnect_domains={"manual": ["x.fr"]}
@@ -562,9 +657,9 @@ def test_build_allowlist_uses_effective_idp_override():
 
     entries = build_proconnect_allowlist()
     uids = {entry["uid"] for entry in entries}
-    assert "override-idp" in uids
-    assert "base-idp" not in uids
-    entry = next(e for e in entries if e["uid"] == "override-idp")
+    assert "base-idp" in uids
+    assert "override-idp" not in uids
+    entry = next(e for e in entries if e["uid"] == "base-idp")
     assert "x.fr" in {
         item["domain"] for item in entry["allowed_attached_email_domains"]
     }
@@ -776,9 +871,9 @@ def test_suggest_domains_command_adds_fr_variants():
     }
 
 
-def test_suggest_domains_command_no_candidate_when_dila_has_slug():
-    """When {slug}.fr is already the org's DILA domain: no .fr variants, and
-    {slug}.fr itself is not re-proposed as a candidate (it is already authoritative)."""
+def test_suggest_domains_command_proposes_variants_when_dila_has_slug():
+    """When {slug}.fr is already the org's DILA domain, the other spellings are
+    still proposed; {slug}.fr itself is not (it is already authoritative)."""
     org = factories.OrganizationFactory(
         name="Aiglun",
         departement_code_insee="06",
@@ -786,7 +881,52 @@ def test_suggest_domains_command_no_candidate_when_dila_has_slug():
     )
     call_command("proconnect_regen_candidate_domains")
     org.refresh_from_db()
-    assert domain_bucket(org, "candidates") == []
+    assert set(domain_bucket(org, "candidates")) == {
+        "aiglun06.fr",
+        "mairie-aiglun.fr",
+        "ville-aiglun.fr",
+    }
+
+
+def test_suggest_domains_command_skips_domains_another_collectivite_has_at_dila():
+    """Candidates stay off a domain DILA gives to ANOTHER collectivité, even when
+    the organization has DILA domains of its own."""
+    org = factories.OrganizationFactory(
+        name="Aiglun",
+        departement_code_insee="06",
+        proconnect_domains={"dpnt": ["aiglun.fr"]},
+    )
+    other = factories.OrganizationFactory(
+        name="Autre",
+        departement_code_insee="04",
+        proconnect_domains={"dpnt": ["mairie-aiglun.fr"]},
+    )
+    call_command("proconnect_regen_candidate_domains")
+    org.refresh_from_db()
+    other.refresh_from_db()
+    assert set(domain_bucket(org, "candidates")) == {"aiglun06.fr", "ville-aiglun.fr"}
+    assert domain_bucket(other, "dpnt") == ["mairie-aiglun.fr"]
+
+
+def test_suggest_domains_command_homonyms_share_unclaimed_candidates():
+    """Two homonym communes: a domain DILA gives to one stays off the other's
+    candidates, but a domain nobody holds is a candidate for both."""
+    colter1 = factories.OrganizationFactory(
+        name="Xyz",
+        departement_code_insee="01",
+        proconnect_domains={"dpnt": ["mairie-xyz.fr"]},
+    )
+    colter2 = factories.OrganizationFactory(name="Xyz", departement_code_insee="02")
+    call_command("proconnect_regen_candidate_domains")
+    colter1.refresh_from_db()
+    colter2.refresh_from_db()
+
+    candidates1 = domain_bucket(colter1, "candidates")
+    candidates2 = domain_bucket(colter2, "candidates")
+    assert "mairie-xyz.fr" not in candidates1  # its own DILA domain
+    assert "mairie-xyz.fr" not in candidates2  # colter1's DILA domain
+    assert "xyz.fr" in candidates1
+    assert "xyz.fr" in candidates2
 
 
 def test_suggest_domains_command_adds_bzh_for_brittany():
@@ -794,18 +934,20 @@ def test_suggest_domains_command_adds_bzh_for_brittany():
     org = factories.OrganizationFactory(
         name="Brest",
         departement_code_insee="29",
-        # brest.fr is the DILA domain -> dropped + no .fr variants; .bzh still stands.
+        # brest.fr is the DILA domain -> not proposed; .bzh is.
         proconnect_domains={"dpnt": ["brest.fr"]},
     )
     call_command("proconnect_regen_candidate_domains")
     org.refresh_from_db()
-    assert domain_bucket(org, "candidates") == ["brest.bzh"]
+    candidates = domain_bucket(org, "candidates")
+    assert "brest.bzh" in candidates
+    assert "brest.fr" not in candidates
 
 
 def test_suggest_domains_command_adds_regional_and_om_extensions():
     """Réunion (974) gets .re, Corsica (2A) gets .corsica, in addition to .fr."""
-    # {slug}.fr is each org's DILA domain -> dropped + no .fr variants; the
-    # regional/OM extension still stands.
+    # {slug}.fr is each org's DILA domain -> not proposed; the regional/OM
+    # extension is.
     reunion = factories.OrganizationFactory(
         name="Saint-Denis",
         departement_code_insee="974",
@@ -819,8 +961,12 @@ def test_suggest_domains_command_adds_regional_and_om_extensions():
     call_command("proconnect_regen_candidate_domains")
     reunion.refresh_from_db()
     corsica.refresh_from_db()
-    assert domain_bucket(reunion, "candidates") == ["saint-denis.re"]
-    assert domain_bucket(corsica, "candidates") == ["ajaccio.corsica"]
+    reunion_candidates = domain_bucket(reunion, "candidates")
+    corsica_candidates = domain_bucket(corsica, "candidates")
+    assert "saint-denis.re" in reunion_candidates
+    assert "saint-denis.fr" not in reunion_candidates
+    assert "ajaccio.corsica" in corsica_candidates
+    assert "ajaccio.fr" not in corsica_candidates
 
 
 def test_suggest_domains_command_only_communes():
@@ -853,8 +999,8 @@ def test_suggest_domains_command_preserves_other_buckets():
     assert domain_bucket(org, "manual") == ["manual.fr"]
 
 
-def test_suggest_domains_command_skips_when_rpnt_complete():
-    """No candidates suggestion for an org that already satisfies the full RPNT set."""
+def test_suggest_domains_command_proposes_candidates_when_rpnt_complete():
+    """An org that already satisfies the full RPNT set gets candidates like any other."""
     org = factories.OrganizationFactory(
         name="Ville A",
         departement_code_insee="45",
@@ -862,22 +1008,23 @@ def test_suggest_domains_command_skips_when_rpnt_complete():
     )
     call_command("proconnect_regen_candidate_domains")
     org.refresh_from_db()
-    assert domain_bucket(org, "candidates") == []
+    assert "ville-a.fr" in domain_bucket(org, "candidates")
 
 
 def test_suggest_domains_command_skips_discarded():
-    """A discarded slug is never re-suggested into candidates (per TLD)."""
+    """A discarded domain is never re-suggested into candidates."""
     org = factories.OrganizationFactory(
         name="Brest",
         departement_code_insee="29",
-        # dpnt has brest.fr -> no .fr variants; brest.fr also discarded.
-        proconnect_domains={"discarded": ["brest.fr"], "dpnt": ["brest.fr"]},
+        proconnect_domains={"discarded": ["ville-brest.fr"], "dpnt": ["brest.fr"]},
     )
     call_command("proconnect_regen_candidate_domains")
     org.refresh_from_db()
-    # .fr discarded, but the Breton .bzh is still suggested.
-    assert domain_bucket(org, "candidates") == ["brest.bzh"]
-    assert domain_bucket(org, "discarded") == ["brest.fr"]
+    candidates = domain_bucket(org, "candidates")
+    assert "ville-brest.fr" not in candidates
+    # The rest is still suggested, the Breton .bzh included.
+    assert "brest.bzh" in candidates
+    assert domain_bucket(org, "discarded") == ["ville-brest.fr"]
 
 
 def test_suggest_domains_command_dry_run_does_not_write():
@@ -1032,8 +1179,8 @@ def test_allowlist_api_route_reflects_a_change_immediately():
     assert 'uid: "idp-late"' in _get_allowlist().content.decode()
 
 
-def test_build_allowlist_resolves_each_service_config_once():
-    """The effective config is memoized per build, not re-queried per subscription."""
+def test_build_allowlist_does_not_query_the_operator_config_per_subscription():
+    """The idp is read from the service: no lookup per subscription."""
     operator = factories.OperatorFactory(config={"departements": ["42"]})
     service = _proconnect_service("idp-x")
     factories.OperatorServiceConfigFactory(operator=operator, service=service)
@@ -1048,23 +1195,8 @@ def test_build_allowlist_resolves_each_service_config_once():
         for q in ctx.captured_queries
         if "deploycenter_operator_service_config" in q["sql"]
     ]
-    # One (service, operator) pair -> one lookup, however many subscriptions.
+    # One lookup of the operator configs, however many subscriptions.
     assert len(config_queries) <= 2, config_queries
-
-
-def test_memo_does_not_outlive_its_block():
-    """A config resolved inside the memo is not reused by a later, separate call."""
-    operator = factories.OperatorFactory()
-    service = _proconnect_service("idp-x")
-    config = factories.OperatorServiceConfigFactory(operator=operator, service=service)
-
-    with effective_config_memo():
-        assert _effective_service_config(service, operator)["idp_id"] == "idp-x"
-
-    config.config_override = {"idp_id": "idp-changed"}
-    config.save()
-    # Outside the block the next read hits the DB again.
-    assert _effective_service_config(service, operator)["idp_id"] == "idp-changed"
 
 
 # --- proconnect_fetch_prevalidated command -----------------------------------

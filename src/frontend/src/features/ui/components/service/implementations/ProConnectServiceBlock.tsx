@@ -184,12 +184,22 @@ export const ProConnectServiceBlock = (props: {
     );
   };
 
-  const message = getProConnectMessage(
-    props.organization,
-    subscriptionDomains,
-    subscription?.is_active || false,
-    idpId
-  );
+  const outOfSync = props.service.out_of_sync === true;
+
+  // The API refuses PATCH and DELETE on the subscription while the provider is out
+  // of sync, so the controls are disabled too. Support fixes it from the django admin.
+  const message: ProConnectMessage = outOfSync
+    ? {
+        alert: <span>{t("organizations.services.out_of_sync")}</span>,
+        icon: "warning",
+        disabled: true,
+      }
+    : getProConnectMessage(
+        props.organization,
+        subscriptionDomains,
+        subscription?.is_active || false,
+        idpId
+      );
 
   // Activation requires an IDP to be configured on the service.
   const canActivateSubscription = async () => {
@@ -237,7 +247,7 @@ export const ProConnectServiceBlock = (props: {
               )}
               <ServiceAttribute
                 name={t(`${PREFIX}.domains.label`)}
-                interactive={!blockProps.isManagedByOtherOperator}
+                interactive={!blockProps.isManagedByOtherOperator && !outOfSync}
                 onClick={() => domainModal.open()}
                 value={
                   domains.length > 0

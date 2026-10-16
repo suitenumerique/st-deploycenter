@@ -2,7 +2,8 @@
 Push the full list of authorized domains to the ProConnect api-partenaires API
 for every active ProConnect provider (idp_id).
 
-Useful for the initial backfill and for periodic reconciliation.
+Useful for the initial backfill and for periodic reconciliation. Each provider is
+then rechecked, which sets or clears its services' ``out_of_sync`` flag.
 """
 
 from django.core.management.base import BaseCommand, CommandError
@@ -10,6 +11,7 @@ from django.core.management.base import BaseCommand, CommandError
 from core.services.proconnect import (
     BATCH_MAX_RETRY_AFTER,
     ProConnectPartnersClient,
+    refresh_out_of_sync,
     routed_domains_by_idp,
     sync_proconnect_provider,
 )
@@ -76,6 +78,9 @@ class Command(BaseCommand):
                         f"{result.get('domains')}"
                     )
                 )
+
+        if not dry_run:
+            refresh_out_of_sync(idp_ids, client)
 
         if failures:
             raise CommandError(
