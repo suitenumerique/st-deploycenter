@@ -24,7 +24,7 @@ are converted. Always check the plan with ``--dry-run`` first.
 
 Rows are written one by one so that entitlements and webhooks still fire, but the
 per-row ProConnect push is suppressed: each affected provider is pushed once at
-the end instead of once per organization.
+the end instead of once per organization, then rechecked (``out_of_sync`` flag).
 """
 
 import logging
@@ -39,7 +39,7 @@ from core.models import Operator, Organization, Service, ServiceSubscription
 from core.services.proconnect import (
     BATCH_MAX_RETRY_AFTER,
     ProConnectPartnersClient,
-    effective_config_memo,
+    refresh_out_of_sync,
     subscription_idp_id,
     sync_proconnect_provider,
 )
@@ -170,18 +170,16 @@ class Command(BaseCommand):
         if not organization_ids:
             return
 
-        # Effective configs are read once per (service, operator) pair instead of
-        # once per row, and idps are collected before the writes so that deleted
-        # rows are still pushed.
-        with effective_config_memo():
-            if action == "subscribe":
-                idp_ids = self._subscribe(
-                    service, operator, organization_ids, options, dry_run
-                )
-            else:
-                idp_ids = self._unsubscribe(
-                    service, operator, organization_ids, options, dry_run
-                )
+        # The idps are collected before the writes so that deleted rows are still
+        # pushed.
+        if action == "subscribe":
+            idp_ids = self._subscribe(
+                service, operator, organization_ids, options, dry_run
+            )
+        else:
+            idp_ids = self._unsubscribe(
+                service, operator, organization_ids, options, dry_run
+            )
 
         if idp_ids and not dry_run and not options["no_proconnect_sync"]:
             self._push_proconnect(idp_ids)
@@ -414,6 +412,7 @@ class Command(BaseCommand):
                 self.stderr.write(
                     self.style.ERROR(f"{idp_id}: push FAILED ({result.get('error')})")
                 )
+        refresh_out_of_sync(idp_ids, client)
         if failures:
             raise CommandError(
                 f"Rows written but the domains push failed for {', '.join(failures)}. "

@@ -14,6 +14,11 @@
 {% endblock %}
 
 {% block content %}
+{% if out_of_sync %}
+<ul class="messagelist">
+    <li class="error">{% trans 'This provider is out of sync with ProConnect: the API refuses subscription changes. Saving this form pushes the database state to ProConnect (unless the push is skipped) and rechecks it.' %}</li>
+</ul>
+{% endif %}
 {# The add button is the first submit button: pressing Enter in the domain input submits it. #}
 <form method="post" id="proconnect-manual-actions-form">
     {% csrf_token %}

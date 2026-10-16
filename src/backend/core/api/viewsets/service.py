@@ -9,7 +9,7 @@ from django.http import HttpResponse
 
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import mixins, status, viewsets
-from rest_framework.exceptions import NotFound, PermissionDenied
+from rest_framework.exceptions import APIException, NotFound, PermissionDenied
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.settings import api_settings
@@ -22,6 +22,23 @@ from core.authentication import (
 from core.signals import request_user_context, suppress_proconnect_sync
 
 from .. import permissions, serializers
+
+
+class ProConnectOutOfSync(APIException):
+    """A ProConnect provider serves other domains than ours: writes are blocked."""
+
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "proconnect_out_of_sync"
+    default_detail = (
+        "Ce fournisseur d'identité ProConnect n'est plus synchronisé avec "
+        "Deploy Center. Les modifications sont bloquées. Contactez le support."
+    )
+
+
+def refuse_if_out_of_sync(service):
+    """Block subscription writes on a ProConnect service flagged out of sync."""
+    if service.type == "proconnect" and service.out_of_sync:
+        raise ProConnectOutOfSync()
 
 
 class ServiceLogoViewSet(viewsets.ReadOnlyModelViewSet):
@@ -224,6 +241,7 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
             ).first()
             if service is None:
                 raise NotFound("Service not found.")
+            refuse_if_out_of_sync(service)
             operator = models.Operator.objects.get(id=self.kwargs["operator_id"])
 
             is_configured = models.OperatorServiceConfig.objects.filter(
@@ -291,6 +309,7 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
         """
         with request_user_context(request.user):
             subscription = self.get_object()
+            refuse_if_out_of_sync(subscription.service)
             subscription.delete()
             return Response({}, status=status.HTTP_204_NO_CONTENT)
 

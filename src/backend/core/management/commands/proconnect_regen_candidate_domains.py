@@ -22,11 +22,7 @@ from core.services.domains_candidates import (
     candidate_domains_for_organization,
     claimed_domains,
 )
-from core.services.proconnect import (
-    domain_bucket,
-    is_rpnt_complete,
-    update_proconnect_domains,
-)
+from core.services.proconnect import domain_bucket, update_proconnect_domains
 
 logger = logging.getLogger(__name__)
 
@@ -104,17 +100,13 @@ class Command(BaseCommand):
 
     def _process(self, organization, dry_run, claimed) -> int:
         """Regenerate one org's candidates; return 1 if it changed, 0 otherwise."""
-        # No candidate when the org is already fully RPNT-valid; and never
-        # (re)generate a domain a superuser discarded.
-        if is_rpnt_complete(organization):
-            new_candidates = []
-        else:
-            discarded = set(domain_bucket(organization, "discarded"))
-            new_candidates = [
-                domain
-                for domain in candidate_domains_for_organization(organization, claimed)
-                if domain not in discarded
-            ]
+        # Never (re)generate a domain a superuser discarded.
+        discarded = set(domain_bucket(organization, "discarded"))
+        new_candidates = [
+            domain
+            for domain in candidate_domains_for_organization(organization, claimed)
+            if domain not in discarded
+        ]
 
         # The command only owns the "candidates" bucket; other buckets are preserved.
         current_candidates = domain_bucket(organization, "candidates")

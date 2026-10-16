@@ -5,6 +5,7 @@ import logging
 from contextlib import contextmanager
 from contextvars import ContextVar
 
+from django.db import transaction
 from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 
@@ -106,11 +107,11 @@ def capture_proconnect_change(sender, instance, **kwargs):
         .select_related("service", "operator")
         .first()
     )
-    # The effective idp_id is resolved per operator, so reassigning the operator
-    # (admin: the field is editable) moves the subscription to another provider
-    # with its domain list untouched. Comparing only the domains would read that
-    # as "nothing to push" and leave BOTH providers wrong — the old one still
-    # advertising the domains, the new one missing them.
+    # The idp_id comes from the service, so reassigning the service (admin: the
+    # field is editable) moves the subscription to another provider with its domain
+    # list untouched. Comparing only the domains would read that as "nothing to
+    # push" and leave BOTH providers wrong: the old one still advertising the
+    # domains, the new one missing them.
     old_idp = subscription_idp_id(old) if old else None
     new_idp = subscription_idp_id(instance)
     instance._proconnect_previous_idp_id = (  # noqa: SLF001
@@ -152,17 +153,28 @@ def _sync_proconnect(instance, service):
 
     # Local import to avoid an import cycle at module load.
     from core.services.proconnect import (  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+        out_of_sync_idp_ids,
+        refresh_out_of_sync,
+        subscription_idp_id,
         sync_proconnect_provider,
         sync_proconnect_provider_for_subscription,
     )
 
     sync_proconnect_provider_for_subscription(instance, raise_on_error=True)
+    pushed = {subscription_idp_id(instance)}
 
     # The subscription just moved between providers: the one it left still holds
     # its domains, and only a push recomputed from the DB will drop them.
     previous_idp_id = getattr(instance, "_proconnect_previous_idp_id", None)
     if previous_idp_id:
         sync_proconnect_provider(previous_idp_id, raise_on_error=True)
+        pushed.add(previous_idp_id)
+
+    # The push may have fixed a flagged provider. Rechecked once committed, so that
+    # the flag write is not lost to a later rollback.
+    flagged = pushed & out_of_sync_idp_ids()
+    if flagged:
+        transaction.on_commit(lambda: refresh_out_of_sync(flagged), robust=True)
 
 
 def _mask_email(email):

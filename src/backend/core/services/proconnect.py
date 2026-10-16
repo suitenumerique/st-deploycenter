@@ -27,8 +27,6 @@ import logging
 import re
 import time
 from collections import defaultdict
-from contextlib import contextmanager, nullcontext
-from contextvars import ContextVar
 from typing import NamedTuple, Optional
 from urllib.parse import urljoin, urlsplit
 
@@ -343,8 +341,9 @@ PROCONNECT_DOMAIN_BUCKETS = (
 ROUTABLE_PROVENANCES = ("routed", "candidates", "manual", "dpnt")
 
 # Source of each allowed domain in the file api-partenaires reads:
-#   "dila"       declared on service-public.gouv.fr (``dpnt``); needs a valid fiche
 #   "routed"     already live: an active subscription sends it today
+#   "dila"       not live, declared on service-public.gouv.fr (``dpnt``); needs a
+#                valid fiche
 #   "manual"     not live, added by a superuser (``manual``)
 #   "candidate"  everything else (``candidates``)
 # The best applicable wins, in that order.
@@ -380,10 +379,6 @@ def valid_fiche_url(url) -> bool:
 def valid_siret(siret) -> bool:
     """Whether a value is a SIRET: exactly 14 ASCII digits."""
     return isinstance(siret, str) and bool(re.fullmatch(r"[0-9]{14}", siret))
-
-
-# Full RPNT compliance (no candidate domain is generated when all are satisfied).
-RPNT_COMPLETE_CRITERIA = frozenset({"1.1", "1.2", "2.1", "2.2", "2.3"})
 
 
 def domain_bucket(organization: Organization, key: str) -> list[str]:
@@ -434,11 +429,6 @@ def update_proconnect_domains(organization: Organization, **overrides):
             locked.save(update_fields=["proconnect_domains", "updated_at"])
     organization.proconnect_domains = new_value
     return previous, new_value
-
-
-def is_rpnt_complete(organization: Organization) -> bool:
-    """Whether the org satisfies the full RPNT criteria set (1.1/1.2/2.1/2.2/2.3)."""
-    return RPNT_COMPLETE_CRITERIA.issubset(set(organization.rpnt or []))
 
 
 def routed_domains(
@@ -518,76 +508,36 @@ def known_domains(organization: Organization) -> set[str]:
     return domains
 
 
-# ---------------------------------------------------------------------------
-# Effective-config memo.
-#
-# ``OperatorServiceConfig.get_effective_service_config`` is one query per call and
-# resolving an idp needs it per subscription — so a full scan (allowlist build,
-# routed-domain computation) repeats it thousands of times. Memoize it, but ONLY inside an
-# explicit block: a ContextVar set and reset by the context manager, so nothing
-# is cached outside it and a stale config can never leak into a later request.
-# ---------------------------------------------------------------------------
-
-_effective_config_memo: ContextVar[Optional[dict]] = ContextVar(
-    "proconnect_effective_config_memo", default=None
-)
-
-
-@contextmanager
-def effective_config_memo():
-    """Memoize effective service configs for the duration of the block only."""
-    token = _effective_config_memo.set({})
-    try:
-        yield
-    finally:
-        _effective_config_memo.reset(token)
-
-
-def _effective_service_config(service, operator) -> dict:
-    """``get_effective_service_config``, memoized when inside a memo block."""
-    memo = _effective_config_memo.get()
-    if memo is None:
-        return OperatorServiceConfig.get_effective_service_config(service, operator)
-    key = (getattr(service, "id", None), getattr(operator, "id", None))
-    if key not in memo:
-        memo[key] = OperatorServiceConfig.get_effective_service_config(
-            service, operator
-        )
-    return memo[key]
+def service_idp_id(service: Service) -> Optional[str]:
+    """The ``idp_id`` of a service. Operators cannot override it."""
+    return (service.config or {}).get("idp_id")
 
 
 def subscription_idp_id(subscription: ServiceSubscription) -> Optional[str]:
-    """Return the effective ``idp_id`` for a subscription (with operator overrides)."""
-    effective_config = _effective_service_config(
-        subscription.service, subscription.operator
-    )
-    return (effective_config or {}).get("idp_id")
+    """The ``idp_id`` a subscription routes to: its service's."""
+    return service_idp_id(subscription.service)
 
 
 def routed_domains_by_idp() -> dict[str, list[str]]:
     """Every provider's routed domains, grouped in a single pass.
 
     ``{idp_id: sorted domains}`` over all active ProConnect subscriptions, each
-    resolved through :func:`subscription_idp_id` (so per-operator ``idp_id``
-    overrides are honored). For anything that walks several providers — the
-    reconciliation and drift commands — this replaces one full scan per provider
-    with one scan total.
+    resolved through :func:`subscription_idp_id`. For anything that walks several
+    providers (the reconciliation and drift commands), this replaces one full scan
+    per provider with one scan total.
     """
     grouped: dict[str, set[str]] = defaultdict(set)
     subscriptions = ServiceSubscription.objects.filter(
         service__type="proconnect", is_active=True
-    ).select_related("service", "operator")
+    ).select_related("service")
 
-    # Join the caller's memo when there is one, so a build does not resolve twice.
-    memo = nullcontext() if _effective_config_memo.get() is not None else None
-    with memo or effective_config_memo():
-        for subscription in subscriptions:
-            idp_id = subscription_idp_id(subscription)
-            if not idp_id:
-                continue
-            grouped[idp_id].update(
-                normalize_domains((subscription.metadata or {}).get("domains"))
-            )
+    for subscription in subscriptions:
+        idp_id = subscription_idp_id(subscription)
+        if not idp_id:
+            continue
+        grouped[idp_id].update(
+            normalize_domains((subscription.metadata or {}).get("domains"))
+        )
 
     return {idp_id: sorted(domains) for idp_id, domains in grouped.items()}
 
@@ -659,6 +609,129 @@ def sync_proconnect_provider_for_subscription(
         )
         return None
     return sync_proconnect_provider(idp_id, raise_on_error=raise_on_error)
+
+
+# ---------------------------------------------------------------------------
+# Drift detection and the Service.out_of_sync flag.
+# ---------------------------------------------------------------------------
+
+
+class ProviderDrift(NamedTuple):
+    """How a provider's live domains differ from what we intend to route."""
+
+    missing: list[str]  # we route it, the provider lacks it
+    unexpected: list[str]  # the provider serves it, we do not route it
+
+
+class DriftReport(NamedTuple):
+    """Outcome of :func:`check_providers_drift`."""
+
+    drifted: dict[str, ProviderDrift]
+    in_sync: dict[str, int]  # idp_id -> number of domains
+    unreadable: dict[str, ProConnectPartnersError]
+
+
+def provider_drift(idp_id: str, client, intended: list[str]) -> Optional[ProviderDrift]:
+    """Compare ``intended`` with the provider's live domains; ``None`` when equal.
+
+    Raises ``ProConnectPartnersError`` when the provider cannot be read.
+    """
+    config = client.get_configuration(idp_id)
+    # Normalize both sides the same way, or a value the provider accepts but we
+    # would never store reads as permanent drift.
+    live = normalize_domains(config.get(ATTACHED_EMAIL_DOMAINS_KEY) or [])
+    if live == intended:
+        return None
+    return ProviderDrift(
+        missing=sorted(set(intended) - set(live)),
+        unexpected=sorted(set(live) - set(intended)),
+    )
+
+
+def check_providers_drift(idp_ids, client, routed=None) -> DriftReport:
+    """Check each provider against the DB. Read-only on the provider.
+
+    ``routed`` is :func:`routed_domains_by_idp` when the caller already has it.
+    A provider that looks drifted is checked again under its push lock before it
+    is reported: a request that pushed but has not committed yet would otherwise
+    read as drift, and drift blocks writes.
+    """
+    routed = routed_domains_by_idp() if routed is None else routed
+    drifted, in_sync, unreadable = {}, {}, {}
+    for idp_id in sorted(idp_ids):
+        try:
+            drift = provider_drift(idp_id, client, routed.get(idp_id, []))
+            if drift:
+                with transaction.atomic():
+                    lock_idp(idp_id)
+                    drift = provider_drift(idp_id, client, idp_routed_domains(idp_id))
+        except ProConnectPartnersError as exc:
+            sentry_sdk.capture_exception(exc)
+            unreadable[idp_id] = exc
+            continue
+        if drift:
+            drifted[idp_id] = drift
+        else:
+            in_sync[idp_id] = len(routed.get(idp_id, []))
+    return DriftReport(drifted, in_sync, unreadable)
+
+
+def service_idp_ids() -> dict[int, str]:
+    """``{service id: idp_id}`` for the ProConnect services that have one."""
+    return {
+        service.pk: idp_id
+        for service in Service.objects.filter(type="proconnect")
+        if (idp_id := service_idp_id(service))
+    }
+
+
+def out_of_sync_idp_ids() -> set[str]:
+    """The providers of the services currently flagged ``out_of_sync``."""
+    flagged = set(
+        Service.objects.filter(type="proconnect", config__out_of_sync=True).values_list(
+            "pk", flat=True
+        )
+    )
+    return {
+        idp_id
+        for service_id, idp_id in service_idp_ids().items()
+        if service_id in flagged
+    }
+
+
+def update_out_of_sync(report: DriftReport) -> None:
+    """Set ``config["out_of_sync"]`` of the services from a drift report.
+
+    A service is out of sync when its provider drifted, and back in sync when the
+    provider was read and matches. An unreadable provider changes nothing.
+    """
+    flag, clear = [], []
+    for service_id, idp_id in service_idp_ids().items():
+        if idp_id in report.drifted:
+            flag.append(service_id)
+        elif idp_id in report.in_sync:
+            clear.append(service_id)
+    # Row-locked: this rewrites the whole config, which an admin may edit too.
+    with transaction.atomic():
+        for service in Service.objects.select_for_update().filter(pk__in=flag + clear):
+            if service.out_of_sync == (service.pk in flag):
+                continue
+            config = dict(service.config or {})
+            if service.pk in flag:
+                config["out_of_sync"] = True
+            else:
+                config.pop("out_of_sync", None)
+            Service.objects.filter(pk=service.pk).update(config=config)
+
+
+def refresh_out_of_sync(idp_ids, client=None) -> Optional[DriftReport]:
+    """Recheck providers and update the flags; ``None`` when not configured."""
+    client = client or ProConnectPartnersClient()
+    if not client.is_configured:
+        return None
+    report = check_providers_drift(idp_ids, client)
+    update_out_of_sync(report)
+    return report
 
 
 # ---------------------------------------------------------------------------
@@ -754,9 +827,8 @@ def operator_prevalidated_allowlists(operator_id) -> dict:
     idps = set()
     for config in OperatorServiceConfig.objects.filter(
         operator_id=operator_id, service__type="proconnect"
-    ).select_related("service", "operator"):
-        effective = _effective_service_config(config.service, config.operator)
-        idp = (effective or {}).get("idp_id")
+    ).select_related("service"):
+        idp = service_idp_id(config.service)
         if idp:
             idps.add(idp)
 
@@ -810,12 +882,9 @@ def org_rpnt_valid_domains(organization: Organization) -> set[str]:
 
 
 def _proconnect_idp_scopes() -> dict[str, dict]:
-    """Map each **effective** ``idp_id`` to the operators and services that route to it.
+    """Map each ``idp_id`` to the operators and services that route to it.
 
-    Mirrors the push path (:func:`subscription_idp_id`), which honors per-operator
-    ``idp_id`` overrides — so the allowlist is keyed by the very idp we push to,
-    not the service's base config idp. Each value is
-    ``{"operator_ids": set, "service_ids": set}``.
+    Each value is ``{"operator_ids": set, "service_ids": set}``.
     """
     services = list(Service.objects.filter(type="proconnect"))
     services_by_id = {service.id: service for service in services}
@@ -828,23 +897,17 @@ def _proconnect_idp_scopes() -> dict[str, dict]:
             scopes[idp_id]["operator_ids"].add(operator_id)
             scopes[idp_id]["service_ids"].add(service_id)
 
-    # Every operator that has a proconnect service configured (override or base).
-    for config in OperatorServiceConfig.objects.filter(
-        service__in=services
-    ).select_related("operator"):
-        service = services_by_id.get(config.service_id)
-        effective = _effective_service_config(service, config.operator)
-        _add((effective or {}).get("idp_id"), config.operator_id, config.service_id)
+    # Every operator that has a proconnect service configured.
+    for config in OperatorServiceConfig.objects.filter(service__in=services):
+        service = services_by_id[config.service_id]
+        _add(service_idp_id(service), config.operator_id, config.service_id)
 
     # Operators routing via an active subscription (covers those with no config row).
     for subscription in ServiceSubscription.objects.filter(
         service__in=services, is_active=True
-    ).select_related("service", "operator"):
-        _add(
-            subscription_idp_id(subscription),
-            subscription.operator_id,
-            subscription.service_id,
-        )
+    ):
+        service = services_by_id[subscription.service_id]
+        _add(service_idp_id(service), subscription.operator_id, service.id)
 
     return scopes
 
@@ -891,6 +954,9 @@ def _scoped_organizations(operator_ids, service_ids):
     return (
         Organization.objects.filter(query)
         .distinct()
+        # A stable walk: homonyms tie on name, and a tie on a domain goes to the
+        # first organization walked.
+        .order_by("pk")
         # routed_domains() walks every org's subscriptions (and their service /
         # operator, to resolve the effective idp): prefetch to keep the allowlist
         # build from issuing three queries per organization.
@@ -915,14 +981,13 @@ def build_proconnect_allowlist() -> list[dict]:
     (always on a ``dila`` row, otherwise when the organization is of a type in
     :data:`FICHE_ORG_TYPES`) and ``siret`` its SIRET when it has a valid one.
     """
-    with effective_config_memo():
-        return _build_proconnect_allowlist()
+    return _build_proconnect_allowlist()
 
 
 class _DomainOwner(NamedTuple):
     """The organization whose provenance wins a domain in the allowlist build."""
 
-    priority: int
+    rank: tuple[bool, bool, int]
     provenance: str
     fiche_url: Optional[str]
     org_name: str
@@ -972,7 +1037,8 @@ def _build_proconnect_allowlist() -> list[dict]:
         # An explicit chunk_size is required for .iterator() to honor the prefetch.
         for organization in organizations.iterator(chunk_size=500):
             # Per-idp, so this org only contributes what it routes to THIS provider.
-            live_domains |= routed_domains(organization, idp_id)
+            org_live = routed_domains(organization, idp_id)
+            live_domains |= org_live
             for domain, provenance in domain_provenances(organization, idp_id).items():
                 if provenance in ("candidates", "manual"):
                     # Already live on another provider: it would be rejected as taken.
@@ -983,13 +1049,19 @@ def _build_proconnect_allowlist() -> list[dict]:
                     # collectivité (a homonym), in or out of this provider's scope.
                     if dila_owners.get(domain, set()) - {organization.pk}:
                         continue
-                # Two organizations can claim the same domain; the strongest
-                # provenance wins, whatever order we walk them in.
-                priority = ROUTABLE_PROVENANCES.index(provenance)
+                # Two organizations can claim the same domain (homonyms). The row
+                # takes its fiche and SIRET from the one DILA gives it to, else
+                # the one routing it, else the strongest provenance; a full tie
+                # goes to the first walked (see _scoped_organizations).
+                rank = (
+                    provenance == "dpnt",
+                    domain in org_live,
+                    ROUTABLE_PROVENANCES.index(provenance),
+                )
                 current = domain_info.get(domain)
-                if current is None or priority > current.priority:
+                if current is None or rank > current.rank:
                     domain_info[domain] = _DomainOwner(
-                        priority,
+                        rank,
                         provenance,
                         organization.service_public_url or None,
                         organization.name or "",
@@ -1003,12 +1075,15 @@ def _build_proconnect_allowlist() -> list[dict]:
             domain_info.items(), key=lambda kv: (kv[1].org_name.casefold(), kv[0])
         ):
             has_fiche = valid_fiche_url(owner.fiche_url)
+            # A live domain is "routed" even when DILA declares it: api-partenaires
+            # checks every "dila" row against DILA and refuses the ones that fail
+            # (shared domain, name not carried...), while "routed" is accepted as is.
             # A DILA domain without a usable fiche cannot be "dila" for
             # api-partenaires: it falls through to the next source.
-            if owner.provenance == "dpnt" and has_fiche:
-                source = ALLOWLIST_SOURCE_DILA
-            elif domain in live_domains:
+            if domain in live_domains:
                 source = ALLOWLIST_SOURCE_ROUTED
+            elif owner.provenance == "dpnt" and has_fiche:
+                source = ALLOWLIST_SOURCE_DILA
             elif owner.provenance == "manual":
                 source = ALLOWLIST_SOURCE_MANUAL
             else:

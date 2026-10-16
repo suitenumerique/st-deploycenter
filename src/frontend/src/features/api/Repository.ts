@@ -201,6 +201,7 @@ export type Service = {
   subscription: ServiceSubscription;
   logo: string | null;
   hidden?: boolean;
+  out_of_sync?: boolean;
   operator_config?: {
     display_priority?: number;
     externally_managed?: boolean;

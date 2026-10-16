@@ -3,7 +3,6 @@
 
 import json
 import secrets
-from contextlib import nullcontext
 
 from django import forms
 from django.conf import settings
@@ -23,7 +22,12 @@ from rest_framework import serializers as drf_serializers
 
 from . import models
 from .api.serializers import ServiceSubscriptionSerializer
-from .services.proconnect import ProConnectPartnersError
+from .services.proconnect import (
+    ProConnectPartnersError,
+    refresh_out_of_sync,
+    subscription_idp_id,
+    sync_proconnect_provider_for_subscription,
+)
 from .signals import request_user_context, suppress_proconnect_sync
 
 
@@ -942,7 +946,13 @@ class ServiceAdmin(admin.ModelAdmin):
     list_filter = ("type", "is_active", "hidden", "created_at")
     search_fields = ("name", "type", "description")
     ordering = ("name", "type", "url")
-    readonly_fields = ("id", "created_at", "updated_at", "entitlements_api_key_display")
+    readonly_fields = (
+        "id",
+        "created_at",
+        "updated_at",
+        "entitlements_api_key_display",
+        "out_of_sync",
+    )
 
     fieldsets = (
         (
@@ -958,6 +968,7 @@ class ServiceAdmin(admin.ModelAdmin):
                     "launch_date",
                     "is_active",
                     "hidden",
+                    "out_of_sync",
                     "required_services",
                 )
             },
@@ -1590,7 +1601,7 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
                 with (
                     transaction.atomic(),
                     request_user_context(request.user),
-                    suppress_proconnect_sync() if skip_push else nullcontext(),
+                    suppress_proconnect_sync(),
                 ):
                     serializer = ServiceSubscriptionSerializer(
                         subscription,
@@ -1603,6 +1614,13 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
                     )
                     serializer.is_valid(raise_exception=True)
                     serializer.save()
+                    # Pushed here rather than by the signal, which skips a save
+                    # that leaves the routed domains unchanged: this form is also
+                    # how a provider that drifted from the DB gets fixed.
+                    if not skip_push:
+                        sync_proconnect_provider_for_subscription(
+                            serializer.instance, raise_on_error=True
+                        )
             except drf_serializers.ValidationError as err:
                 messages.error(
                     request,
@@ -1626,6 +1644,21 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
                     if skip_push
                     else _("Saved."),
                 )
+                # Committed by now: recheck the provider, which clears the
+                # out-of-sync flag when this save fixed it.
+                idp_id = subscription_idp_id(subscription)
+                report = (
+                    refresh_out_of_sync({idp_id})
+                    if idp_id and subscription.service.out_of_sync
+                    else None
+                )
+                if report and idp_id in report.drifted:
+                    messages.warning(
+                        request,
+                        _("The provider is still out of sync: {drift}").format(
+                            drift=report.drifted[idp_id]
+                        ),
+                    )
                 return HttpResponseRedirect(request.path)
 
         context = {
@@ -1633,6 +1666,7 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
             "title": _("ProConnect manual actions"),
             "form": form,
             "domains": domains,
+            "out_of_sync": subscription.service.out_of_sync,
             "original": subscription,
             "opts": self.model._meta,  # pylint: disable=protected-access # noqa: SLF001
             "has_view_permission": self.has_view_permission(request, subscription),

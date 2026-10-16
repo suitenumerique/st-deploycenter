@@ -1,5 +1,7 @@
 """Tests for OperatorServiceConfig model."""
 
+from django.core.exceptions import ValidationError
+
 import pytest
 
 from core import factories
@@ -35,6 +37,26 @@ class TestGetEffectiveConfig:
         result = osc.get_effective_config()
         assert result["metrics_endpoint"] == "https://override.com"
         assert result["timeout"] == 30
+
+    def test_idp_id_is_never_overridden(self):
+        """An operator cannot change the identity provider of a service."""
+        service = factories.ServiceFactory(config={"idp_id": "base-idp", "timeout": 30})
+        osc = factories.OperatorServiceConfigFactory(service=service)
+        # Legacy data, written around save(), which refuses the key.
+        OperatorServiceConfig.objects.filter(pk=osc.pk).update(
+            config_override={"idp_id": "other-idp", "timeout": 60}
+        )
+        osc.refresh_from_db()
+        assert osc.get_effective_config() == {"idp_id": "base-idp", "timeout": 60}
+
+    def test_saving_an_idp_id_override_is_refused(self):
+        """The key cannot be saved, from the admin form or anywhere else."""
+        service = factories.ServiceFactory(config={"idp_id": "base-idp"})
+        with pytest.raises(ValidationError) as excinfo:
+            factories.OperatorServiceConfigFactory(
+                service=service, config_override={"idp_id": "other-idp"}
+            )
+        assert "config_override" in excinfo.value.message_dict
 
     def test_override_adds_new_keys(self):
         """Override can add keys not present in the base service config."""

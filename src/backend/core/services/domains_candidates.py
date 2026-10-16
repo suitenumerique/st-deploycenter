@@ -112,9 +112,8 @@ def candidate_domains_for_organization(
 
     - ``{slug}.<ext>`` for every RPNT-valid extension applicable to the org's
       département (always ``.fr``).
-    - alternative spellings, added on top of those (never in place of them), and
-      only when ``{slug}.fr`` is not already one of the org's DILA domains — a
-      collectivité that already has its canonical domain needs no suggestions:
+    - alternative spellings, added on top of those (never in place of them), even
+      when the org already has DILA domains of its own:
 
       - ``mairie-{slug}.fr``, ``ville-{slug}.fr``, ``{slug}{dept}.fr``;
       - the hyphenless spelling ``{flat}.fr``, plus ``mairie-``/``ville-``, the
@@ -143,46 +142,45 @@ def candidate_domains_for_organization(
         for ext, depts in DOMAIN_EXTENSIONS_DEPARTEMENTS.items()
         if depts is None or dept in depts
     }
-    # Alternative forms, unless the plain {slug}.fr is already a DILA domain.
-    if f"{slug}.fr" not in dpnt:
-        domains.add(f"mairie-{slug}.fr")
-        domains.add(f"ville-{slug}.fr")
+    # Alternative forms.
+    domains.add(f"mairie-{slug}.fr")
+    domains.add(f"ville-{slug}.fr")
+    if dept:
+        domains.add(f"{slug}{dept.lower()}.fr")
+
+    # The hyphenless spelling: the single biggest miss of the hyphenated-only
+    # generator, since a great many communes registered their name run together.
+    flat = _flatten_slug(slug)
+    if flat:
+        domains.add(f"{flat}.fr")
+        domains.add(f"mairie-{flat}.fr")
+        domains.add(f"ville-{flat}.fr")
         if dept:
-            domains.add(f"{slug}{dept.lower()}.fr")
+            domains.add(f"{flat}{dept.lower()}.fr")
+        # Regional extensions on it too: nearly free, since each only applies
+        # to the départements it serves.
+        domains |= {
+            f"{flat}.{ext}"
+            for ext, depts in DOMAIN_EXTENSIONS_DEPARTEMENTS.items()
+            if depts and dept in depts
+        }
 
-        # The hyphenless spelling: the single biggest miss of the hyphenated-only
-        # generator, since a great many communes registered their name run together.
-        flat = _flatten_slug(slug)
-        if flat:
-            domains.add(f"{flat}.fr")
-            domains.add(f"mairie-{flat}.fr")
-            domains.add(f"ville-{flat}.fr")
-            if dept:
-                domains.add(f"{flat}{dept.lower()}.fr")
-            # Regional extensions on it too — nearly free, since each only applies
-            # to the départements it serves.
-            domains |= {
-                f"{flat}.{ext}"
-                for ext, depts in DOMAIN_EXTENSIONS_DEPARTEMENTS.items()
-                if depts and dept in depts
-            }
+    # "saint-" is written "st-" about as often as not, hyphenated or run together.
+    for abbreviated in _saint_abbreviations(slug):
+        domains.add(f"{abbreviated}.fr")
+        flat_abbreviated = _flatten_slug(abbreviated)
+        if flat_abbreviated:
+            domains.add(f"{flat_abbreviated}.fr")
 
-        # "saint-" is written "st-" about as often as not, hyphenated or run together.
-        for abbreviated in _saint_abbreviations(slug):
-            domains.add(f"{abbreviated}.fr")
-            flat_abbreviated = _flatten_slug(abbreviated)
-            if flat_abbreviated:
-                domains.add(f"{flat_abbreviated}.fr")
-
-        # A leading article is usually dropped when registering the domain. Only the
-        # bare and hyphenless forms: measured against the DPNT dataset, the
-        # "mairie-" one landed on a neighbour's domain twice as often as it was right.
-        bare = _slug_without_article(organization.name)
-        if bare:
-            domains.add(f"{bare}.fr")
-            flat_bare = _flatten_slug(bare)
-            if flat_bare:
-                domains.add(f"{flat_bare}.fr")
+    # A leading article is usually dropped when registering the domain. Only the
+    # bare and hyphenless forms: measured against the DPNT dataset, the
+    # "mairie-" one landed on a neighbour's domain twice as often as it was right.
+    bare = _slug_without_article(organization.name)
+    if bare:
+        domains.add(f"{bare}.fr")
+        flat_bare = _flatten_slug(bare)
+        if flat_bare:
+            domains.add(f"{flat_bare}.fr")
 
     # Never propose a domain that is already an authoritative DILA domain.
     domains -= dpnt
