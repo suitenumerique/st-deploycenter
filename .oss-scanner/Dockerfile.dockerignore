@@ -1,0 +1,23 @@
+# Replaces the repository .dockerignore for this Dockerfile. The repository
+# one hides README.md, docs/ and env.d/ that the scanning agent should read.
+# The scanner copies .git itself.
+.git
+**/__pycache__
+**/*.py[co]
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/.pylint.d
+**/node_modules
+**/.next
+**/out
+**/.venv
+venv
+data
+db.sqlite3
+*.log
+**/.DS_Store
+.idea
+.vscode
+.cursor
+.opencode
