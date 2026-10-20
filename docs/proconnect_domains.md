@@ -282,7 +282,9 @@ the provider lacks. Nothing is sent as a whole list. What follows from that:
 - **Timeouts.** An attach gets a 15 second read timeout, the other calls 5:
   api-partenaires checks the domain's MX and A records through `dns.google` before
   accepting it, 5 seconds each on their side. A call that times out may still have
-  been applied, so a request that rolls back also detaches it.
+  been applied, so a request that rolls back also detaches it. A `dns_unavailable`
+  answer (their lookup timed out, usually on a zone Google has not cached yet) is
+  asked again twice before giving up.
 - **Not atomic.** Any other error (a 5xx, a rate limit that lasts) stops the sync
   where it is. If undoing fails too, the provider is left with part of the change:
   the next sync converges it, being computed from the live state, and the drift

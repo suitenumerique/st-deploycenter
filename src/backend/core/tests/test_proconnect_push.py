@@ -200,6 +200,61 @@ def test_client_attach_email_domain_sends_a_signed_put():
 
 
 @responses.activate
+def test_client_attach_email_domain_asks_again_when_their_dns_lookup_timed_out():
+    """dns_unavailable is their lookup giving up, not a verdict on the domain: the
+    lookup carries on at Google and is cached, so the next ask usually passes."""
+    responses.add(
+        responses.PUT,
+        f"{DOMAINS_URL}/a.fr",
+        json={"error": "dns_unavailable"},
+        status=502,
+    )
+    responses.add(responses.PUT, f"{DOMAINS_URL}/a.fr", status=201)
+
+    ProConnectPartnersClient(base_url=BASE_URL, secret=SECRET).attach_email_domain(
+        IDP, "a.fr"
+    )
+
+    assert len(responses.calls) == 2
+
+
+@responses.activate
+def test_client_attach_email_domain_gives_up_on_a_dns_lookup_that_keeps_failing():
+    """Three tries in all, then the error: not an endless loop."""
+    for _ in range(5):
+        responses.add(
+            responses.PUT,
+            f"{DOMAINS_URL}/a.fr",
+            json={"error": "dns_unavailable"},
+            status=502,
+        )
+
+    client = ProConnectPartnersClient(base_url=BASE_URL, secret=SECRET)
+    with pytest.raises(ProConnectPartnersError) as excinfo:
+        client.attach_email_domain(IDP, "a.fr")
+
+    assert excinfo.value.error_code == "dns_unavailable"
+    assert len(responses.calls) == 3
+
+
+@responses.activate
+def test_client_attach_email_domain_does_not_retry_a_real_refusal():
+    """A domain they found unreachable is a verdict: asking again changes nothing."""
+    responses.add(
+        responses.PUT,
+        f"{DOMAINS_URL}/a.fr",
+        json={"error": "attached_email_domain_unreachable"},
+        status=422,
+    )
+
+    client = ProConnectPartnersClient(base_url=BASE_URL, secret=SECRET)
+    with pytest.raises(ProConnectPartnersError):
+        client.attach_email_domain(IDP, "a.fr")
+
+    assert len(responses.calls) == 1
+
+
+@responses.activate
 def test_client_attach_email_domain_accepts_an_already_attached_domain():
     """A 204 (already attached) is as good as a 201."""
     responses.add(responses.PUT, f"{DOMAINS_URL}/a.fr", status=204)

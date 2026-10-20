@@ -78,6 +78,11 @@ DOMAIN_NOT_ALLOWED_ERROR = "attached_email_domain_not_allowed"
 DOMAIN_UNREACHABLE_ERROR = "attached_email_domain_unreachable"
 DOMAIN_TAKEN_ERROR = "attached_email_domain_taken"
 DOMAIN_NOT_ATTACHED_ERROR = "attached_email_domain_not_found"
+# api-partenaires could not get an answer from dns.google within its 5 seconds. The
+# lookup goes on at Google and is cached for the zone's TTL, so asking again
+# usually works.
+DNS_UNAVAILABLE_ERROR = "dns_unavailable"
+ATTACH_DNS_RETRIES = 2
 # The refusals of a single domain: the provider stays fine, that domain is the issue.
 DOMAIN_REFUSAL_ERRORS = (
     DOMAIN_NOT_ALLOWED_ERROR,
@@ -342,15 +347,28 @@ class ProConnectPartnersClient:
         """Attach one domain to the provider. Attaching one already there is a no-op.
 
         A refusal of the domain itself (see ``DOMAIN_REFUSAL_ERRORS``) raises with
-        ``domains == [domain]``.
+        ``domains == [domain]``. A ``dns_unavailable`` answer (their DNS lookup timed
+        out, typically on a zone Google has not cached yet) is asked again up to
+        ``ATTACH_DNS_RETRIES`` times.
         """
         path = _domain_path(idp_id, domain)
-        try:
-            self._request("PUT", path, timeout=self.attach_timeout)
-        except ProConnectPartnersError as exc:
-            if exc.error_code in DOMAIN_REFUSAL_ERRORS:
-                exc.domains = [domain]
-            raise
+        for attempt in range(ATTACH_DNS_RETRIES + 1):
+            try:
+                self._request("PUT", path, timeout=self.attach_timeout)
+                return
+            except ProConnectPartnersError as exc:
+                if exc.error_code == DNS_UNAVAILABLE_ERROR and attempt < (
+                    ATTACH_DNS_RETRIES
+                ):
+                    logger.warning(
+                        "api-partenaires could not resolve %s (attempt %d), retrying",
+                        domain,
+                        attempt + 1,
+                    )
+                    continue
+                if exc.error_code in DOMAIN_REFUSAL_ERRORS:
+                    exc.domains = [domain]
+                raise
 
     def detach_email_domain(self, idp_id: str, domain: str) -> None:
         """Detach one domain from the provider. Detaching one not there is a no-op."""

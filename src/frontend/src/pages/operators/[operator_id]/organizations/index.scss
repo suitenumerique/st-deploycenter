@@ -139,6 +139,13 @@
       height: 100%;
     }
 
+    &__switch {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
     &__name-wrapper {
       display: flex;
       flex-direction: column;

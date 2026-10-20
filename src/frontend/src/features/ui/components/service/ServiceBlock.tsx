@@ -6,7 +6,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { Service } from "@/features/api/Repository";
 import { Button, Switch, Tooltip, useModals } from "@gouvfr-lasuite/ui-components";
-import { Icon, IconSize } from "@gouvfr-lasuite/ui-components";
+import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-components";
 import { useEffect, useState } from "react";
 import { useMutationUpdateOrganizationServiceSubscription } from "@/hooks/useQueries";
 import { useOperatorContext } from "@/features/layouts/components/GlobalLayout";
@@ -158,6 +158,8 @@ export type ServiceBlockProps = {
 export const ServiceBlock = (props: ServiceBlockProps) => {
   const { t } = useTranslation();
   const modals = useModals();
+  // A change of the subscription is in flight (see the switch below).
+  const [isChanging, setIsChanging] = useState(false);
   const isExternallyManaged =
     props.service.operator_config?.externally_managed === true;
   const isPopulationLimitExceeded =
@@ -227,59 +229,54 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
           </div>
         </div>
         {canSwitch ? (
-          <Switch
-            checked={props.checked}
-            onChange={async (e) => {
-              if (e.target.checked) {
-                if (!(await props.canActivateSubscription())) {
-                  return;
+          <div className="dc__service__block__header__switch">
+            {isChanging && <Spinner size="sm" />}
+            <Switch
+              checked={props.checked}
+              disabled={isChanging}
+              onChange={async (e) => {
+                // The switch only moves once the API has confirmed: activating can
+                // involve a call to an external service (ProConnect) that fails.
+                const change = (data: ServiceSubscriptionInput, checked: boolean) => {
+                  setIsChanging(true);
+                  props.onChangeSubscription(data, {
+                    onSuccess: () => props.setChecked(checked),
+                    onError: (error) => {
+                      addToast(
+                        <ToasterItem type="error">
+                          <span>{errorToString(error)}</span>
+                        </ToasterItem>
+                      );
+                    },
+                    onSettled: () => setIsChanging(false),
+                  });
+                };
+                if (e.target.checked) {
+                  if (!(await props.canActivateSubscription())) {
+                    return;
+                  }
+                  const decision = await modals.confirmationModal({
+                    children: props.confirmationText,
+                  });
+                  if (decision === "yes") {
+                    const activationData = props.getActivationData?.() ?? {};
+                    change({ ...activationData, is_active: true }, true);
+                  }
+                } else {
+                  const decision = await modals.deleteConfirmationModal({
+                    title: t("organizations.services.disable_modal.title"),
+                    children: t(
+                      "organizations.services.disable_modal.content",
+                      { service: props.service.name }
+                    ),
+                  });
+                  if (decision === "delete") {
+                    change({ is_active: false }, false);
+                  }
                 }
-                const decision = await modals.confirmationModal({
-                  children: props.confirmationText,
-                });
-                if (decision === "yes") {
-                  const activationData = props.getActivationData?.() ?? {};
-                  props.onChangeSubscription(
-                    { ...activationData, is_active: true },
-                    {
-                      onError: (error) => {
-                        props.setChecked(false);
-                        addToast(
-                          <ToasterItem type="error">
-                            <span>{errorToString(error)}</span>
-                          </ToasterItem>
-                        );
-                      },
-                    }
-                  );
-                  props.setChecked(true);
-                }
-              } else {
-                const decision = await modals.deleteConfirmationModal({
-                  title: t("organizations.services.disable_modal.title"),
-                  children: t("organizations.services.disable_modal.content", {
-                    service: props.service.name,
-                  }),
-                });
-                if (decision === "delete") {
-                  props.onChangeSubscription(
-                    { is_active: false },
-                    {
-                      onError: (error) => {
-                        props.setChecked(true);
-                        addToast(
-                          <ToasterItem type="error">
-                            <span>{errorToString(error)}</span>
-                          </ToasterItem>
-                        );
-                      },
-                    }
-                  );
-                  props.setChecked(false);
-                }
-              }
-            }}
-          />
+              }}
+            />
+          </div>
         ) : (
           <Tooltip content={disabledReason}>
             <div
