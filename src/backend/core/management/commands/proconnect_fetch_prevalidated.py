@@ -16,12 +16,15 @@ from django.core.management.base import BaseCommand, CommandError
 
 import requests
 import sentry_sdk
+import urllib3
 import yaml
 
 from core.services.domainnames import normalize_domains
 from core.services.proconnect import (
     ALLOWED_DOMAINS_KEY,
+    AllowlistFormatError,
     get_prevalidated_allowlist,
+    iter_allowlist_providers,
     redact_credentials,
     store_prevalidated_allowlist,
 )
@@ -65,52 +68,43 @@ class Command(BaseCommand):
 
         # This runs on a cron, where a CommandError is only a non-zero exit nobody
         # reads: report the cause to Sentry too.
+        # The file is tens of MB: streamed and parsed as events, never loaded
+        # whole (see iter_allowlist_providers). Nothing is cached until the whole
+        # stream has been read without error.
         try:
-            response = requests.get(url, timeout=30)
-            response.raise_for_status()
-        except requests.exceptions.RequestException as exc:
+            with requests.get(url, timeout=30, stream=True) as response:
+                response.raise_for_status()
+                response.raw.decode_content = True
+                providers = list(iter_allowlist_providers(response.raw))
+        except (
+            requests.exceptions.RequestException,
+            urllib3.exceptions.HTTPError,
+        ) as exc:
             sentry_sdk.capture_exception(exc)
             raise CommandError(
                 f"Failed to fetch {safe_url}: {redact_credentials(str(exc))}"
             ) from exc
-
-        try:
-            data = yaml.safe_load(response.text) or {}
         except yaml.YAMLError as exc:
             sentry_sdk.capture_exception(exc)
             raise CommandError(f"Invalid YAML at {safe_url}: {exc}") from exc
+        except AllowlistFormatError as exc:
+            # A list or a bare scalar instead of the mapping that holds the providers.
+            raise CommandError(f"Invalid YAML at {safe_url}: {exc}") from exc
 
-        # A YAML document is not necessarily a mapping: a list or a bare scalar
-        # would blow up on .get() below.
-        if not isinstance(data, dict):
-            raise CommandError(
-                f"Invalid YAML at {safe_url}: expected a mapping, got "
-                f"{type(data).__name__}."
-            )
-
-        providers = data.get("oidc_providers") or []
         previous = get_prevalidated_allowlist() or {}
         allowlist = {}
         count = 0
         skipped = 0
-        for provider in providers:
-            uid = provider.get("uid") if isinstance(provider, dict) else None
+        for uid, domains in providers:
             if not uid:
                 continue
-            entries = provider.get(ALLOWED_DOMAINS_KEY)
-            domains = None
-            if isinstance(entries, list):
-                domains = [
-                    entry.get("domain") if isinstance(entry, dict) else None
-                    for entry in entries
-                ]
             # An explicit empty list is authoritative ("nothing pre-validated");
             # a missing/malformed key is not — caching [] for it would wrongly
             # flag every domain as "not yet pre-validated" in the UI. The same
             # goes for a non-empty list we cannot read a single domain from
             # (entries are `{domain, source, ...}` mappings). Carry the previous
             # entry over instead.
-            if domains is None or (entries and not normalize_domains(domains)):
+            if domains is None or (domains and not normalize_domains(domains)):
                 skipped += 1
                 self.stderr.write(
                     self.style.WARNING(

@@ -7,6 +7,7 @@ Tests for the ProConnect api-partenaires allowlist generation:
 """
 # pylint: disable=too-many-lines
 
+import io
 from io import StringIO
 from unittest import mock
 
@@ -27,10 +28,12 @@ from core import factories
 from core.models import OperatorServiceConfig
 from core.services.domains_candidates import slugify_org_domain
 from core.services.proconnect import (
+    AllowlistFormatError,
     build_proconnect_allowlist,
     domain_bucket,
     domain_provenances,
     get_prevalidated_domains,
+    iter_allowlist_providers,
     iter_proconnect_allowlist_yaml,
     known_domains,
     org_rpnt_valid_domains,
@@ -564,6 +567,53 @@ def test_build_allowlist_candidate_live_for_another_org_on_another_idp_is_droppe
     assert _sources_by_uid() == {
         "idp-a": {"taken.fr": "routed"},
         "idp-b": {"free.fr": "candidate"},
+    }
+
+
+def _two_providers_one_operator_dila_domain(second_declarer):
+    """An EPCI routing ``shared.bzh`` on idp-a, DILA domain of its own, with idp-b
+    in the same scope; optionally a commune declaring it at DILA too."""
+    operator = factories.OperatorFactory(config={"departements": ["56"]})
+    svc_a = _proconnect_service("idp-a")
+    svc_b = _proconnect_service("idp-b")
+    factories.OperatorServiceConfigFactory(operator=operator, service=svc_a)
+    factories.OperatorServiceConfigFactory(operator=operator, service=svc_b)
+    epci = factories.OrganizationFactory(
+        departement_code_insee="56",
+        service_public_url=FICHE,
+        proconnect_domains={"dpnt": ["shared.bzh"]},
+    )
+    factories.ServiceSubscriptionFactory(
+        organization=epci,
+        service=svc_a,
+        operator=operator,
+        metadata={"domains": ["shared.bzh"]},
+        is_active=True,
+    )
+    if second_declarer:
+        factories.OrganizationFactory(
+            departement_code_insee="56",
+            service_public_url=FICHE_OTHER,
+            proconnect_domains={"dpnt": ["shared.bzh"]},
+        )
+
+
+def test_build_allowlist_dila_domain_routed_elsewhere_and_shared_is_dropped():
+    """The EPCI routes shared.bzh on idp-a and a commune declares it at DILA too:
+    idp-b must not get a second row for it, `dila` or otherwise."""
+    _two_providers_one_operator_dila_domain(second_declarer=True)
+
+    assert _sources_by_uid() == {"idp-a": {"shared.bzh": "routed"}, "idp-b": {}}
+
+
+def test_build_allowlist_dila_domain_routed_elsewhere_alone_is_kept():
+    """Declared by a single collectivité, a DILA domain stays on every provider the
+    collectivité is in scope of, even where it is not the one routing it."""
+    _two_providers_one_operator_dila_domain(second_declarer=False)
+
+    assert _sources_by_uid() == {
+        "idp-a": {"shared.bzh": "routed"},
+        "idp-b": {"shared.bzh": "dila"},
     }
 
 
@@ -1422,6 +1472,135 @@ def test_fetch_prevalidated_raises_when_the_document_is_not_a_mapping():
         call_command(
             "proconnect_fetch_prevalidated", "--url", "https://allowlist.test/x.yaml"
         )
+
+
+@responses.activate
+def test_fetch_prevalidated_never_loads_the_whole_document():
+    """The deployed file is tens of MB: loaded whole, the cron container ran out of
+    memory and was killed without a trace. It is read as a stream of events."""
+    responses.add(
+        responses.GET,
+        "https://allowlist.test/x.yaml",
+        body='oidc_providers:\n  - uid: "idp-x"\n    allowed_attached_email_domains:\n'
+        "      - domain: a.fr\n",
+        status=200,
+    )
+
+    with (
+        mock.patch("yaml.safe_load", side_effect=AssertionError("whole document")),
+        mock.patch("yaml.load", side_effect=AssertionError("whole document")),
+    ):
+        call_command(
+            "proconnect_fetch_prevalidated",
+            "--url",
+            "https://allowlist.test/x.yaml",
+            stdout=StringIO(),
+        )
+
+    assert get_prevalidated_domains("idp-x") == ["a.fr"]
+
+
+@responses.activate
+def test_fetch_prevalidated_caches_nothing_when_the_yaml_breaks_halfway():
+    """Providers read before a syntax error are not worth a half-written cache."""
+    store_prevalidated_domains("idp-x", ["kept.fr"])
+    responses.add(
+        responses.GET,
+        "https://allowlist.test/x.yaml",
+        body=(
+            "oidc_providers:\n"
+            '  - uid: "idp-new"\n'
+            "    allowed_attached_email_domains: []\n"
+            '  - uid: "idp-x"\n'
+            "    allowed_attached_email_domains: [unclosed\n"
+        ),
+        status=200,
+    )
+
+    with pytest.raises(CommandError, match="Invalid YAML"):
+        call_command(
+            "proconnect_fetch_prevalidated", "--url", "https://allowlist.test/x.yaml"
+        )
+
+    assert get_prevalidated_domains("idp-x") == ["kept.fr"]
+    assert get_prevalidated_domains("idp-new") == []  # not in the cached map either
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("", []),
+        ("---\n", []),
+        ("null\n", []),
+        ("other: 1\n", []),
+        ("oidc_providers:\n", []),
+        ("oidc_providers: []\n", []),
+        # Comments, quoting styles, flow style and extra keys are all YAML to it.
+        (
+            "# header\n"
+            "version: 2\n"
+            "oidc_providers:\n"
+            "  - uid: 'a'  # single quoted\n"
+            "    name: {x: [1, 2]}\n"
+            "    allowed_attached_email_domains:\n"
+            '      - {domain: "x.fr", source: dila}\n'
+            "      - domain: y.fr\n"
+            "        extra: [1, {k: v}]\n"
+            "    trailing: [a, b]\n",
+            [("a", ["x.fr", "y.fr"])],
+        ),
+        # What it cannot read comes back as None, for the caller to decide.
+        (
+            "oidc_providers:\n"
+            "  - uid: null\n"
+            "    allowed_attached_email_domains: []\n"
+            "  - just a string\n"
+            "  - [a, list]\n"
+            "  - uid: b\n"
+            "    allowed_attached_email_domains: ~\n"
+            "  - uid: c\n"
+            "    allowed_attached_email_domains: scalar\n"
+            "  - uid: d\n"
+            "    allowed_attached_email_domains:\n"
+            "      - fqdn: z.fr\n"
+            "      - plain.fr\n"
+            "      - domain: ~\n"
+            "      - [nested]\n"
+            "      - domain: ok.fr\n",
+            [
+                (None, []),
+                (None, None),
+                (None, None),
+                ("b", None),
+                ("c", None),
+                ("d", [None, None, None, None, "ok.fr"]),
+            ],
+        ),
+        # A key that is not a scalar is skipped with its value.
+        (
+            "oidc_providers:\n"
+            "  - uid: e\n"
+            "    ? [complex, key]\n"
+            "    : ignored\n"
+            "    allowed_attached_email_domains: []\n",
+            [("e", [])],
+        ),
+    ],
+)
+def test_iter_allowlist_providers_reads_the_shapes_the_command_cares_about(
+    text, expected
+):
+    """The event reader agrees with what `yaml.safe_load` gave the command."""
+    assert list(iter_allowlist_providers(io.BytesIO(text.encode()))) == expected
+
+
+@pytest.mark.parametrize(
+    "text, kind", [("- a\n- b\n", "list"), ("just text\n", "scalar")]
+)
+def test_iter_allowlist_providers_refuses_a_document_that_is_not_a_mapping(text, kind):
+    """The command turns this into an error instead of caching nothing quietly."""
+    with pytest.raises(AllowlistFormatError, match=f"got {kind}"):
+        list(iter_allowlist_providers(io.BytesIO(text.encode())))
 
 
 @responses.activate

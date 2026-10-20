@@ -126,7 +126,8 @@ never restates the rule:
 
   - a `manual` or `candidate` row is not written for a provider when the domain is
     live on another provider (it would be refused as taken). A `dila` row is kept on
-    every provider whose scope holds the organization;
+    every provider whose scope holds the organization, except when the domain is
+    live on another provider and another organization declares it at DILA too;
   - a `candidate` row is not written when another organization has the domain in
     `dpnt`, which is how a homonym's guess stops overwriting a `dila` row. A
     `manual` row is kept: a superuser chose it.
@@ -159,6 +160,14 @@ encore pré-validé", up to a week). The cache TTL
 (`PROCONNECT_DOMAIN_ALLOWLIST_CACHE_TTL`, 4h) is the fallback if the cron stops,
 not the refresh rate. Null means we do not know that provider's allowlist — shown
 as unknown, never as "not pre-validated".
+
+The deployed file is tens of MB, so the command streams it and reads it as parse
+events (`iter_allowlist_providers`) instead of loading it. Loaded whole with
+`yaml.safe_load`, the 41 MB file took over a minute and 1.3 GB on a dev machine,
+which a small cron container cannot hold: a job killed that way leaves no error,
+the cache expires after its 4 hours and every provider goes back to "unknown".
+Streamed it takes about 2 seconds. Nothing is cached until the whole file has been
+read.
 
 The ProConnect card also **blocks activation** while a domain it would route is
 known to be absent from the deployed allowlist, since the push would be rejected

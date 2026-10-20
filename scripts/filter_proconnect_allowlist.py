@@ -120,16 +120,43 @@ def routed_entries(text):
     }
 
 
-def filter_allowlist(text, keep, hacked=frozenset()):
+def taken_elsewhere(text, contested):
+    """Les couples ``(fournisseur, domaine)`` non routed d'un domaine ``contested``
+    que l'on route deja chez un autre fournisseur.
+
+    Un domaine contested est un domaine dont la categorie est retiree (partage entre
+    plusieurs collectivites, par exemple). Chez le fournisseur qui le route, il reste.
+    Ailleurs il n'a pas sa place: il y serait refuse comme deja rattache, et le
+    garder parce qu'il est deploye chez l'autre ne regle rien.
+    """
+    routed = routed_entries(text)
+    routed_uids = defaultdict(set)
+    for uid, domain in routed:
+        routed_uids[domain].add(uid)
+    return {
+        (row.uid, row.domain)
+        for row in scan_allowlist(text)
+        if row.kind == "domain"
+        and row.uid is not None
+        and row.domain in contested
+        and (row.uid, row.domain) not in routed
+        and routed_uids.get(row.domain, set()) - {row.uid}
+    }
+
+
+def filter_allowlist(text, keep, hacked=frozenset(), contested=frozenset()):
     """Reecrit une liste en ne gardant que les domaines de ``keep``.
 
     Les entrees ``source: routed`` sont gardees quoi qu'il arrive, sauf celles des
-    domaines de ``hacked``, qui partent toujours (avec ou sans "www.").
+    domaines de ``hacked``, qui partent toujours (avec ou sans "www."). Les entrees
+    non routed d'un domaine de ``contested`` routed chez un autre fournisseur partent
+    aussi, meme deployees (voir :func:`taken_elsewhere`).
     """
     routed = routed_entries(text)
+    elsewhere = taken_elsewhere(text, contested)
 
     def kept(row):
-        if mail_domain(row.domain) in hacked:
+        if mail_domain(row.domain) in hacked or (row.uid, row.domain) in elsewhere:
             return False
         return row.domain in keep or (row.uid, row.domain) in routed
 
@@ -230,7 +257,9 @@ def main(argv=None):
 
     hacked = {} if args.no_hacked else load_hacked(args.hacked)
     keep = {d for d, c in categories.items() if c not in drop} | deployed
-    result = filter_allowlist(text, keep, frozenset(hacked))
+    contested = frozenset(d for d, c in categories.items() if c in drop)
+    elsewhere = taken_elsewhere(text, contested)
+    result = filter_allowlist(text, keep, frozenset(hacked), contested)
     Path(args.out).write_text(result, encoding="utf-8")
 
     kept = len({row.domain for row in scan_allowlist(result) if row.kind == "domain"})
@@ -244,6 +273,12 @@ def main(argv=None):
         f"({len({d for d in deployed & seen if mail_domain(d) in spared})} deployes "
         f"conserves quoi qu'il arrive, {routed} routed conserves en plus)\n"
     )
+    sys.stderr.write(
+        f"Domaines deja routes chez un autre fournisseur, retires ici: "
+        f"{len(elsewhere)} entree(s)\n"
+    )
+    for uid, domain in sorted(elsewhere, key=lambda pair: (pair[1], pair[0])):
+        sys.stderr.write(f"  {domain} ({uid})\n")
     if args.no_hacked:
         sys.stderr.write("Sites pirates: filtre desactive (--no-hacked).\n")
     else:

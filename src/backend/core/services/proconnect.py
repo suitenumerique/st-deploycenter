@@ -37,6 +37,7 @@ from django.db.models import Q
 
 import requests
 import sentry_sdk
+import yaml
 
 from core.models import (
     Operator,
@@ -877,6 +878,130 @@ def refresh_out_of_sync(idp_ids, client=None) -> Optional[DriftReport]:
 
 PREVALIDATED_CACHE_KEY = "proconnect_idps_allowed_fqdns"
 
+# The deployed allowlist is tens of MB (hundreds of thousands of entries). Loaded
+# whole with ``yaml.safe_load`` it took over a minute and 1.3 GB, more than a cron
+# container has: the job was killed without a word. It is read as a stream of
+# parse events instead, keeping only what the cache needs.
+_YAML_LOADER = (  # pylint: disable=invalid-name
+    yaml.CSafeLoader if yaml.__with_libyaml__ else yaml.SafeLoader
+)
+_YAML_NULLS = ("", "~", "null", "Null", "NULL")
+
+
+class AllowlistFormatError(ValueError):
+    """The allowlist is YAML, but not the mapping that holds ``oidc_providers``."""
+
+
+def _event_scalar(event) -> Optional[str]:
+    """The text of a scalar event, ``None`` for a YAML null."""
+    if event.tag is None and event.implicit[0] and event.value in _YAML_NULLS:
+        return None
+    return event.value
+
+
+def _skip_node(events, first) -> None:
+    """Consume the rest of the node whose first event is ``first``."""
+    depth = 0
+    event = first
+    while True:
+        if isinstance(event, (yaml.SequenceStartEvent, yaml.MappingStartEvent)):
+            depth += 1
+        elif isinstance(event, (yaml.SequenceEndEvent, yaml.MappingEndEvent)):
+            depth -= 1
+        if depth <= 0:
+            return
+        event = next(events, None)
+        if event is None:
+            return
+
+
+def _mapping_items(events):
+    """The ``(key, value event)`` pairs of the mapping just opened.
+
+    The caller must consume (or skip) every value before asking for the next pair.
+    Keys that are not scalars come back as ``None``.
+    """
+    for key in events:
+        if isinstance(key, yaml.MappingEndEvent):
+            return
+        name = None
+        if isinstance(key, yaml.ScalarEvent):
+            name = key.value
+        else:
+            _skip_node(events, key)
+        yield name, next(events, None)
+
+
+def _read_domain_entry(events, first) -> Optional[str]:
+    """The ``domain`` of one allowlist entry, ``None`` when it has none."""
+    if not isinstance(first, yaml.MappingStartEvent):
+        _skip_node(events, first)
+        return None
+    domain = None
+    for name, value in _mapping_items(events):
+        if name == "domain" and isinstance(value, yaml.ScalarEvent):
+            domain = _event_scalar(value)
+        else:
+            _skip_node(events, value)
+    return domain
+
+
+def _read_provider(events, first) -> tuple[Optional[str], Optional[list]]:
+    """``(uid, domains)`` of one provider.
+
+    ``domains`` is ``None`` unless the provider has a list under
+    ``allowed_attached_email_domains``; an entry without a readable ``domain``
+    counts as ``None`` in it.
+    """
+    if not isinstance(first, yaml.MappingStartEvent):
+        _skip_node(events, first)
+        return None, None
+    uid, domains = None, None
+    for name, value in _mapping_items(events):
+        if name == "uid" and isinstance(value, yaml.ScalarEvent):
+            uid = _event_scalar(value)
+        elif name == ALLOWED_DOMAINS_KEY and isinstance(value, yaml.SequenceStartEvent):
+            domains = []
+            for item in events:
+                if isinstance(item, yaml.SequenceEndEvent):
+                    break
+                domains.append(_read_domain_entry(events, item))
+        else:
+            _skip_node(events, value)
+    return uid, domains
+
+
+def iter_allowlist_providers(stream):
+    """Yield ``(uid, domains)`` for each provider of an allowlist YAML stream.
+
+    Streamed: the document is never held in memory, whatever its size. A YAML
+    syntax error surfaces as ``yaml.YAMLError`` while iterating, so a caller must
+    not trust anything it has read until the iteration has ended. An empty
+    document has no providers; one that is not a mapping raises
+    :class:`AllowlistFormatError`.
+    """
+    events = yaml.parse(stream, Loader=_YAML_LOADER)
+    root = None
+    for event in events:
+        if not isinstance(event, (yaml.StreamStartEvent, yaml.DocumentStartEvent)):
+            root = event
+            break
+    if root is None or isinstance(root, (yaml.DocumentEndEvent, yaml.StreamEndEvent)):
+        return
+    if isinstance(root, yaml.ScalarEvent) and _event_scalar(root) is None:
+        return
+    if not isinstance(root, yaml.MappingStartEvent):
+        kind = "list" if isinstance(root, yaml.SequenceStartEvent) else "scalar"
+        raise AllowlistFormatError(f"expected a mapping, got {kind}.")
+    for name, value in _mapping_items(events):
+        if name == "oidc_providers" and isinstance(value, yaml.SequenceStartEvent):
+            for item in events:
+                if isinstance(item, yaml.SequenceEndEvent):
+                    break
+                yield _read_provider(events, item)
+        else:
+            _skip_node(events, value)
+
 
 def _allowlist_cache():
     """The cache holding the fetched deployed allowlist.
@@ -1220,6 +1345,17 @@ def iter_proconnect_allowlist():
                     # A guess must not land on a domain DILA gives to another
                     # collectivité (a homonym), in or out of this provider's scope.
                     if dila_owners.get(domain, set()) - {pk}:
+                        continue
+                if provenance == "dpnt":
+                    # Routed to another provider while another collectivité
+                    # declares it too: which of them owns it is not for this
+                    # provider's file to settle, and it is taken over there anyway.
+                    live_on = live_idps.get(domain, set())
+                    if (
+                        live_on
+                        and idp_id not in live_on
+                        and dila_owners.get(domain, set()) - {pk}
+                    ):
                         continue
                 # Two organizations can claim the same domain (homonyms). The row
                 # takes its fiche and SIRET from the one DILA gives it to, else
