@@ -57,6 +57,12 @@ logger = logging.getLogger(__name__)
 # A timeout surfaces as a 502 and the user retries.
 DEFAULT_TIMEOUT = (3, 5)
 
+# Attaching a domain is slower: api-partenaires resolves it through dns.google
+# first (MX, then A, 5 seconds each on their side), so a healthy but slow lookup
+# takes up to ten seconds. A shorter read timeout gave up on calls that then went
+# through, leaving the domain attached with the change rolled back.
+DEFAULT_ATTACH_TIMEOUT = (3, 15)
+
 # api-partenaires rate limits its signed routes (429 + Retry-After). A 429 is
 # retried when the server asks for a wait of at most ``max_retry_after`` seconds,
 # at most ``MAX_RETRIES`` times. The wait happens inside the request's transaction
@@ -109,13 +115,25 @@ class ProConnectPartnersError(Exception):
     available (``error_code``/``domains``), so callers can surface an actionable
     message — notably ``attached_email_domain_not_allowed`` with the offending
     domains.
+
+    ``unknown_outcome`` is set when the request may have reached api-partenaires
+    without us seeing the answer (a timeout, a dropped connection): the call may
+    have been applied.
     """
 
-    def __init__(self, message, status_code=None, error_code=None, domains=None):
+    def __init__(
+        self,
+        message,
+        status_code=None,
+        error_code=None,
+        domains=None,
+        unknown_outcome=False,
+    ):
         super().__init__(message)
         self.status_code = status_code
         self.error_code = error_code
         self.domains = domains or []
+        self.unknown_outcome = unknown_outcome
 
 
 def validate_idp_id(idp_id: str) -> str:
@@ -169,6 +187,7 @@ class ProConnectPartnersClient:
         timeout=DEFAULT_TIMEOUT,
         proxy_url=None,
         max_retry_after=DEFAULT_MAX_RETRY_AFTER,
+        attach_timeout=DEFAULT_ATTACH_TIMEOUT,
     ):
         base_url = (
             base_url
@@ -187,6 +206,7 @@ class ProConnectPartnersClient:
             else settings.PROCONNECT_API_PARTENAIRES_PROXY_URL
         )
         self.timeout = timeout
+        self.attach_timeout = attach_timeout
         self.max_retry_after = max_retry_after
 
     @property
@@ -194,7 +214,7 @@ class ProConnectPartnersClient:
         """Whether both a base URL and a secret are available."""
         return bool(self.base_url and self.secret)
 
-    def _send(self, method, path, url, signed_path, body):
+    def _send(self, method, path, url, signed_path, body, timeout):
         """One signed HTTP call. Signed afresh each time: the timestamp expires."""
         timestamp, signature = sign_request(self.secret, method, signed_path, "", body)
         headers = {
@@ -218,7 +238,7 @@ class ProConnectPartnersClient:
                 # encoded latin-1 by http.client, while the signature is over
                 # its utf-8 encoding.
                 data=body.encode("utf-8") if body is not None else None,
-                timeout=self.timeout,
+                timeout=timeout,
                 proxies=proxies,
                 # X-Signature is a custom header, so requests would replay it to
                 # the redirect target (it only strips Authorization). A 3xx must
@@ -229,7 +249,8 @@ class ProConnectPartnersClient:
             )
         except requests.exceptions.RequestException as e:
             raise ProConnectPartnersError(
-                redact_credentials(f"{method} {path} failed: {e}")
+                redact_credentials(f"{method} {path} failed: {e}"),
+                unknown_outcome=True,
             ) from e
 
     def _retry_wait(self, response) -> Optional[int]:
@@ -246,7 +267,9 @@ class ProConnectPartnersClient:
             return None
         return wait if 0 <= wait <= self.max_retry_after else None
 
-    def _request(self, method: str, path: str, body: Optional[str] = None) -> dict:
+    def _request(
+        self, method: str, path: str, body: Optional[str] = None, timeout=None
+    ) -> dict:
         if not self.is_configured:
             raise ProConnectPartnersError(
                 "api-partenaires client is not configured "
@@ -269,7 +292,8 @@ class ProConnectPartnersClient:
         url = urljoin(self.base_url + "/", path.lstrip("/"))
         signed_path = urlsplit(url).path
 
-        response = self._send(method, path, url, signed_path, body)
+        timeout = timeout or self.timeout
+        response = self._send(method, path, url, signed_path, body, timeout)
         for _ in range(MAX_RETRIES):
             wait = self._retry_wait(response)
             if wait is None:
@@ -281,7 +305,7 @@ class ProConnectPartnersClient:
                 wait,
             )
             time.sleep(wait)
-            response = self._send(method, path, url, signed_path, body)
+            response = self._send(method, path, url, signed_path, body, timeout)
 
         # Anything that is not a 2xx, redirects included: with allow_redirects
         # off, a 3xx reaches here and `>= 400` would let it fall through to
@@ -322,7 +346,7 @@ class ProConnectPartnersClient:
         """
         path = _domain_path(idp_id, domain)
         try:
-            self._request("PUT", path)
+            self._request("PUT", path, timeout=self.attach_timeout)
         except ProConnectPartnersError as exc:
             if exc.error_code in DOMAIN_REFUSAL_ERRORS:
                 exc.domains = [domain]
@@ -680,13 +704,22 @@ def sync_proconnect_provider(
             refused: dict[str, list[str]] = defaultdict(list)
             if drift:
                 for domain in drift.unexpected:
-                    client.detach_email_domain(idp_id, domain)
+                    try:
+                        client.detach_email_domain(idp_id, domain)
+                    except ProConnectPartnersError as exc:
+                        # A call whose answer never came may have gone through:
+                        # it is undone with the rest.
+                        if exc.unknown_outcome:
+                            applied.append(("detach", domain))
+                        raise
                     applied.append(("detach", domain))
                 for domain in drift.missing:
                     try:
                         client.attach_email_domain(idp_id, domain)
                     except ProConnectPartnersError as exc:
                         if exc.error_code not in DOMAIN_REFUSAL_ERRORS:
+                            if exc.unknown_outcome:
+                                applied.append(("attach", domain))
                             raise
                         refused[exc.error_code].append(domain)
                     else:

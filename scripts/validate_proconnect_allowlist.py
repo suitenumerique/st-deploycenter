@@ -1152,6 +1152,9 @@ class Domain:
     category: str | None = None
     reason: str = ""
     detail: str = ""
+    # Plusieurs collectivites le declarent a la DILA, quelle que soit la categorie:
+    # un domaine deja deploye ou reconstructible peut l'etre aussi.
+    shared: bool = False
 
     def add(self, entry, dila):
         self.uids.add(entry.uid)
@@ -1337,17 +1340,22 @@ def write_csv(path, domains, previous):
     La colonne ``deployed`` dit si le domaine figurait deja dans ``--base``.
     C'est ce qui permet a filter_proconnect_allowlist.py de ne jamais retirer une
     ligne en production sans avoir a relire le fichier de base ni a refaire le
-    moindre raisonnement: tout ce qu'il doit savoir est ici.
+    moindre raisonnement: tout ce qu'il doit savoir est ici. La colonne ``shared``
+    dit si plusieurs collectivites declarent le domaine a la DILA, que sa categorie
+    en parle ou non (un domaine deja deploye est classe avant qu'on regarde).
     """
     with open(path, "w", encoding="utf-8") as handle:
-        handle.write("domain,category,deployed,rows,providers,sources,reason,detail\n")
+        handle.write(
+            "domain,category,deployed,rows,providers,sources,reason,detail,shared\n"
+        )
         for domain in domains:
             handle.write(
                 f"{domain.name},{domain.category},"
                 f"{'yes' if domain.name in previous else 'no'},"
                 f"{domain.rows},{len(domain.uids)},"
                 f"{'+'.join(sorted(domain.sources))},"
-                f'"{domain.reason}","{domain.detail}"\n'
+                f'"{domain.reason}","{domain.detail}",'
+                f"{'yes' if domain.shared else 'no'}\n"
             )
 
 
@@ -1376,6 +1384,7 @@ def main(argv=None):
 
     for domain in domains.values():
         domain.category, domain.reason, domain.detail = classify(domain, previous, dila)
+        domain.shared = len({f.siren for f in dila.declared_by.get(domain.name, ())}) > 1
 
     meta = [
         ("base", args.base),

@@ -279,6 +279,10 @@ the provider lacks. Nothing is sent as a whole list. What follows from that:
   then undone, best effort, and the user is told which domains were refused, with
   the same messages as before. The batch commands keep what went through and report
   the failure.
+- **Timeouts.** An attach gets a 15 second read timeout, the other calls 5:
+  api-partenaires checks the domain's MX and A records through `dns.google` before
+  accepting it, 5 seconds each on their side. A call that times out may still have
+  been applied, so a request that rolls back also detaches it.
 - **Not atomic.** Any other error (a 5xx, a rate limit that lasts) stops the sync
   where it is. If undoing fails too, the provider is left with part of the change:
   the next sync converges it, being computed from the live state, and the drift

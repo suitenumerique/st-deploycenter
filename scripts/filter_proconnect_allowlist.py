@@ -38,7 +38,10 @@ Trois choses que le filtrage ne fera pas:
   La regle vaut par couple (fournisseur, domaine): un domaine routed chez l'un
   ne sauve pas la meme ligne chez un autre.
 
-Une exception, qui joue dans l'autre sens: les domaines de proconnect_hacked_sites.tsv
+Deux exceptions, qui jouent dans l'autre sens. La premiere: une entree non routed
+d'un domaine que plusieurs collectivites declarent a la DILA (colonne ``shared`` du
+CSV, quelle que soit sa categorie) est retiree quand ce domaine est deja route chez
+un autre fournisseur, meme s'il est deploye. La seconde: les domaines de proconnect_hacked_sites.tsv
 (sites detectes comme pirates) sont retires quelle que soit leur categorie, et meme
 s'ils sont deja deployes ou routed. C'est actif par defaut, chaque retrait est
 journalise (avec son etat deploye/routed, pour qu'on puisse aussi les detacher
@@ -89,11 +92,13 @@ def load_hacked(path):
 
 
 def load_categories(path):
-    """Le CSV du validateur -> ``(categorie par domaine, domaines deployes)``."""
-    categories, deployed = {}, set()
+    """Le CSV du validateur -> ``(categorie par domaine, deployes, partages)``."""
+    categories, deployed, shared = {}, set(), set()
     with open(path, encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
-        missing = {"domain", "category", "deployed"} - set(reader.fieldnames or ())
+        missing = {"domain", "category", "deployed", "shared"} - set(
+            reader.fieldnames or ()
+        )
         if missing:
             raise SystemExit(
                 f"{path}: colonnes manquantes {sorted(missing)}. "
@@ -103,9 +108,11 @@ def load_categories(path):
             categories[row["domain"]] = row["category"]
             if row["deployed"] == "yes":
                 deployed.add(row["domain"])
+            if row["shared"] == "yes":
+                shared.add(row["domain"])
     if not categories:
         raise SystemExit(f"{path}: aucun domaine.")
-    return categories, deployed
+    return categories, deployed, shared
 
 
 def routed_entries(text):
@@ -120,14 +127,14 @@ def routed_entries(text):
     }
 
 
-def taken_elsewhere(text, contested):
-    """Les couples ``(fournisseur, domaine)`` non routed d'un domaine ``contested``
+def taken_elsewhere(text, shared):
+    """Les couples ``(fournisseur, domaine)`` non routed d'un domaine ``shared``
     que l'on route deja chez un autre fournisseur.
 
-    Un domaine contested est un domaine dont la categorie est retiree (partage entre
-    plusieurs collectivites, par exemple). Chez le fournisseur qui le route, il reste.
-    Ailleurs il n'a pas sa place: il y serait refuse comme deja rattache, et le
-    garder parce qu'il est deploye chez l'autre ne regle rien.
+    Un domaine partage est declare a la DILA par plusieurs collectivites, quelle que
+    soit sa categorie (deploye, reconstructible...). Chez le fournisseur qui le
+    route, il reste. Ailleurs il n'a pas sa place: api-partenaires le refuse
+    ("shared"), et le garder parce qu'il est deploye chez l'autre ne regle rien.
     """
     routed = routed_entries(text)
     routed_uids = defaultdict(set)
@@ -138,22 +145,22 @@ def taken_elsewhere(text, contested):
         for row in scan_allowlist(text)
         if row.kind == "domain"
         and row.uid is not None
-        and row.domain in contested
+        and row.domain in shared
         and (row.uid, row.domain) not in routed
         and routed_uids.get(row.domain, set()) - {row.uid}
     }
 
 
-def filter_allowlist(text, keep, hacked=frozenset(), contested=frozenset()):
+def filter_allowlist(text, keep, hacked=frozenset(), shared=frozenset()):
     """Reecrit une liste en ne gardant que les domaines de ``keep``.
 
     Les entrees ``source: routed`` sont gardees quoi qu'il arrive, sauf celles des
     domaines de ``hacked``, qui partent toujours (avec ou sans "www."). Les entrees
-    non routed d'un domaine de ``contested`` routed chez un autre fournisseur partent
+    non routed d'un domaine de ``shared`` routed chez un autre fournisseur partent
     aussi, meme deployees (voir :func:`taken_elsewhere`).
     """
     routed = routed_entries(text)
-    elsewhere = taken_elsewhere(text, contested)
+    elsewhere = taken_elsewhere(text, shared)
 
     def kept(row):
         if mail_domain(row.domain) in hacked or (row.uid, row.domain) in elsewhere:
@@ -236,7 +243,7 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
 
-    categories, deployed = load_categories(args.categories)
+    categories, deployed, shared = load_categories(args.categories)
     drop = {part.strip() for part in args.drop.split(",") if part.strip()}
     unknown = drop - set(categories.values())
     if unknown:
@@ -257,9 +264,8 @@ def main(argv=None):
 
     hacked = {} if args.no_hacked else load_hacked(args.hacked)
     keep = {d for d, c in categories.items() if c not in drop} | deployed
-    contested = frozenset(d for d, c in categories.items() if c in drop)
-    elsewhere = taken_elsewhere(text, contested)
-    result = filter_allowlist(text, keep, frozenset(hacked), contested)
+    elsewhere = taken_elsewhere(text, shared)
+    result = filter_allowlist(text, keep, frozenset(hacked), shared)
     Path(args.out).write_text(result, encoding="utf-8")
 
     kept = len({row.domain for row in scan_allowlist(result) if row.kind == "domain"})

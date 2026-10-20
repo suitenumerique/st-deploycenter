@@ -65,14 +65,23 @@ class FakeProvider:
     ``(status, error)`` its PUT is answered with; ``down`` answers every write with
     that status instead, and ``delete_fails`` does so for the DELETE of those
     domains only. ``concurrent`` domains get attached by someone else right after
-    each write that goes through.
+    each write that goes through. ``lost`` domains are attached by their PUT but the
+    answer never arrives (a read timeout).
     """
 
     def __init__(
-        self, idp=IDP, live=(), refuse=None, down=None, delete_fails=(), concurrent=()
+        self,
+        idp=IDP,
+        live=(),
+        refuse=None,
+        down=None,
+        delete_fails=(),
+        concurrent=(),
+        lost=(),
     ):
         self.live = set(live)
         self.concurrent = set(concurrent)
+        self.lost = set(lost)
         self.refuse = refuse or {}
         self.down = down
         self.delete_fails = set(delete_fails)
@@ -106,6 +115,8 @@ class FakeProvider:
             return 204, {}, ""
         self.live.add(domain)
         self.live |= self.concurrent
+        if domain in self.lost:
+            raise requests.exceptions.ReadTimeout("Read timed out. (read timeout=15)")
         return 201, {}, json.dumps({"domain": domain})
 
 
@@ -294,6 +305,40 @@ def test_client_refuses_a_domain_that_is_not_a_plain_hostname(domain):
         with pytest.raises(ProConnectPartnersError, match="Invalid domain"):
             client.detach_email_domain(IDP, domain)
     request.assert_not_called()
+
+
+def test_client_gives_an_attach_more_time_than_the_other_calls():
+    """api-partenaires resolves the domain first: that PUT can take ten seconds."""
+    client = ProConnectPartnersClient(base_url=BASE_URL, secret=SECRET)
+    fake = mock.Mock(status_code=204, text="")
+    fake.json.side_effect = ValueError
+    with mock.patch(
+        "core.services.proconnect.requests.request", return_value=fake
+    ) as request_mock:
+        client.attach_email_domain(IDP, "a.fr")
+        client.detach_email_domain(IDP, "a.fr")
+        client.get_configuration(IDP)
+
+    timeouts = [call.kwargs["timeout"] for call in request_mock.call_args_list]
+    assert timeouts == [(3, 15), (3, 5), (3, 5)]
+
+
+@responses.activate
+def test_client_flags_a_network_failure_as_unknown_outcome_but_not_an_http_error():
+    """Only a call whose answer was lost may have been applied."""
+    client = ProConnectPartnersClient(base_url=BASE_URL, secret=SECRET)
+    responses.add(
+        responses.PUT, f"{DOMAINS_URL}/a.fr", body=requests.exceptions.ReadTimeout()
+    )
+    responses.add(responses.PUT, f"{DOMAINS_URL}/b.fr", status=500)
+
+    with pytest.raises(ProConnectPartnersError) as lost:
+        client.attach_email_domain(IDP, "a.fr")
+    with pytest.raises(ProConnectPartnersError) as answered:
+        client.attach_email_domain(IDP, "b.fr")
+
+    assert lost.value.unknown_outcome is True
+    assert answered.value.unknown_outcome is False
 
 
 def _rate_limited(retry_after="3"):
@@ -672,6 +717,41 @@ def test_sync_provider_undo_stops_at_its_first_failure():
     assert provider.writes[-1] == ("DELETE", "c.fr")
     assert ("DELETE", "b.fr") not in provider.writes
     assert provider.live == {"b.fr", "c.fr"}
+
+
+@proconnect_settings
+@responses.activate
+def test_sync_provider_undoes_a_call_whose_answer_never_came():
+    """A PUT can go through and time out on our side: the domain is attached while
+    the caller rolls back, so it is detached with the rest."""
+    _make_proconnect_subscription(IDP, ["a.fr", "b.fr"])
+    provider = FakeProvider(lost={"b.fr"})
+
+    with pytest.raises(ProConnectPartnersError) as excinfo:
+        sync_proconnect_provider(IDP, raise_on_error=True)
+
+    assert excinfo.value.unknown_outcome is True
+    assert provider.live == set()
+    assert provider.writes == [
+        ("PUT", "a.fr"),
+        ("PUT", "b.fr"),
+        ("DELETE", "b.fr"),
+        ("DELETE", "a.fr"),
+    ]
+
+
+@proconnect_settings
+@responses.activate
+def test_sync_provider_does_not_undo_a_call_the_provider_answered_with_an_error():
+    """A 5xx answer means the call did not apply: nothing to reverse for it."""
+    _make_proconnect_subscription(IDP, ["a.fr"])
+    provider = FakeProvider(down=503)
+
+    with pytest.raises(ProConnectPartnersError) as excinfo:
+        sync_proconnect_provider(IDP, raise_on_error=True)
+
+    assert excinfo.value.unknown_outcome is False
+    assert provider.writes == [("PUT", "a.fr")]
 
 
 @proconnect_settings
