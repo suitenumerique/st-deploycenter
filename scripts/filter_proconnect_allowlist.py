@@ -30,11 +30,19 @@ Trois choses que le filtrage ne fera pas:
   aurait donc coupe du courrier qui fonctionne aujourd'hui;
 - il ne supprime jamais une entree ``source: routed`` de ``--head``, quelle que
   soit sa categorie: ce domaine est deja rattache au fournisseur chez nous, et
-  api-partenaires verifie TOUS les domaines d'un PATCH contre la liste deployee,
-  pas seulement les nouveaux. Un domaine routed absent de la liste fait donc
-  refuser chaque PATCH de ce fournisseur (``attached_email_domain_not_allowed``).
+  api-partenaires refuse de rattacher un domaine absent de la liste deployee
+  (``attached_email_domain_not_allowed``): le retirer le rendrait impossible a
+  rattacher de nouveau apres un detachement. (L'ancien PATCH, lui, verifiait
+  TOUS les domaines de la liste: un seul domaine routed absent bloquait tout le
+  fournisseur.)
   La regle vaut par couple (fournisseur, domaine): un domaine routed chez l'un
   ne sauve pas la meme ligne chez un autre.
+
+Une exception, qui joue dans l'autre sens: les domaines de proconnect_hacked_sites.tsv
+(sites detectes comme pirates) sont retires quelle que soit leur categorie, et meme
+s'ils sont deja deployes ou routed. C'est actif par defaut, chaque retrait est
+journalise (avec son etat deploye/routed, pour qu'on puisse aussi les detacher
+chez nous), et ``--no-hacked`` le desactive.
 
 Toute ligne conservee est recopiee octet pour octet: le diff ne contient que des
 suppressions, jamais une reecriture.
@@ -42,11 +50,42 @@ suppressions, jamais une reecriture.
 
 import argparse
 import csv
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
 
 from validate_proconnect_allowlist import scan_allowlist
+
+DEFAULT_HACKED = Path(__file__).with_name("proconnect_hacked_sites.tsv")
+_HOST_RE = re.compile(
+    r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+"
+)
+
+
+def mail_domain(host):
+    """Le domaine de messagerie d'un site: le meme, sans "www." devant."""
+    return host[4:] if host.startswith("www.") else host
+
+
+def load_hacked(path):
+    """Le TSV des sites pirates -> ``{domaine: [raisons]}``."""
+    hacked = defaultdict(list)
+    with open(path, encoding="utf-8") as handle:
+        for number, line in enumerate(handle, 1):
+            line = line.rstrip("\r\n")
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            host, tab, reason = line.partition("\t")
+            host, reason = host.strip().lower(), reason.strip()
+            if not tab or not reason or not _HOST_RE.fullmatch(host):
+                raise SystemExit(
+                    f"{path}:{number}: attendu '<site><TAB><raison>', recu {line!r}"
+                )
+            reasons = hacked[mail_domain(host)]
+            if reason not in reasons:
+                reasons.append(reason)
+    return dict(hacked)
 
 
 def load_categories(path):
@@ -81,14 +120,17 @@ def routed_entries(text):
     }
 
 
-def filter_allowlist(text, keep):
+def filter_allowlist(text, keep, hacked=frozenset()):
     """Reecrit une liste en ne gardant que les domaines de ``keep``.
 
-    Les entrees ``source: routed`` sont gardees quoi qu'il arrive.
+    Les entrees ``source: routed`` sont gardees quoi qu'il arrive, sauf celles des
+    domaines de ``hacked``, qui partent toujours (avec ou sans "www.").
     """
     routed = routed_entries(text)
 
     def kept(row):
+        if mail_domain(row.domain) in hacked:
+            return False
         return row.domain in keep or (row.uid, row.domain) in routed
 
     # Premiere passe: quels fournisseurs ne gardent rien, et ont donc besoin de la
@@ -114,6 +156,31 @@ def filter_allowlist(text, keep):
     return "".join(out)
 
 
+def hacked_log(text, hacked, deployed):
+    """Les lignes de journal des retraits "sites pirates", une par domaine."""
+    routed = routed_entries(text)
+    entries = defaultdict(set)
+    for row in scan_allowlist(text):
+        if row.kind == "domain" and row.uid is not None:
+            entries[mail_domain(row.domain)].add((row.uid, row.domain))
+    lines = []
+    for domain in sorted(hacked):
+        reasons = ", ".join(hacked[domain])
+        found = entries.get(domain)
+        if not found:
+            lines.append(f"  {domain}: absent de la liste ({reasons})")
+            continue
+        state = [
+            "deploye" if any(d in deployed for _, d in found) else "non deploye",
+            "routed" if found & routed else "non routed",
+        ]
+        lines.append(
+            f"  {domain}: {len(found)} entree(s) retiree(s), {', '.join(state)} "
+            f"({reasons})"
+        )
+    return lines
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -130,6 +197,16 @@ def main(argv=None):
         "'not_allowed,to_be_validated'.",
     )
     parser.add_argument("--out", required=True, help="Ou ecrire le resultat.")
+    parser.add_argument(
+        "--hacked",
+        default=str(DEFAULT_HACKED),
+        help="Le TSV des sites pirates a retirer (defaut: %(default)s).",
+    )
+    parser.add_argument(
+        "--no-hacked",
+        action="store_true",
+        help="Ne pas retirer les sites pirates.",
+    )
     args = parser.parse_args(argv)
 
     categories, deployed = load_categories(args.categories)
@@ -151,17 +228,29 @@ def main(argv=None):
             "fichier: relancer le validateur dessus."
         )
 
+    hacked = {} if args.no_hacked else load_hacked(args.hacked)
     keep = {d for d, c in categories.items() if c not in drop} | deployed
-    result = filter_allowlist(text, keep)
+    result = filter_allowlist(text, keep, frozenset(hacked))
     Path(args.out).write_text(result, encoding="utf-8")
 
     kept = len({row.domain for row in scan_allowlist(result) if row.kind == "domain"})
-    routed = len({domain for _, domain in routed_entries(text)} - keep)
+    # Hors sites pirates, qui partent meme deployes ou routed.
+    spared = {mail_domain(d) for d in seen} - set(hacked)
+    routed = len(
+        {d for _, d in routed_entries(text) if mail_domain(d) not in hacked} - keep
+    )
     sys.stderr.write(
         f"{args.out}: {kept} domaines conserves, {len(seen) - kept} retires "
-        f"({len(deployed & seen)} deployes conserves quoi qu'il arrive, "
-        f"{routed} routed conserves en plus)\n"
+        f"({len({d for d in deployed & seen if mail_domain(d) in spared})} deployes "
+        f"conserves quoi qu'il arrive, {routed} routed conserves en plus)\n"
     )
+    if args.no_hacked:
+        sys.stderr.write("Sites pirates: filtre desactive (--no-hacked).\n")
+    else:
+        sys.stderr.write(
+            f"Sites pirates retires ({len(hacked)} dans {args.hacked}):\n"
+        )
+        sys.stderr.write("\n".join(hacked_log(text, hacked, deployed)) + "\n")
     return 0
 
 

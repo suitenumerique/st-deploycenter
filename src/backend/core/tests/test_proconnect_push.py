@@ -6,6 +6,7 @@ Tests for the ProConnect api-partenaires domains push (core/proconnect.py).
 import hashlib
 import hmac
 import json
+import re
 from io import StringIO
 from unittest import mock
 
@@ -45,12 +46,67 @@ pytestmark = pytest.mark.django_db
 BASE_URL = "https://api-partenaires-sandbox.test"
 SECRET = "test-oidc-providers-secret"
 IDP = "aaa58fc5-0397-495d-8cb5-92b02559d376"
-PATCH_URL = f"{BASE_URL}/api/oidc_providers/{IDP}/configuration"
+CONFIG_URL = f"{BASE_URL}/api/oidc_providers/{IDP}/configuration"
+DOMAINS_URL = f"{BASE_URL}/api/oidc_providers/{IDP}/attached_email_domains"
 
 proconnect_settings = override_settings(
     PROCONNECT_API_PARTENAIRES_URL=BASE_URL,
     PROCONNECT_API_PARTENAIRES_SECRET=SECRET,
 )
+
+
+class FakeProvider:
+    """Stand-in for one provider's api-partenaires routes, to register under
+    ``@responses.activate``.
+
+    Keeps the attached domains in ``live``, answers the configuration read and the
+    per-domain PUT / DELETE like api-partenaires does, and logs each write in
+    ``writes`` as ``("PUT" | "DELETE", domain)``. ``refuse`` maps a domain to the
+    ``(status, error)`` its PUT is answered with; ``down`` answers every write with
+    that status instead, and ``delete_fails`` does so for the DELETE of those
+    domains only. ``concurrent`` domains get attached by someone else right after
+    each write that goes through.
+    """
+
+    def __init__(
+        self, idp=IDP, live=(), refuse=None, down=None, delete_fails=(), concurrent=()
+    ):
+        self.live = set(live)
+        self.concurrent = set(concurrent)
+        self.refuse = refuse or {}
+        self.down = down
+        self.delete_fails = set(delete_fails)
+        self.writes = []
+        base = f"{BASE_URL}/api/oidc_providers/{idp}"
+        domain = re.compile(re.escape(f"{base}/attached_email_domains/") + r"[^/]+$")
+        responses.add_callback(responses.GET, f"{base}/configuration", self._read)
+        responses.add_callback(responses.PUT, domain, self._write)
+        responses.add_callback(responses.DELETE, domain, self._write)
+
+    def _read(self, request):
+        body = {"uid": IDP, "attached_email_domains": sorted(self.live)}
+        return 200, {}, json.dumps(body)
+
+    def _write(self, request):
+        domain = request.url.rsplit("/", 1)[1]
+        self.writes.append((request.method, domain))
+        if self.down:
+            return self.down, {}, json.dumps({"error": "down"})
+        if request.method == "DELETE":
+            if domain in self.delete_fails:
+                return 503, {}, json.dumps({"error": "down"})
+            if domain not in self.live:
+                return 404, {}, json.dumps({"error": "attached_email_domain_not_found"})
+            self.live.discard(domain)
+            return 204, {}, ""
+        if domain in self.refuse:
+            status, error = self.refuse[domain]
+            return status, {}, json.dumps({"error": error})
+        if domain in self.live:
+            return 204, {}, ""
+        self.live.add(domain)
+        self.live |= self.concurrent
+        return 201, {}, json.dumps({"domain": domain})
 
 
 def _expected_signature(method, path, timestamp, body=None):
@@ -113,77 +169,138 @@ def test_sign_request_includes_body():
 
 
 @responses.activate
-def test_client_set_attached_email_domains_sends_signed_patch():
-    """The PATCH is signed over the exact bytes sent."""
-    url = f"{BASE_URL}/api/oidc_providers/{IDP}/configuration"
+def test_client_attach_email_domain_sends_a_signed_put():
+    """One domain per PUT, signed over the path the server sees."""
     responses.add(
-        responses.PATCH,
-        url,
-        json={"uid": IDP, "name": "test", "attached_email_domains": ["a.fr", "b.fr"]},
-        status=200,
+        responses.PUT, f"{DOMAINS_URL}/a.fr", json={"domain": "a.fr"}, status=201
     )
 
     client = ProConnectPartnersClient(base_url=BASE_URL, secret=SECRET)
-    result = client.set_attached_email_domains(IDP, ["a.fr", "b.fr"])
-    assert result["attached_email_domains"] == ["a.fr", "b.fr"]
+    client.attach_email_domain(IDP, "a.fr")
 
     request = responses.calls[0].request
-    body = request.body
-    assert json.loads(body) == {"attached_email_domains": ["a.fr", "b.fr"]}
-    # The signature in the header must validate against the exact body sent.
-    expected = _expected_signature(
-        "PATCH",
-        f"/api/oidc_providers/{IDP}/configuration",
+    assert request.method == "PUT"
+    assert request.body is None
+    assert request.headers["X-Signature"] == _expected_signature(
+        "PUT",
+        f"/api/oidc_providers/{IDP}/attached_email_domains/a.fr",
         request.headers["X-Timestamp"],
-        body,
     )
-    assert request.headers["X-Signature"] == expected
-    assert request.headers["Content-Type"] == "application/json"
+
+
+@responses.activate
+def test_client_attach_email_domain_accepts_an_already_attached_domain():
+    """A 204 (already attached) is as good as a 201."""
+    responses.add(responses.PUT, f"{DOMAINS_URL}/a.fr", status=204)
+
+    ProConnectPartnersClient(base_url=BASE_URL, secret=SECRET).attach_email_domain(
+        IDP, "a.fr"
+    )
+
+
+@responses.activate
+def test_client_detach_email_domain_sends_a_signed_delete():
+    """A DELETE on the domain's own path, signed like the rest."""
+    responses.add(responses.DELETE, f"{DOMAINS_URL}/a.fr", status=204)
+
+    client = ProConnectPartnersClient(base_url=BASE_URL, secret=SECRET)
+    client.detach_email_domain(IDP, "a.fr")
+
+    request = responses.calls[0].request
+    assert request.method == "DELETE"
+    assert request.headers["X-Signature"] == _expected_signature(
+        "DELETE",
+        f"/api/oidc_providers/{IDP}/attached_email_domains/a.fr",
+        request.headers["X-Timestamp"],
+    )
+
+
+@responses.activate
+def test_client_detach_email_domain_accepts_a_domain_not_attached():
+    """A 404 saying the domain was not attached means it is gone: not an error."""
+    responses.add(
+        responses.DELETE,
+        f"{DOMAINS_URL}/a.fr",
+        json={"error": "attached_email_domain_not_found"},
+        status=404,
+    )
+
+    ProConnectPartnersClient(base_url=BASE_URL, secret=SECRET).detach_email_domain(
+        IDP, "a.fr"
+    )
+
+
+@responses.activate
+def test_client_detach_email_domain_raises_when_the_provider_is_unknown():
+    """Any other 404 (here an unknown provider) is a failure."""
+    responses.add(
+        responses.DELETE,
+        f"{DOMAINS_URL}/a.fr",
+        json={"error": "not_found"},
+        status=404,
+    )
+
+    client = ProConnectPartnersClient(base_url=BASE_URL, secret=SECRET)
+    with pytest.raises(ProConnectPartnersError) as excinfo:
+        client.detach_email_domain(IDP, "a.fr")
+    assert excinfo.value.status_code == 404
 
 
 @responses.activate
 def test_client_raises_on_error_status():
     """A 4xx/5xx response raises ProConnectPartnersError."""
-    url = f"{BASE_URL}/api/oidc_providers/{IDP}/configuration"
     responses.add(
-        responses.PATCH,
-        url,
-        json={"error": "attached_email_domain_not_allowed"},
-        status=422,
-    )
-
-    client = ProConnectPartnersClient(base_url=BASE_URL, secret=SECRET)
-    with pytest.raises(ProConnectPartnersError):
-        client.set_attached_email_domains(IDP, ["evil.fr"])
-
-
-@responses.activate
-def test_client_error_carries_structured_domain_not_allowed():
-    """The error exposes api-partenaires' error code + offending domains."""
-    url = f"{BASE_URL}/api/oidc_providers/{IDP}/configuration"
-    responses.add(
-        responses.PATCH,
-        url,
-        json={
-            "error": "attached_email_domain_not_allowed",
-            "attached_email_domains": ["evil.fr", "bad.fr"],
-        },
-        status=422,
+        responses.PUT, f"{DOMAINS_URL}/a.fr", json={"error": "boom"}, status=500
     )
 
     client = ProConnectPartnersClient(base_url=BASE_URL, secret=SECRET)
     with pytest.raises(ProConnectPartnersError) as excinfo:
-        client.set_attached_email_domains(IDP, ["evil.fr", "bad.fr"])
-    assert excinfo.value.status_code == 422
-    assert excinfo.value.error_code == "attached_email_domain_not_allowed"
-    assert excinfo.value.domains == ["evil.fr", "bad.fr"]
+        client.attach_email_domain(IDP, "a.fr")
+    assert excinfo.value.domains == []
+
+
+@responses.activate
+@pytest.mark.parametrize(
+    "status,error",
+    [
+        (403, "attached_email_domain_not_allowed"),
+        (409, "attached_email_domain_taken"),
+        (422, "attached_email_domain_unreachable"),
+    ],
+)
+def test_client_error_names_the_domain_the_provider_refused(status, error):
+    """The refusals do not name the domain in the body: the client does."""
+    responses.add(
+        responses.PUT, f"{DOMAINS_URL}/evil.fr", json={"error": error}, status=status
+    )
+
+    client = ProConnectPartnersClient(base_url=BASE_URL, secret=SECRET)
+    with pytest.raises(ProConnectPartnersError) as excinfo:
+        client.attach_email_domain(IDP, "evil.fr")
+    assert excinfo.value.status_code == status
+    assert excinfo.value.error_code == error
+    assert excinfo.value.domains == ["evil.fr"]
+
+
+@pytest.mark.parametrize(
+    "domain", ["", "A.fr", " a.fr", "a.fr/../b", "a.fr?x=1", "a b.fr", "a", None]
+)
+def test_client_refuses_a_domain_that_is_not_a_plain_hostname(domain):
+    """The domain is interpolated into the signed path: nothing else gets through."""
+    client = ProConnectPartnersClient(base_url=BASE_URL, secret=SECRET)
+    with mock.patch("core.services.proconnect.requests.request") as request:
+        with pytest.raises(ProConnectPartnersError, match="Invalid domain"):
+            client.attach_email_domain(IDP, domain)
+        with pytest.raises(ProConnectPartnersError, match="Invalid domain"):
+            client.detach_email_domain(IDP, domain)
+    request.assert_not_called()
 
 
 def _rate_limited(retry_after="3"):
     headers = {"Retry-After": retry_after} if retry_after is not None else {}
     return responses.Response(
-        responses.PATCH,
-        PATCH_URL,
+        responses.PUT,
+        f"{DOMAINS_URL}/a.fr",
         json={"detail": "Too many requests"},
         status=429,
         headers=headers,
@@ -191,12 +308,7 @@ def _rate_limited(retry_after="3"):
 
 
 def _ok():
-    return responses.Response(
-        responses.PATCH,
-        PATCH_URL,
-        json={"uid": IDP, "attached_email_domains": ["a.fr"]},
-        status=200,
-    )
+    return responses.Response(responses.PUT, f"{DOMAINS_URL}/a.fr", status=204)
 
 
 @responses.activate
@@ -207,17 +319,15 @@ def test_client_retries_a_rate_limited_call_after_retry_after():
     client = ProConnectPartnersClient(base_url=BASE_URL, secret=SECRET)
 
     with mock.patch("core.services.proconnect.time.sleep") as sleep:
-        result = client.set_attached_email_domains(IDP, ["a.fr"])
+        client.attach_email_domain(IDP, "a.fr")
 
-    assert result["attached_email_domains"] == ["a.fr"]
     sleep.assert_called_once_with(3)
     assert len(responses.calls) == 2
     retry = responses.calls[1].request
     assert retry.headers["X-Signature"] == _expected_signature(
-        "PATCH",
-        f"/api/oidc_providers/{IDP}/configuration",
+        "PUT",
+        f"/api/oidc_providers/{IDP}/attached_email_domains/a.fr",
         retry.headers["X-Timestamp"],
-        retry.body,
     )
 
 
@@ -230,7 +340,7 @@ def test_client_gives_up_after_max_retries():
 
     with mock.patch("core.services.proconnect.time.sleep") as sleep:
         with pytest.raises(ProConnectPartnersError) as excinfo:
-            client.set_attached_email_domains(IDP, ["a.fr"])
+            client.attach_email_domain(IDP, "a.fr")
 
     assert excinfo.value.status_code == 429
     assert len(responses.calls) == 3  # the call + MAX_RETRIES retries
@@ -247,7 +357,7 @@ def test_client_does_not_retry_when_retry_after_is_too_long_or_unusable(retry_af
 
     with mock.patch("core.services.proconnect.time.sleep") as sleep:
         with pytest.raises(ProConnectPartnersError) as excinfo:
-            client.set_attached_email_domains(IDP, ["a.fr"])
+            client.attach_email_domain(IDP, "a.fr")
 
     assert excinfo.value.status_code == 429
     assert len(responses.calls) == 1
@@ -264,40 +374,52 @@ def test_client_max_retry_after_is_configurable():
     )
 
     with mock.patch("core.services.proconnect.time.sleep") as sleep:
-        client.set_attached_email_domains(IDP, ["a.fr"])
+        client.attach_email_domain(IDP, "a.fr")
 
     sleep.assert_called_once_with(30)
 
 
-@proconnect_settings
-@responses.activate
-@pytest.mark.parametrize(
-    "command,method",
-    [("proconnect_sync", responses.PATCH), ("proconnect_detect_drift", responses.GET)],
-)
-def test_batch_commands_wait_out_a_rate_limit_window(command, method):
-    """The commands that walk providers accept a Retry-After a web request would not."""
-    _make_proconnect_subscription(IDP, ["a.fr"])
+def _too_many_requests(method, url):
     responses.add(
         method,
-        PATCH_URL,
+        url,
         json={"detail": "Too many requests"},
         status=429,
         headers={"Retry-After": "30"},
     )
-    responses.add(
-        method,
-        PATCH_URL,
-        json={"uid": IDP, "attached_email_domains": ["a.fr"]},
-        status=200,
-    )
+
+
+@proconnect_settings
+@responses.activate
+def test_sync_command_waits_out_a_rate_limit_window():
+    """The commands that walk providers accept a Retry-After a web request would not."""
+    _make_proconnect_subscription(IDP, ["a.fr"])
+    # Read before the push (nothing attached), then by the recheck (a.fr is).
+    _drift_get([])
+    _drift_get(["a.fr"])
+    _too_many_requests(responses.PUT, f"{DOMAINS_URL}/a.fr")
+    responses.add(responses.PUT, f"{DOMAINS_URL}/a.fr", status=204)
 
     with mock.patch("core.services.proconnect.time.sleep") as sleep:
-        call_command(command, stdout=StringIO())
+        call_command("proconnect_sync", stdout=StringIO())
 
     sleep.assert_called_once_with(30)
-    # proconnect_sync also rechecks the provider afterwards, with a GET.
-    assert len([c for c in responses.calls if c.request.method == method]) == 2
+    assert [c.request.method for c in responses.calls] == ["GET", "PUT", "PUT", "GET"]
+
+
+@proconnect_settings
+@responses.activate
+def test_detect_drift_command_waits_out_a_rate_limit_window():
+    """Same for the drift check."""
+    _make_proconnect_subscription(IDP, ["a.fr"])
+    _too_many_requests(responses.GET, CONFIG_URL)
+    _drift_get(["a.fr"])
+
+    with mock.patch("core.services.proconnect.time.sleep") as sleep:
+        call_command("proconnect_detect_drift", stdout=StringIO())
+
+    sleep.assert_called_once_with(30)
+    assert len(responses.calls) == 2
 
 
 def test_client_routes_through_proxy_when_configured():
@@ -375,25 +497,51 @@ def test_idp_routed_domains_ignores_an_operator_idp_override():
 
 @proconnect_settings
 @responses.activate
-def test_sync_provider_pushes_full_list():
-    """sync PATCHes the full union of active-subscription domains (single call)."""
+def test_sync_provider_attaches_the_missing_domains_one_by_one():
+    """Each domain the provider lacks gets its own PUT; nothing is sent in bulk."""
     _make_proconnect_subscription(IDP, ["a.fr", "b.fr"])
-    url = f"{BASE_URL}/api/oidc_providers/{IDP}/configuration"
-    responses.add(
-        responses.PATCH,
-        url,
-        json={"uid": IDP, "attached_email_domains": ["a.fr", "b.fr"]},
-        status=200,
-    )
+    provider = FakeProvider()
 
     result = sync_proconnect_provider(IDP)
+
     assert result["success"] is True
     assert result["domains"] == ["a.fr", "b.fr"]
-    assert len(responses.calls) == 1  # no verify GET, just the PATCH
-    assert responses.calls[0].request.method == "PATCH"
-    assert json.loads(responses.calls[0].request.body) == {
-        "attached_email_domains": ["a.fr", "b.fr"]
-    }
+    assert result["attached"] == ["a.fr", "b.fr"]
+    assert result["detached"] == []
+    assert provider.writes == [("PUT", "a.fr"), ("PUT", "b.fr")]
+    assert provider.live == {"a.fr", "b.fr"}
+    assert [call.request.method for call in responses.calls] == ["GET", "PUT", "PUT"]
+
+
+@proconnect_settings
+@responses.activate
+def test_sync_provider_detaches_what_the_db_no_longer_routes():
+    """Detaches come first, so a domain moving between providers is freed in time."""
+    _make_proconnect_subscription(IDP, ["b.fr", "c.fr"])
+    provider = FakeProvider(live={"a.fr", "b.fr"})
+
+    result = sync_proconnect_provider(IDP)
+
+    assert result["success"] is True
+    assert result["attached"] == ["c.fr"]
+    assert result["detached"] == ["a.fr"]
+    assert provider.writes == [("DELETE", "a.fr"), ("PUT", "c.fr")]
+    assert provider.live == {"b.fr", "c.fr"}
+
+
+@proconnect_settings
+@responses.activate
+def test_sync_provider_only_reads_a_provider_already_in_sync():
+    """No difference, no write: the cost of a push that changes nothing is a GET."""
+    _make_proconnect_subscription(IDP, ["a.fr"])
+    provider = FakeProvider(live={"a.fr"})
+
+    result = sync_proconnect_provider(IDP)
+
+    assert result["success"] is True
+    assert result["attached"] == result["detached"] == []
+    assert not provider.writes
+    assert len(responses.calls) == 1
 
 
 @proconnect_settings
@@ -401,8 +549,7 @@ def test_sync_provider_pushes_full_list():
 def test_sync_provider_swallows_api_errors():
     """A failing push is reported but never raises."""
     _make_proconnect_subscription(IDP, ["a.fr"])
-    url = f"{BASE_URL}/api/oidc_providers/{IDP}/configuration"
-    responses.add(responses.PATCH, url, json={"error": "boom"}, status=500)
+    FakeProvider(down=500)
 
     result = sync_proconnect_provider(IDP)
     assert result["success"] is False
@@ -411,16 +558,129 @@ def test_sync_provider_swallows_api_errors():
 
 @proconnect_settings
 @responses.activate
-def test_sync_provider_takes_a_per_idp_advisory_lock():
-    """The read + PATCH + commit run under a lock keyed on the idp, so two
-    concurrent pushes can't each compute a set and clobber the other's."""
+def test_sync_provider_reports_an_unreadable_provider():
+    """Without the live state there is nothing to compare with: no write is tried."""
     _make_proconnect_subscription(IDP, ["a.fr"])
-    responses.add(
-        responses.PATCH,
-        f"{BASE_URL}/api/oidc_providers/{IDP}/configuration",
-        json={"uid": IDP, "attached_email_domains": ["a.fr"]},
-        status=200,
+    responses.add(responses.GET, CONFIG_URL, json={"error": "boom"}, status=500)
+
+    result = sync_proconnect_provider(IDP)
+
+    assert result["success"] is False
+    assert [call.request.method for call in responses.calls] == ["GET"]
+
+
+@proconnect_settings
+@responses.activate
+def test_sync_provider_stops_at_the_first_failure_other_than_a_refusal():
+    """A provider that errors is not hammered with the remaining domains."""
+    _make_proconnect_subscription(IDP, ["a.fr", "b.fr", "c.fr"])
+    provider = FakeProvider(down=503)
+
+    result = sync_proconnect_provider(IDP)
+
+    assert result["success"] is False
+    assert provider.writes == [("PUT", "a.fr")]
+
+
+@proconnect_settings
+@responses.activate
+def test_sync_provider_keeps_going_past_a_refused_domain():
+    """One domain off the allowlist must not block the others, which stay attached."""
+    _make_proconnect_subscription(IDP, ["a.fr", "b.fr", "c.fr"])
+    provider = FakeProvider(refuse={"b.fr": (403, "attached_email_domain_not_allowed")})
+
+    result = sync_proconnect_provider(IDP)
+
+    assert result["success"] is False
+    assert "attached_email_domain_not_allowed" in result["error"]
+    assert "b.fr" in result["error"]
+    assert provider.live == {"a.fr", "c.fr"}
+
+
+@proconnect_settings
+@responses.activate
+def test_sync_provider_raises_one_error_naming_every_refused_domain():
+    """With raise_on_error the refusals of one kind come as a single error."""
+    _make_proconnect_subscription(IDP, ["a.fr", "b.fr", "c.fr"])
+    FakeProvider(
+        refuse={
+            "a.fr": (403, "attached_email_domain_not_allowed"),
+            "b.fr": (409, "attached_email_domain_taken"),
+            "c.fr": (403, "attached_email_domain_not_allowed"),
+        }
     )
+
+    with pytest.raises(ProConnectPartnersError) as excinfo:
+        sync_proconnect_provider(IDP, raise_on_error=True)
+
+    # One reason at a time, in the fixed order of DOMAIN_REFUSAL_ERRORS.
+    assert excinfo.value.error_code == "attached_email_domain_not_allowed"
+    assert excinfo.value.domains == ["a.fr", "c.fr"]
+
+
+@proconnect_settings
+@responses.activate
+def test_sync_provider_undoes_its_calls_when_raising():
+    """The caller rolls the DB back: the provider must not keep what went through."""
+    _make_proconnect_subscription(IDP, ["b.fr", "c.fr"])
+    provider = FakeProvider(
+        live={"a.fr"}, refuse={"c.fr": (403, "attached_email_domain_not_allowed")}
+    )
+
+    with pytest.raises(ProConnectPartnersError):
+        sync_proconnect_provider(IDP, raise_on_error=True)
+
+    assert provider.live == {"a.fr"}
+    assert provider.writes == [
+        ("DELETE", "a.fr"),
+        ("PUT", "b.fr"),
+        ("PUT", "c.fr"),
+        ("DELETE", "b.fr"),
+        ("PUT", "a.fr"),
+    ]
+
+
+@proconnect_settings
+@responses.activate
+def test_sync_provider_keeps_its_calls_when_not_raising():
+    """The batch commands make what progress they can and report the rest."""
+    _make_proconnect_subscription(IDP, ["b.fr", "c.fr"])
+    provider = FakeProvider(
+        live={"a.fr"}, refuse={"c.fr": (403, "attached_email_domain_not_allowed")}
+    )
+
+    result = sync_proconnect_provider(IDP)
+
+    assert result["success"] is False
+    assert provider.live == {"b.fr"}
+
+
+@proconnect_settings
+@responses.activate
+def test_sync_provider_undo_stops_at_its_first_failure():
+    """A provider that is failing is not asked for the rest of the reversal."""
+    _make_proconnect_subscription(IDP, ["b.fr", "c.fr", "d.fr"])
+    provider = FakeProvider(
+        refuse={"d.fr": (403, "attached_email_domain_not_allowed")},
+        delete_fails={"c.fr"},
+    )
+
+    with pytest.raises(ProConnectPartnersError):
+        sync_proconnect_provider(IDP, raise_on_error=True)
+
+    # c.fr is undone first and fails: b.fr is left for the next push to converge.
+    assert provider.writes[-1] == ("DELETE", "c.fr")
+    assert ("DELETE", "b.fr") not in provider.writes
+    assert provider.live == {"b.fr", "c.fr"}
+
+
+@proconnect_settings
+@responses.activate
+def test_sync_provider_takes_a_per_idp_advisory_lock():
+    """The read + writes + commit run under a lock keyed on the idp, so two
+    concurrent pushes can't each compute a diff and clobber the other's."""
+    _make_proconnect_subscription(IDP, ["a.fr"])
+    FakeProvider()
 
     with CaptureQueriesContext(connection) as ctx:
         assert sync_proconnect_provider(IDP)["success"] is True
@@ -452,18 +712,13 @@ def test_sync_provider_skips_when_not_configured():
 def test_management_command_pushes_all_providers():
     """The backfill command discovers active providers and pushes each."""
     _make_proconnect_subscription(IDP, ["a.fr"])
-    url = f"{BASE_URL}/api/oidc_providers/{IDP}/configuration"
-    responses.add(
-        responses.PATCH,
-        url,
-        json={"uid": IDP, "attached_email_domains": ["a.fr"]},
-        status=200,
-    )
+    provider = FakeProvider()
 
     out = StringIO()
     call_command("proconnect_sync", stdout=out)
     assert "OK" in out.getvalue()
     assert IDP in out.getvalue()
+    assert provider.live == {"a.fr"}
 
 
 def test_management_command_dry_run_makes_no_calls():
@@ -485,8 +740,7 @@ def test_management_command_dry_run_makes_no_calls():
 @responses.activate
 def test_subscription_activation_rolls_back_on_push_failure():
     """A failed api-partenaires push rolls back the activation and returns 502."""
-    url = f"{BASE_URL}/api/oidc_providers/{IDP}/configuration"
-    responses.add(responses.PATCH, url, json={"error": "boom"}, status=500)
+    FakeProvider(down=500)
 
     user = factories.UserFactory()
     client = APIClient()
@@ -587,8 +841,7 @@ def test_request_error_does_not_leak_proxy_password():
 def test_sync_command_raises_on_push_failure():
     """A failed push makes the command exit non-zero (CommandError)."""
     _make_proconnect_subscription(IDP, ["a.fr"])
-    url = f"{BASE_URL}/api/oidc_providers/{IDP}/configuration"
-    responses.add(responses.PATCH, url, json={"error": "boom"}, status=500)
+    FakeProvider(down=500)
     with pytest.raises(CommandError):
         call_command("proconnect_sync")
 
@@ -861,23 +1114,13 @@ def test_out_of_sync_service_is_exposed_to_the_frontend():
     assert response.json()["out_of_sync"] is True
 
 
-def _push_ok(domains):
-    responses.add(
-        responses.PATCH,
-        PATCH_URL,
-        json={"uid": IDP, "attached_email_domains": domains},
-        status=200,
-    )
-
-
 @proconnect_settings
 @responses.activate
 def test_sync_command_clears_the_flag_after_the_push():
     """The repair command does not leave the services blocked until the next cron."""
     subscription = _make_proconnect_subscription(IDP, ["a.fr"])
     _flag_out_of_sync(subscription.service)
-    _push_ok(["a.fr"])
-    _drift_get(["a.fr"])
+    FakeProvider()
 
     call_command("proconnect_sync", stdout=StringIO())
 
@@ -890,8 +1133,7 @@ def test_sync_command_clears_the_flag_after_the_push():
 def test_sync_command_flags_the_service_when_the_push_failed():
     """A failed push leaves the provider drifted: the API must stop writing now."""
     subscription = _make_proconnect_subscription(IDP, ["a.fr"])
-    responses.add(responses.PATCH, PATCH_URL, json={"error": "boom"}, status=500)
-    _drift_get([])
+    FakeProvider(down=500)
 
     with pytest.raises(CommandError):
         call_command("proconnect_sync", stdout=StringIO(), stderr=StringIO())
@@ -920,8 +1162,7 @@ def test_subscribe_bulk_clears_the_flag_after_the_push():
     """The bulk push fixes the provider, so the flag goes with it."""
     subscription = _make_proconnect_subscription(IDP, ["a.fr"])
     _flag_out_of_sync(subscription.service)
-    _push_ok([])
-    _drift_get([])
+    FakeProvider(live={"a.fr"})
 
     call_command(
         "subscribe_bulk",
@@ -941,8 +1182,7 @@ def test_subscribe_bulk_clears_the_flag_after_the_push():
 def test_subscribe_bulk_flags_the_service_when_the_push_failed():
     """Rows written but provider not updated: flagged without waiting for the cron."""
     subscription = _make_proconnect_subscription(IDP, ["a.fr"])
-    responses.add(responses.PATCH, PATCH_URL, json={"error": "boom"}, status=500)
-    _drift_get(["a.fr"])
+    FakeProvider(live={"a.fr"}, down=500)
 
     with pytest.raises(CommandError):
         call_command(
@@ -967,8 +1207,7 @@ def test_saving_a_subscription_clears_the_flag_once_committed(
     """A push that fixes a flagged provider is rechecked after the commit."""
     subscription = _make_proconnect_subscription(IDP, ["a.fr"])
     _flag_out_of_sync(subscription.service)
-    _push_ok([])
-    _drift_get([])
+    FakeProvider(live={"a.fr"})
 
     subscription.is_active = False
     with django_capture_on_commit_callbacks(execute=True):
@@ -985,13 +1224,14 @@ def test_saving_a_subscription_does_not_recheck_an_unflagged_provider(
 ):
     """The recheck is one more request: only paid when the provider is flagged."""
     subscription = _make_proconnect_subscription(IDP, ["a.fr"])
-    _push_ok([])
+    FakeProvider(live={"a.fr"})
 
     subscription.is_active = False
     with django_capture_on_commit_callbacks(execute=True):
         subscription.save()
 
-    assert [call.request.method for call in responses.calls] == ["PATCH"]
+    # The push (a read, then the detach) and no second read.
+    assert [call.request.method for call in responses.calls] == ["GET", "DELETE"]
 
 
 # --- in-transaction sync: happy path, change-detection, suppression ----------
@@ -1042,6 +1282,22 @@ def test_subscription_refuses_a_malformed_domain():
 
 
 @proconnect_settings
+def test_subscription_refuses_a_domain_api_partenaires_would_refuse_as_too_long():
+    """A label over 63 characters is a 400 now, not a failed push later."""
+    client, operator, organization, service = _proconnect_api_setup(is_superuser=True)
+    too_long = f"{'a' * 64}.fr"
+
+    response = client.patch(
+        _subscription_url(operator, organization, service),
+        {"is_active": False, "metadata": {"domains": [too_long]}},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert too_long in str(response.json())
+
+
+@proconnect_settings
 @responses.activate
 def test_subscription_with_a_stored_malformed_domain_stays_editable():
     """A malformed domain stored by an older write must not lock the subscription.
@@ -1049,12 +1305,7 @@ def test_subscription_with_a_stored_malformed_domain_stays_editable():
     It is normalized away instead — refusing it here would make the subscription
     impossible to deactivate, which is exactly what one would want to do with it.
     """
-    responses.add(
-        responses.PATCH,
-        f"{BASE_URL}/api/oidc_providers/{IDP}/configuration",
-        json={"uid": IDP, "attached_email_domains": []},
-        status=200,
-    )
+    FakeProvider(live={"commune.fr"})
     client, operator, organization, service = _proconnect_api_setup(is_superuser=True)
     with suppress_proconnect_sync():
         subscription = factories.ServiceSubscriptionFactory(
@@ -1080,16 +1331,7 @@ def test_subscription_with_a_stored_malformed_domain_stays_editable():
 @responses.activate
 def test_activation_surfaces_domain_not_allowed_with_domains():
     """A rejected domain → 400 naming the offending domain, and rolled back."""
-    url = f"{BASE_URL}/api/oidc_providers/{IDP}/configuration"
-    responses.add(
-        responses.PATCH,
-        url,
-        json={
-            "error": "attached_email_domain_not_allowed",
-            "attached_email_domains": ["commune.fr"],
-        },
-        status=422,
-    )
+    FakeProvider(refuse={"commune.fr": (403, "attached_email_domain_not_allowed")})
     client, operator, organization, service = _proconnect_api_setup()
 
     response = client.patch(
@@ -1118,12 +1360,7 @@ def test_activation_surfaces_domain_not_allowed_with_domains():
 )
 def test_activation_surfaces_unreachable_and_taken_domains(error, status, expected):
     """Each rejection that names domains gets its own 400 message, and rolls back."""
-    responses.add(
-        responses.PATCH,
-        PATCH_URL,
-        json={"error": error, "attached_email_domains": ["commune.fr"]},
-        status=status,
-    )
+    FakeProvider(refuse={"commune.fr": (status, error)})
     client, operator, organization, service = _proconnect_api_setup()
 
     response = client.patch(
@@ -1146,9 +1383,7 @@ def test_activation_surfaces_unreachable_and_taken_domains(error, status, expect
 @responses.activate
 def test_activation_keeps_the_generic_502_for_other_push_errors():
     """Errors that name no domain (here a DNS outage upstream) stay a generic 502."""
-    responses.add(
-        responses.PATCH, PATCH_URL, json={"error": "dns_unavailable"}, status=502
-    )
+    FakeProvider(refuse={"commune.fr": (502, "dns_unavailable")})
     client, operator, organization, service = _proconnect_api_setup()
 
     response = client.patch(
@@ -1164,13 +1399,7 @@ def test_activation_keeps_the_generic_502_for_other_push_errors():
 @responses.activate
 def test_subscription_activation_pushes_once_on_success():
     """Activating a subscription through the API pushes the provider's domains once."""
-    url = f"{BASE_URL}/api/oidc_providers/{IDP}/configuration"
-    responses.add(
-        responses.PATCH,
-        url,
-        json={"uid": IDP, "attached_email_domains": ["commune.fr"]},
-        status=200,
-    )
+    provider = FakeProvider()
     client, operator, organization, service = _proconnect_api_setup()
 
     response = client.patch(
@@ -1182,92 +1411,79 @@ def test_subscription_activation_pushes_once_on_success():
     assert ServiceSubscription.objects.filter(
         service=service, organization=organization
     ).exists()
-    assert len(responses.calls) == 1
-    assert json.loads(responses.calls[0].request.body) == {
-        "attached_email_domains": ["commune.fr"]
-    }
+    assert provider.writes == [("PUT", "commune.fr")]
+    assert len(responses.calls) == 2  # the read, then the one domain
 
 
 @proconnect_settings
 @responses.activate
 def test_push_fires_across_subscription_lifecycle():
-    """A push goes to api-partenaires on: (1) activation, (2) adding/removing a
-    domain on an active subscription, and (3) deactivation."""
-    url = f"{BASE_URL}/api/oidc_providers/{IDP}/configuration"
-    responses.add(
-        responses.PATCH,
-        url,
-        json={"uid": IDP, "attached_email_domains": []},
-        status=200,
-    )
+    """The provider follows: (1) activation, (2) adding/removing a domain on an
+    active subscription, and (3) deactivation, one domain per call."""
+    provider = FakeProvider()
     client, operator, organization, service = _proconnect_api_setup(is_superuser=True)
     endpoint = _subscription_url(operator, organization, service)
 
-    def pushed_domains():
-        return json.loads(responses.calls[-1].request.body)["attached_email_domains"]
+    def writes_since_last():
+        writes, provider.writes = provider.writes, []
+        return writes
 
-    # (1) Activate -> pushes the routed mail domain.
+    # (1) Activate -> attaches the routed mail domain.
     response = client.patch(endpoint, {"is_active": True}, format="json")
     assert response.status_code == 201
-    assert len(responses.calls) == 1
-    assert pushed_domains() == ["commune.fr"]
+    assert writes_since_last() == [("PUT", "commune.fr")]
 
-    # (2a) Add a domain on the active subscription -> pushes the larger set.
+    # (2a) Add a domain on the active subscription -> attaches only that one.
     response = client.patch(
         endpoint, {"metadata": {"domains": ["commune.fr", "extra.fr"]}}, format="json"
     )
     assert response.status_code == 200
-    assert len(responses.calls) == 2
-    assert pushed_domains() == ["commune.fr", "extra.fr"]
+    assert writes_since_last() == [("PUT", "extra.fr")]
+    assert provider.live == {"commune.fr", "extra.fr"}
 
-    # (2b) Remove a domain -> pushes the smaller set.
+    # (2b) Remove a domain -> detaches only that one.
     response = client.patch(
         endpoint, {"metadata": {"domains": ["extra.fr"]}}, format="json"
     )
     assert response.status_code == 200
-    assert len(responses.calls) == 3
-    assert pushed_domains() == ["extra.fr"]
+    assert writes_since_last() == [("DELETE", "commune.fr")]
+    assert provider.live == {"extra.fr"}
 
-    # (2c) A save that changes NO domain does not push again (change-detection).
+    # (2c) A save that changes NO domain does not reach the provider at all
+    # (change-detection).
+    calls = len(responses.calls)
     response = client.patch(
         endpoint, {"metadata": {"domains": ["extra.fr"]}}, format="json"
     )
     assert response.status_code == 200
-    assert len(responses.calls) == 3  # unchanged -> no new push
+    assert len(responses.calls) == calls
 
-    # (3) Deactivate -> pushes the now-empty set (subscription no longer contributes).
+    # (3) Deactivate -> detaches the rest (subscription no longer contributes).
     response = client.patch(endpoint, {"is_active": False}, format="json")
     assert response.status_code == 200
-    assert len(responses.calls) == 4
-    assert pushed_domains() == []
+    assert writes_since_last() == [("DELETE", "extra.fr")]
+    assert provider.live == set()
 
 
 @proconnect_settings
 @responses.activate
 def test_subscription_resave_without_domain_change_does_not_repush():
     """A save that changes neither is_active nor the domain set issues no new push."""
-    url = f"{BASE_URL}/api/oidc_providers/{IDP}/configuration"
-    responses.add(
-        responses.PATCH,
-        url,
-        json={"uid": IDP, "attached_email_domains": ["commune.fr"]},
-        status=200,
-    )
+    provider = FakeProvider()
     client, operator, organization, service = _proconnect_api_setup()
     endpoint = _subscription_url(operator, organization, service)
 
     client.patch(endpoint, {"is_active": True}, format="json")  # create + push
-    assert len(responses.calls) == 1
+    assert len(responses.calls) == 2
 
     # Same domains, still active -> no re-push.
     client.patch(endpoint, {"is_active": True}, format="json")
-    assert len(responses.calls) == 1
+    assert len(responses.calls) == 2
 
-    # Deactivating removes the contribution -> pushes the now-empty set.
+    # Deactivating removes the contribution -> detaches the domain.
     response = client.patch(endpoint, {"is_active": False}, format="json")
     assert response.status_code == 200
-    assert len(responses.calls) == 2
-    assert json.loads(responses.calls[1].request.body) == {"attached_email_domains": []}
+    assert provider.writes == [("PUT", "commune.fr"), ("DELETE", "commune.fr")]
 
 
 @proconnect_settings
@@ -1304,14 +1520,8 @@ def test_suppress_proconnect_sync_prevents_push():
 @proconnect_settings
 @responses.activate
 def test_subscription_delete_pushes_reduced_set():
-    """Deleting an active proconnect subscription pushes the now-smaller domain set."""
-    url = f"{BASE_URL}/api/oidc_providers/{IDP}/configuration"
-    responses.add(
-        responses.PATCH,
-        url,
-        json={"uid": IDP, "attached_email_domains": []},
-        status=200,
-    )
+    """Deleting an active proconnect subscription detaches its domains."""
+    provider = FakeProvider(live={"commune.fr"})
     client, operator, organization, service = _proconnect_api_setup()
     with suppress_proconnect_sync():
         subscription = factories.ServiceSubscriptionFactory(
@@ -1325,16 +1535,14 @@ def test_subscription_delete_pushes_reduced_set():
     response = client.delete(_subscription_url(operator, organization, service))
     assert response.status_code == 204
     assert not ServiceSubscription.objects.filter(pk=subscription.pk).exists()
-    assert len(responses.calls) == 1
-    assert json.loads(responses.calls[0].request.body) == {"attached_email_domains": []}
+    assert provider.writes == [("DELETE", "commune.fr")]
 
 
 @proconnect_settings
 @responses.activate
 def test_subscription_delete_rolls_back_on_push_failure():
     """A failed push on delete rolls back the deletion (subscription survives)."""
-    url = f"{BASE_URL}/api/oidc_providers/{IDP}/configuration"
-    responses.add(responses.PATCH, url, json={"error": "boom"}, status=500)
+    FakeProvider(live={"commune.fr"}, down=500)
     client, operator, organization, service = _proconnect_api_setup()
     with suppress_proconnect_sync():
         subscription = factories.ServiceSubscriptionFactory(
@@ -1355,7 +1563,7 @@ def test_subscription_delete_rolls_back_on_push_failure():
 def test_subscription_create_inactive_does_not_push():
     """Creating an inactive subscription changes no pushed set: no push, so an
     unreachable provider does not block it."""
-    responses.add(responses.PATCH, PATCH_URL, json={"error": "down"}, status=503)
+    FakeProvider(down=503)
     client, operator, organization, service = _proconnect_api_setup()
 
     response = client.patch(
@@ -1375,7 +1583,7 @@ def test_subscription_create_inactive_does_not_push():
 @responses.activate
 def test_subscription_delete_inactive_does_not_push():
     """Deleting an inactive subscription removes nothing from the pushed set."""
-    responses.add(responses.PATCH, PATCH_URL, json={"error": "down"}, status=503)
+    FakeProvider(down=503)
     client, operator, organization, service = _proconnect_api_setup()
     with suppress_proconnect_sync():
         subscription = factories.ServiceSubscriptionFactory(
@@ -1397,7 +1605,7 @@ def test_subscription_delete_inactive_does_not_push():
 @responses.activate
 def test_admin_add_inactive_subscription_does_not_push():
     """The admin add form creates an inactive subscription without a push."""
-    responses.add(responses.PATCH, PATCH_URL, json={"error": "down"}, status=503)
+    FakeProvider(down=503)
     operator = factories.OperatorFactory()
     organization = factories.OrganizationFactory()
     service = factories.ServiceFactory(type="proconnect", config={"idp_id": IDP})
@@ -1434,26 +1642,15 @@ def test_reassigning_the_service_pushes_both_providers():
         type="proconnect", config={"idp_id": "other-idp"}
     )
 
-    for idp in (IDP, "other-idp"):
-        responses.add(
-            responses.PATCH,
-            f"{BASE_URL}/api/oidc_providers/{idp}/configuration",
-            json={"uid": idp, "attached_email_domains": []},
-            status=200,
-        )
+    old_provider = FakeProvider(live={"a.fr"})
+    new_provider = FakeProvider(idp="other-idp")
 
     subscription.service = other_service
     subscription.save()
 
-    patched = {
-        call.request.url.rsplit("/oidc_providers/", 1)[1].split("/")[0]: json.loads(
-            call.request.body
-        )
-        for call in responses.calls
-    }
-    # The new provider gains the domain, the one it left is recomputed to empty.
-    assert patched["other-idp"]["attached_email_domains"] == ["a.fr"]
-    assert patched[IDP]["attached_email_domains"] == []
+    # The new provider gains the domain, the one it left loses it.
+    assert new_provider.live == {"a.fr"}
+    assert old_provider.live == set()
 
 
 @override_settings(
@@ -1517,12 +1714,7 @@ def _admin_change_post(subscription, **overrides):
 @responses.activate
 def test_admin_change_form_always_pushes():
     """The regular change form has no skip option: a posted one is ignored."""
-    responses.add(
-        responses.PATCH,
-        PATCH_URL,
-        json={"uid": IDP, "attached_email_domains": ["autre.fr"]},
-        status=200,
-    )
+    provider = FakeProvider(live={"commune.fr"})
     subscription = _make_proconnect_subscription(IDP, ["commune.fr"])
     url = reverse("admin:core_servicesubscription_change", args=[subscription.pk])
 
@@ -1533,10 +1725,7 @@ def test_admin_change_form_always_pushes():
     assert response.status_code == 302
     subscription.refresh_from_db()
     assert subscription.metadata["domains"] == ["autre.fr"]
-    assert len(responses.calls) == 1
-    assert json.loads(responses.calls[0].request.body) == {
-        "attached_email_domains": ["autre.fr"]
-    }
+    assert provider.writes == [("DELETE", "commune.fr"), ("PUT", "autre.fr")]
 
 
 def _manual_actions_url(subscription):
@@ -1585,8 +1774,8 @@ def test_admin_proconnect_manual_actions_not_for_other_services():
 @proconnect_settings
 @responses.activate
 def test_admin_proconnect_manual_actions_add_pushes():
-    """Adding a domain saves it and pushes the provider's new domain list."""
-    responses.add(responses.PATCH, PATCH_URL, json={"uid": IDP}, status=200)
+    """Adding a domain saves it and attaches it to the provider."""
+    provider = FakeProvider(live={"commune.fr"})
     subscription = _make_proconnect_subscription(IDP, ["commune.fr"])
 
     response = _admin_client().post(
@@ -1597,10 +1786,7 @@ def test_admin_proconnect_manual_actions_add_pushes():
     assert response.status_code == 302
     subscription.refresh_from_db()
     assert subscription.metadata["domains"] == ["autre.fr", "commune.fr"]
-    assert len(responses.calls) == 1
-    assert json.loads(responses.calls[0].request.body) == {
-        "attached_email_domains": ["autre.fr", "commune.fr"]
-    }
+    assert provider.writes == [("PUT", "autre.fr")]
 
 
 @proconnect_settings
@@ -1625,7 +1811,7 @@ def test_admin_proconnect_manual_actions_skip_push():
 @responses.activate
 def test_admin_proconnect_manual_actions_activate_without_push():
     """With the skip box, activating works while the provider is down."""
-    responses.add(responses.PATCH, PATCH_URL, json={"error": "down"}, status=503)
+    FakeProvider(down=503)
     subscription = _make_proconnect_subscription(IDP, ["commune.fr"], is_active=False)
 
     response = _admin_client().post(
@@ -1642,8 +1828,8 @@ def test_admin_proconnect_manual_actions_activate_without_push():
 @proconnect_settings
 @responses.activate
 def test_admin_proconnect_manual_actions_deactivate_pushes():
-    """Deactivating without the skip box pushes the reduced domain list."""
-    responses.add(responses.PATCH, PATCH_URL, json={"uid": IDP}, status=200)
+    """Deactivating without the skip box detaches the domains."""
+    provider = FakeProvider(live={"commune.fr"})
     subscription = _make_proconnect_subscription(IDP, ["commune.fr"])
 
     response = _admin_client().post(_manual_actions_url(subscription), {"save": ""})
@@ -1651,14 +1837,14 @@ def test_admin_proconnect_manual_actions_deactivate_pushes():
     assert response.status_code == 302
     subscription.refresh_from_db()
     assert subscription.is_active is False
-    assert json.loads(responses.calls[0].request.body) == {"attached_email_domains": []}
+    assert provider.writes == [("DELETE", "commune.fr")]
 
 
 @proconnect_settings
 @responses.activate
 def test_admin_proconnect_manual_actions_save_pushes_unchanged_state():
     """A plain save pushes even though nothing changed: that is how drift is fixed."""
-    responses.add(responses.PATCH, PATCH_URL, json={"uid": IDP}, status=200)
+    provider = FakeProvider(live={"stray.fr"})
     subscription = _make_proconnect_subscription(IDP, ["commune.fr"])
 
     response = _admin_client().post(
@@ -1666,18 +1852,15 @@ def test_admin_proconnect_manual_actions_save_pushes_unchanged_state():
     )
 
     assert response.status_code == 302
-    assert len(responses.calls) == 1
-    assert json.loads(responses.calls[0].request.body) == {
-        "attached_email_domains": ["commune.fr"]
-    }
+    assert provider.writes == [("DELETE", "stray.fr"), ("PUT", "commune.fr")]
+    assert provider.live == {"commune.fr"}
 
 
 @proconnect_settings
 @responses.activate
 def test_admin_proconnect_manual_actions_save_clears_out_of_sync():
     """Fixing the provider from the form lifts the API block."""
-    responses.add(responses.PATCH, PATCH_URL, json={"uid": IDP}, status=200)
-    _drift_get(["commune.fr"])  # what the provider serves once pushed
+    FakeProvider()
     subscription = _make_proconnect_subscription(IDP, ["commune.fr"])
     _flag_out_of_sync(subscription.service)
     client = _admin_client()
@@ -1695,8 +1878,8 @@ def test_admin_proconnect_manual_actions_save_clears_out_of_sync():
 @responses.activate
 def test_admin_proconnect_manual_actions_still_drifted_keeps_the_flag():
     """If the provider still differs after the save, the block stays and says so."""
-    responses.add(responses.PATCH, PATCH_URL, json={"uid": IDP}, status=200)
-    _drift_get(["autre.fr"])
+    # Something else attaches a domain while the form is being saved.
+    FakeProvider(concurrent={"autre.fr"})
     subscription = _make_proconnect_subscription(IDP, ["commune.fr"])
     _flag_out_of_sync(subscription.service)
 
@@ -1715,7 +1898,7 @@ def test_admin_proconnect_manual_actions_still_drifted_keeps_the_flag():
 @responses.activate
 def test_admin_proconnect_manual_actions_failed_push_rolls_back():
     """A failed push leaves the subscription unchanged and reports the error."""
-    responses.add(responses.PATCH, PATCH_URL, json={"error": "boom"}, status=500)
+    FakeProvider(down=500)
     subscription = _make_proconnect_subscription(IDP, ["commune.fr"])
 
     response = _admin_client().post(

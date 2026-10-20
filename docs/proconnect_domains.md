@@ -244,15 +244,36 @@ collectivité" test to the website domain as well as the email one.
 
 ## Pushing
 
-Any change to an active ProConnect subscription's domains pushes the provider's full
-list synchronously, inside the request's transaction (`core/signals.py` →
-`sync_proconnect_provider`), so a failed push rolls the change back instead of
+Any change to an active ProConnect subscription's domains syncs the provider
+synchronously, inside the request's transaction (`core/signals.py` →
+`sync_proconnect_provider`), so a failed sync rolls the change back instead of
 drifting. A provider is the `idp_id` of the **service**: operators cannot override
 it (`OperatorServiceConfig` refuses the key, and ignores one saved before that rule).
-Reassigning a subscription's **service** pushes too, and pushes *both* providers: the
+Reassigning a subscription's **service** syncs too, and syncs *both* providers: the
 subscription moves provider with its domains untouched, so the one it left has to be
 recomputed as well. Bulk writes bypass signals: reconcile with
 `manage.py proconnect_sync`.
+
+A sync reads the provider's live domains, then makes one call per difference, on
+api-partenaires' per-domain routes: `DELETE` for each domain we no longer route
+(first, so a domain moving between providers is free in time), `PUT` for each one
+the provider lacks. Nothing is sent as a whole list. What follows from that:
+
+- **Rate limit.** api-partenaires allows, by default, 10 requests a minute per
+  provider (60 overall), and a sync costs one read plus one call per domain. A web
+  request only waits out a `Retry-After` of 10 seconds, so a change that touches
+  about ten domains fails with a 502 and is rolled back. The batch commands wait
+  out a whole window (65 seconds), so a large backfill takes about a minute per ten
+  domains and provider, while holding that provider's lock.
+- **Refused domains.** A domain api-partenaires refuses (not allowed, taken,
+  unreachable) does not stop the others. In a request the calls already made are
+  then undone, best effort, and the user is told which domains were refused, with
+  the same messages as before. The batch commands keep what went through and report
+  the failure.
+- **Not atomic.** Any other error (a 5xx, a rate limit that lasts) stops the sync
+  where it is. If undoing fails too, the provider is left with part of the change:
+  the next sync converges it, being computed from the live state, and the drift
+  check flags it meanwhile.
 
 ### Drift detection and the `out_of_sync` flag
 

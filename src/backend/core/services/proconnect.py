@@ -1,9 +1,9 @@
 """
 Client and helpers for the ProConnect "api-partenaires" API.
 
-Pushes the full list of authorized email domains for a given OIDC provider
-(identified by its ``idp_id`` / provider uid) to
-https://github.com/proconnect-gouv/api-partenaires
+Keeps the authorized email domains of a given OIDC provider (identified by its
+``idp_id`` / provider uid) in line with https://github.com/proconnect-gouv/api-partenaires
+by attaching and detaching one domain per call.
 
 api-partenaires calls those domains ``attached_email_domains``; everywhere on this
 side they are just "domains".
@@ -45,7 +45,7 @@ from core.models import (
     Service,
     ServiceSubscription,
 )
-from core.services.domainnames import normalize_domains
+from core.services.domainnames import is_valid_domain, normalize_domains
 from core.services.locks import lock_idp
 
 logger = logging.getLogger(__name__)
@@ -70,6 +70,13 @@ ATTACHED_EMAIL_DOMAINS_KEY = "attached_email_domains"
 DOMAIN_NOT_ALLOWED_ERROR = "attached_email_domain_not_allowed"
 DOMAIN_UNREACHABLE_ERROR = "attached_email_domain_unreachable"
 DOMAIN_TAKEN_ERROR = "attached_email_domain_taken"
+DOMAIN_NOT_ATTACHED_ERROR = "attached_email_domain_not_found"
+# The refusals of a single domain: the provider stays fine, that domain is the issue.
+DOMAIN_REFUSAL_ERRORS = (
+    DOMAIN_NOT_ALLOWED_ERROR,
+    DOMAIN_TAKEN_ERROR,
+    DOMAIN_UNREACHABLE_ERROR,
+)
 
 # Key of the per-provider domain list in the oidc_providers allowlist YAML (the
 # file that gates api-partenaires).
@@ -119,6 +126,17 @@ def validate_idp_id(idp_id: str) -> str:
     if not isinstance(idp_id, str) or not _IDP_ID_RE.fullmatch(idp_id):
         raise ProConnectPartnersError(f"Invalid ProConnect idp_id: {idp_id!r}")
     return idp_id
+
+
+def _domain_path(idp_id: str, domain: str) -> str:
+    """Path of one attached domain. Like the uid, the domain is signed and routed."""
+    if not isinstance(domain, str) or not (
+        is_valid_domain(domain) and domain == domain.strip().lower()
+    ):
+        raise ProConnectPartnersError(f"Invalid domain: {domain!r}")
+    return (
+        f"/api/oidc_providers/{validate_idp_id(idp_id)}/attached_email_domains/{domain}"
+    )
 
 
 def sign_request(
@@ -295,12 +313,28 @@ class ProConnectPartnersClient:
         path = f"/api/oidc_providers/{validate_idp_id(idp_id)}/configuration"
         return self._request("GET", path)
 
-    def set_attached_email_domains(self, idp_id: str, domains: list[str]) -> dict:
-        """Replace the provider's attached email domains with the given list."""
-        path = f"/api/oidc_providers/{validate_idp_id(idp_id)}/configuration"
-        # Serialize once and sign/send the exact same bytes.
-        body = json.dumps({ATTACHED_EMAIL_DOMAINS_KEY: domains}, separators=(",", ":"))
-        return self._request("PATCH", path, body=body)
+    def attach_email_domain(self, idp_id: str, domain: str) -> None:
+        """Attach one domain to the provider. Attaching one already there is a no-op.
+
+        A refusal of the domain itself (see ``DOMAIN_REFUSAL_ERRORS``) raises with
+        ``domains == [domain]``.
+        """
+        path = _domain_path(idp_id, domain)
+        try:
+            self._request("PUT", path)
+        except ProConnectPartnersError as exc:
+            if exc.error_code in DOMAIN_REFUSAL_ERRORS:
+                exc.domains = [domain]
+            raise
+
+    def detach_email_domain(self, idp_id: str, domain: str) -> None:
+        """Detach one domain from the provider. Detaching one not there is a no-op."""
+        path = _domain_path(idp_id, domain)
+        try:
+            self._request("DELETE", path)
+        except ProConnectPartnersError as exc:
+            if exc.error_code != DOMAIN_NOT_ATTACHED_ERROR:
+                raise
 
 
 # ---------------------------------------------------------------------------
@@ -567,21 +601,66 @@ def idp_routed_domains(idp_id: str) -> list[str]:
 
     Callers that need several providers should use :func:`routed_domains_by_idp`
     instead; this one is for the push path, which recomputes the set under the
-    provider's lock so that what it PATCHes matches the DB at push time.
+    provider's lock so that what it pushes matches the DB at push time.
     """
     return routed_domains_by_idp().get(idp_id, [])
+
+
+def _refusal_error(refused: dict[str, list[str]]) -> ProConnectPartnersError:
+    """One error for the domains the provider refused, grouped by reason.
+
+    Carries the first reason in ``DOMAIN_REFUSAL_ERRORS`` order: the user fixes
+    one kind of refusal at a time, and the message names every domain it covers.
+    """
+    code = next(code for code in DOMAIN_REFUSAL_ERRORS if code in refused)
+    return ProConnectPartnersError(
+        f"api-partenaires refused {', '.join(refused[code])}: {code}",
+        error_code=code,
+        domains=refused[code],
+    )
+
+
+def _undo(idp_id: str, client, applied: list[tuple[str, str]]) -> None:
+    """Best-effort reversal of the calls made so far, most recent first.
+
+    For a push whose caller rolls the DB back: left alone, the domains that did go
+    through would stay on the provider without a subscription behind them. Stops
+    at the first failure (the provider is probably limiting us); the next push
+    converges the provider anyway, being computed from its live state.
+    """
+    for position, (action, domain) in enumerate(reversed(applied)):
+        try:
+            if action == "attach":
+                client.detach_email_domain(idp_id, domain)
+            else:
+                client.attach_email_domain(idp_id, domain)
+        except ProConnectPartnersError as exc:
+            logger.error(
+                "Could not undo %d call(s) on idp %s, from %s %s: %s",
+                len(applied) - position,
+                idp_id,
+                action,
+                domain,
+                exc,
+            )
+            return
 
 
 def sync_proconnect_provider(
     idp_id: str, client=None, raise_on_error: bool = False
 ) -> dict:
-    """Compute the full domain list for ``idp_id`` and PATCH it to api-partenaires.
+    """Make the domains of ``idp_id`` on api-partenaires match the DB.
 
-    Serialized per provider (see :func:`core.services.locks.lock_idp`). Returns a result dict. By
-    default failures are logged and never raised. With ``raise_on_error=True``, a
-    failed PATCH raises ``ProConnectPartnersError`` (so the caller can roll back
-    its transaction). A not-configured client is always a silent skip, never an
-    error.
+    Reads the provider's live domains and attaches or detaches the difference, one
+    domain per call (detaches first). The provider rate limits its routes, so a
+    large difference takes a while.
+
+    Serialized per provider (see :func:`core.services.locks.lock_idp`). Returns a
+    result dict. By default failures are logged and never raised; the calls that
+    went through stay, and a domain the provider refuses does not stop the others.
+    With ``raise_on_error=True``, a failure raises ``ProConnectPartnersError`` (so
+    the caller can roll back its transaction) after the calls made are undone. A
+    not-configured client is always a silent skip, never an error.
     """
     client = client or ProConnectPartnersClient()
     if not client.is_configured:
@@ -591,17 +670,35 @@ def sync_proconnect_provider(
         )
         return {"idp_id": idp_id, "success": False, "skipped": True}
 
+    applied: list[tuple[str, str]] = []
     with transaction.atomic():
         lock_idp(idp_id)
         domains = idp_routed_domains(idp_id)
         try:
-            result = client.set_attached_email_domains(idp_id, domains)
+            drift = provider_drift(idp_id, client, domains)
+            refused: dict[str, list[str]] = defaultdict(list)
+            if drift:
+                for domain in drift.unexpected:
+                    client.detach_email_domain(idp_id, domain)
+                    applied.append(("detach", domain))
+                for domain in drift.missing:
+                    try:
+                        client.attach_email_domain(idp_id, domain)
+                    except ProConnectPartnersError as exc:
+                        if exc.error_code not in DOMAIN_REFUSAL_ERRORS:
+                            raise
+                        refused[exc.error_code].append(domain)
+                    else:
+                        applied.append(("attach", domain))
+            if refused:
+                raise _refusal_error(refused)
         except ProConnectPartnersError as e:
             logger.error("Failed to push ProConnect domains for idp %s: %s", idp_id, e)
             # Report it even when we swallow it: with raise_on_error=False nothing
             # downstream ever sees this failure otherwise.
             sentry_sdk.capture_exception(e)
             if raise_on_error:
+                _undo(idp_id, client, applied)
                 raise
             return {
                 "idp_id": idp_id,
@@ -611,13 +708,19 @@ def sync_proconnect_provider(
             }
 
     logger.info("Pushed ProConnect domains for idp %s: %s", idp_id, domains)
-    return {"idp_id": idp_id, "success": True, "domains": domains, "result": result}
+    return {
+        "idp_id": idp_id,
+        "success": True,
+        "domains": domains,
+        "attached": [domain for action, domain in applied if action == "attach"],
+        "detached": [domain for action, domain in applied if action == "detach"],
+    }
 
 
 def sync_proconnect_provider_for_subscription(
     subscription: ServiceSubscription, raise_on_error: bool = False
 ) -> Optional[dict]:
-    """Resolve a subscription's ``idp_id`` and push its provider's full domain list."""
+    """Resolve a subscription's ``idp_id`` and sync its provider's domains."""
     idp_id = subscription_idp_id(subscription)
     if not idp_id:
         logger.warning(
@@ -761,7 +864,7 @@ def refresh_out_of_sync(idp_ids, client=None) -> Optional[DriftReport]:
 # Deployed-allowlist pre-validation cache.
 #
 # The *deployed* api-partenaires allowlist (a file in their repo, updated by PR)
-# lags our generated one, and their PATCH rejects any domain not yet in it. We fetch
+# lags our generated one, and they refuse to attach any domain not yet in it. We fetch
 # it (``proconnect_fetch_prevalidated``) and cache the allowed domains per idp so the
 # UI can flag which of an org's domains are already routable vs pending the deploy.
 #

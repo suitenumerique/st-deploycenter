@@ -8,11 +8,15 @@ bad one. Nothing here knows about RPNT, services or subscriptions.
 import re
 
 # A real domain name: at least two dot-separated labels, each alphanumeric with
-# optional interior hyphens. Everything we store must match this — it is also what
-# keeps a stored value from breaking out of the allowlist YAML we build by
-# concatenation, so it is a security boundary as much as a shape check.
+# optional interior hyphens, at most 63 characters, and 253 for the whole name (the
+# DNS limits, which api-partenaires enforces: it answers 400 to anything longer).
+# Everything we store must match this — it is also what keeps a stored value from
+# breaking out of the allowlist YAML we build by concatenation, so it is a security
+# boundary as much as a shape check.
 _HOSTNAME_RE = re.compile(
-    r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+"
+    r"(?=.{1,253}\Z)"
+    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+    r"(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+"
 )
 
 

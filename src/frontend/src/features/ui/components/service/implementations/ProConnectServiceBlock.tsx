@@ -104,7 +104,7 @@ const getProConnectMessage = (
     };
   }
 
-  // api-partenaires refuses a PATCH carrying a domain absent from the provider's
+  // api-partenaires refuses to attach a domain absent from the provider's
   // *deployed* allowlist, so activating would fail with
   // attached_email_domain_not_allowed. Only when we actually know that allowlist
   // for this idp: an unknown one (no entry) must not block on a guess. An empty

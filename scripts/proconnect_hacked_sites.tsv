@@ -1,0 +1,22 @@
+# Sites detectes comme pirates. filter_proconnect_allowlist.py retire de la liste
+# d'autorisation les domaines de cette liste, quelle que soit leur categorie, qu'ils
+# soient deja deployes ou routed. Un "www." devant le site est ignore: le domaine
+# de messagerie est le meme.
+#
+# Une ligne par site: <site><TAB><raison>. Les lignes vides et les # sont ignores.
+mairie-touget.fr	site_broken_by_malware
+www.mairie-touget.fr	site_broken_by_malware
+gouy-servins.com	site_replaced
+hem-hardinval.net	site_replaced
+locmine.bzh	site_replaced
+mairiedecrenans.fr	site_replaced
+www.communedepuechabon.fr	site_replaced
+www.communedereveillon.fr	site_replaced
+www.estangmairie.fr	site_replaced
+www.lagarde57.fr	site_replaced
+www.locmine.bzh	site_replaced
+www.mairiedecrenans.fr	site_replaced
+www.saint-jean-saint-maurice.fr	site_replaced
+www.saintpaer76.com	site_replaced
+www.vieillevie.com	site_replaced
+www.vitry-sur-orne.com	site_replaced

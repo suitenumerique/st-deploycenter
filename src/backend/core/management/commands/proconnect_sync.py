@@ -1,8 +1,9 @@
 """
-Push the full list of authorized domains to the ProConnect api-partenaires API
-for every active ProConnect provider (idp_id).
+Attach and detach domains on the ProConnect api-partenaires API, one call each,
+until every active ProConnect provider (idp_id) serves what the DB routes to it.
 
-Useful for the initial backfill and for periodic reconciliation. Each provider is
+Useful for the initial backfill and for periodic reconciliation. The provider
+allows few calls per minute, so a large difference takes a while. Each provider is
 then rechecked, which sets or clears its services' ``out_of_sync`` flag.
 """
 
@@ -21,7 +22,7 @@ class Command(BaseCommand):
     """Reconcile ProConnect provider domains with active subscriptions."""
 
     help = (
-        "Push authorized domains to the ProConnect api-partenaires API for all "
+        "Sync authorized domains with the ProConnect api-partenaires API for all "
         "active providers (or a single one with --idp-id)."
     )
 
@@ -61,7 +62,7 @@ class Command(BaseCommand):
             if dry_run:
                 # Only the dry run reads it from here: sync_proconnect_provider()
                 # recomputes the set under the provider's lock, so that what it
-                # PATCHes matches the DB at push time.
+                # pushes matches the DB at push time.
                 self.stdout.write(f"[dry-run] {idp_id}: {routed.get(idp_id, [])}")
                 continue
 

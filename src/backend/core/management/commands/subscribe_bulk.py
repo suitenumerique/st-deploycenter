@@ -396,7 +396,7 @@ class Command(BaseCommand):
         return idp_ids
 
     def _push_proconnect(self, idp_ids):
-        """Push the full domain list once per affected ProConnect provider."""
+        """Sync the domains once per affected ProConnect provider."""
         failures = []
         client = ProConnectPartnersClient(max_retry_after=BATCH_MAX_RETRY_AFTER)
         for idp_id in sorted(idp_ids):

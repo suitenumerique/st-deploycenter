@@ -125,7 +125,7 @@ def capture_proconnect_change(sender, instance, **kwargs):
 
 
 def _sync_proconnect(instance, service):
-    """Push the provider's full domain list to api-partenaires, synchronously.
+    """Sync the provider's domains with api-partenaires, synchronously.
 
     Runs inside the request's transaction so that a push failure raises and rolls
     back the subscription change (keeping local DB and the provider in sync). The
