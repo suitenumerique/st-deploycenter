@@ -23,7 +23,7 @@ debugging.
 | Image | Dockerfile target | Base |
 |-------|-------------------|------|
 | `st-deploycenter-backend-distroless` | `runtime-distroless-prod` | `gcr.io/distroless/cc-debian13` |
-| `st-deploycenter-backend-all` | `runtime-prod` | `python:3.13-slim-trixie` |
+| `st-deploycenter-backend-all` | `runtime-prod` | `debian:trixie-slim` (uv-managed Python) |
 | `st-deploycenter-frontend-distroless` | `runtime-distroless-prod` | `gcr.io/distroless/static-debian13` |
 | `st-deploycenter-frontend-all` | `runtime-prod` | `debian:trixie-slim` |
 

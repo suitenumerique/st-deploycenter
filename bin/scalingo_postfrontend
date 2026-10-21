@@ -13,11 +13,11 @@ mv src/backend/* ./
 
 # Download the Caddy binary (the container images pin the same version, see
 # src/frontend/Dockerfile)
-CADDY_VERSION="2.11.4"
+CADDY_VERSION="2.11.7"
 # When upgrading, run
 # curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.tar.gz" | sha256sum
 # and update the checksum accordingly
-CADDY_SHA256_AMD64="527fbf917c39189a1e3b31d34fa955601680b2d5c8055d2a87b8b9588dec7bb9"
+CADDY_SHA256_AMD64="727b91701a392de6ebc5027509f548bf39979e5216340d0faed8fa5e69c84f8b"
 curl -fsSL -o /tmp/caddy.tar.gz "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.tar.gz"
 echo "${CADDY_SHA256_AMD64}  /tmp/caddy.tar.gz" | sha256sum -c -
 tar -xzf /tmp/caddy.tar.gz -C bin/ caddy
@@ -30,4 +30,4 @@ cp src/frontend/caddy/Caddyfile ./Caddyfile
 # The Scalingo Python buildpack detects the app from uv.lock (moved to the root
 # by the mv above) and requires .python-version to pick the interpreter. Keep
 # this in step with requires-python in src/backend/pyproject.toml.
-echo "3.14.7" > .python-version
+echo "3.14.8" > .python-version

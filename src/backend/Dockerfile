@@ -1,8 +1,8 @@
 # Debian pinned by digest so the base cannot move under us between builds.
-FROM debian:trixie-slim@sha256:28de0877c2189802884ccd20f15ee41c203573bd87bb6b883f5f46362d24c5c2 AS base
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS base
 
 # Bump this to force an update of the apt repositories
-ENV MIN_UPDATE_DATE="2026-09-14"
+ENV MIN_UPDATE_DATE="2026-10-21"
 
 RUN <<EOR
 apt-get update
@@ -19,9 +19,9 @@ WORKDIR /app
 # ---- uv and the managed CPython the whole build runs on ----
 FROM base AS uv
 
-# uv pinned by SHA256 digest for supply chain security (uv 0.12.13).
-# Verify with: gh attestation verify --owner astral-sh oci://ghcr.io/astral-sh/uv:0.12.13
-COPY --from=ghcr.io/astral-sh/uv@sha256:b485bd65cc2cf1c9a93b3554012c9c3778cf7b1b5fd3d3096ce9e1226c97e1e6 /uv /uvx /bin/
+# uv pinned by SHA256 digest for supply chain security (uv 0.13.4).
+# Verify with: gh attestation verify --owner astral-sh oci://ghcr.io/astral-sh/uv:0.13.4
+COPY --from=ghcr.io/astral-sh/uv@sha256:9f130421e930bfbdc563c00740466603f8723158e90297d07957c2294640262b /uv /uvx /bin/
 
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
@@ -31,7 +31,7 @@ ENV UV_PROJECT_ENVIRONMENT=/venv
 
 # Integrity is verified against SHA256 checksums embedded in the uv binary.
 # python-build-standalone statically links most C deps (ssl, ffi, sqlite, zlib).
-RUN uv python install 3.14.7
+RUN uv python install 3.14.8
 
 COPY --chmod=0755 strip-python.sh /usr/local/bin/strip-python
 
@@ -201,11 +201,11 @@ RUN strip-python
 # cc-debian13 provides glibc, libgcc and libstdc++; every other system library
 # the interpreter and the C extensions need comes from the shared-libs stage.
 # Debug with: docker run --entrypoint='' gcr.io/distroless/cc-debian13:debug-nonroot sh
-# Pinned by digest (cc-debian13:nonroot, 2026-09-23). Verify with:
+# Pinned by digest (cc-debian13:nonroot, 2026-10-21). Verify with:
 # cosign verify gcr.io/distroless/cc-debian13@sha256:<digest> \
 #   --certificate-oidc-issuer https://accounts.google.com \
 #   --certificate-identity keyless@distroless.iam.gserviceaccount.com
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:54df941ed0d06a1bd95ef5e0ce391fd8d9f94b64782dc9a60062727849ee3f97 AS runtime-distroless-prod
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:b7e81cb1af38d9345680e68bcf564d388f96304e25222030fc8c051faf8565b3 AS runtime-distroless-prod
 ARG DEPLOYCENTER_STATIC_ROOT=/data/static
 
 WORKDIR /app
