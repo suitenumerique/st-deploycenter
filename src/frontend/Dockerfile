@@ -6,6 +6,7 @@ FROM node:24.22.0-slim@sha256:91acba91b842bec0bf7ea6f5e09c644c7ccad72c4996ed9616
 ENV MIN_UPDATE_DATE="2026-10-21"
 
 RUN <<EOR
+set -eu
 apt-get update
 DEBIAN_FRONTEND="noninteractive" apt-get upgrade -y
 DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
@@ -65,6 +66,7 @@ FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20b
 ARG TARGETARCH
 
 RUN <<EOR
+set -eu
 apt-get update
 DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
     ca-certificates \

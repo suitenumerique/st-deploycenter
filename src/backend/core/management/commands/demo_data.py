@@ -74,7 +74,7 @@ class Command(BaseCommand):
         user, created = User.objects.get_or_create(
             email="user1@example.local",
             defaults={
-                "password": "user1",  # noqa: S106
+                "password": "user1",
                 "sub": "user1@example.local",
                 "full_name": "Demo User",
             },
