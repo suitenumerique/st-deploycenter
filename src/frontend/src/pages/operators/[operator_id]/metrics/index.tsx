@@ -790,8 +790,8 @@ export default function MetricsPage() {
                 tickFormatter={truncateLabel}
               />
               <Tooltip
-                formatter={(value: number) => [
-                  formatWithUnit(value),
+                formatter={(value) => [
+                  formatWithUnit(Number(value)),
                   t("metrics.chart.value_axis"),
                 ]}
                 labelFormatter={(label) => label}

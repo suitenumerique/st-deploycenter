@@ -1,10 +1,26 @@
 ARG FRONTEND_IMAGE=frontend-build-output
 
-FROM node:22-slim AS frontend-base
+FROM node:24.22.0-slim@sha256:91acba91b842bec0bf7ea6f5e09c644c7ccad72c4996ed9616d861d1c7cd60d4 AS frontend-base
+
+# Bump to force an apt refresh + security upgrade of the base OS.
+ENV MIN_UPDATE_DATE="2026-10-21"
+
+RUN <<EOR
+apt-get update
+DEBIAN_FRONTEND="noninteractive" apt-get upgrade -y
+DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
+    ca-certificates
+rm -rf /var/lib/apt/lists/*
+EOR
+
+# Node trusts its own bundled root list, which lags behind Debian's; make it
+# use the system store instead so CA updates come with the apt upgrade above.
+ENV NODE_OPTIONS=--use-openssl-ca
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 WORKDIR /home/frontend/
 
-RUN npm install -g npm@11.6.2 && npm cache clean -f
+RUN npm install -g npm@11.21.1 && npm cache clean -f
 
 # ---- Development / tooling image (see compose.yaml) ----
 # The sources are bind-mounted and npm runs as the host user.
@@ -45,15 +61,23 @@ COPY --from=frontend-build /home/frontend/out /app
 FROM ${FRONTEND_IMAGE} AS frontend-source
 
 # ---- Web server binaries ----
-FROM alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d AS tools-download
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS tools-download
 ARG TARGETARCH
 
-ARG CADDY_VERSION=2.11.4
+RUN <<EOR
+apt-get update
+DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
+    ca-certificates \
+    wget
+rm -rf /var/lib/apt/lists/*
+EOR
+
+ARG CADDY_VERSION=2.11.7
 # When upgrading, run
-# for arch in amd64 arm64; do printf "CADDY_SHA256_%s=%s\n" "$(echo $arch | tr a-z A-Z)" "$(wget -qO- "https://github.com/caddyserver/caddy/releases/download/v2.11.4/caddy_2.11.4_linux_${arch}.tar.gz" | sha256sum | cut -d' ' -f1)"; done
+# for arch in amd64 arm64; do printf "CADDY_SHA256_%s=%s\n" "$(echo $arch | tr a-z A-Z)" "$(wget -qO- "https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_linux_${arch}.tar.gz" | sha256sum | cut -d' ' -f1)"; done
 # and update checksums accordingly (also in bin/scalingo_postfrontend)
-ARG CADDY_SHA256_AMD64=527fbf917c39189a1e3b31d34fa955601680b2d5c8055d2a87b8b9588dec7bb9
-ARG CADDY_SHA256_ARM64=52d42ae12b3462097e9868da6dfed3c9648ae12edd3b3638102312af84cb6904
+ARG CADDY_SHA256_AMD64=727b91701a392de6ebc5027509f548bf39979e5216340d0faed8fa5e69c84f8b
+ARG CADDY_SHA256_ARM64=d8fc6d179a5d283028a472a5618564f6ad8a86fed513e64f032b3b0b7cc45e42
 RUN wget -qO /tmp/caddy.tar.gz "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_${TARGETARCH}.tar.gz" \
     && case "${TARGETARCH}" in \
          amd64) echo "${CADDY_SHA256_AMD64}  /tmp/caddy.tar.gz" | sha256sum -c - ;; \
@@ -65,12 +89,12 @@ RUN wget -qO /tmp/caddy.tar.gz "https://github.com/caddyserver/caddy/releases/do
     && rm /tmp/caddy.tar.gz
 
 # HTTP probe for the healthcheck: the distroless image has no shell and no curl.
-ARG LPROBE_VERSION=v0.2.0
+ARG LPROBE_VERSION=v0.2.1
 # When upgrading, run
-# for arch in amd64 arm64; do printf "LPROBE_SHA256_%s=%s\n" "$(echo $arch | tr a-z A-Z)" "$(wget -qO- "https://github.com/fivexl/lprobe/releases/download/v0.2.0/lprobe-linux-${arch}" | sha256sum | cut -d' ' -f1)"; done
+# for arch in amd64 arm64; do printf "LPROBE_SHA256_%s=%s\n" "$(echo $arch | tr a-z A-Z)" "$(wget -qO- "https://github.com/fivexl/lprobe/releases/download/v0.2.1/lprobe-linux-${arch}" | sha256sum | cut -d' ' -f1)"; done
 # and update checksums accordingly
-ARG LPROBE_SHA256_AMD64=8b55ddb15c2d8c5e1773c73c1413b26c7041e5836dabdbcef5f806ba6b9d17a2
-ARG LPROBE_SHA256_ARM64=3f31eee19167f23dc64c645021b75306956da245e5b9763c90abd12797d0a72a
+ARG LPROBE_SHA256_AMD64=6af14d9c2f71e81357d481088791c0744254877b43de337710c5200d3fc5fb48
+ARG LPROBE_SHA256_ARM64=b32dc4863c5879527a916161daff334213834d979e2cdeb2f214f72425d63c20
 RUN wget -qO /usr/bin/lprobe "https://github.com/fivexl/lprobe/releases/download/${LPROBE_VERSION}/lprobe-linux-${TARGETARCH}" \
     && case "${TARGETARCH}" in \
          amd64) echo "${LPROBE_SHA256_AMD64}  /usr/bin/lprobe" | sha256sum -c - ;; \
@@ -81,7 +105,10 @@ RUN wget -qO /usr/bin/lprobe "https://github.com/fivexl/lprobe/releases/download
 
 # ---- Production runtime, full image ----
 # Same content as the distroless target below, on a base that has a shell.
-FROM debian:trixie-slim AS runtime-prod
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS runtime-prod
+
+# Bump to force an apt refresh + security upgrade of the base OS.
+ENV MIN_UPDATE_DATE="2026-10-21"
 
 RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 
@@ -112,7 +139,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
   CMD ["/usr/bin/lprobe", "-mode=http", "-port=8080", "-endpoint=/__lbheartbeat__"]
 
 # ---- Production runtime, distroless ----
-FROM gcr.io/distroless/static-debian13:nonroot AS runtime-distroless-prod
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:516757106de35205efb70b91ba03f6f1298424a0678c603255cf2852a7000087 AS runtime-distroless-prod
 
 COPY --from=tools-download /usr/bin/caddy /usr/bin/caddy
 COPY --from=tools-download /usr/bin/lprobe /usr/bin/lprobe

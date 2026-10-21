@@ -2,7 +2,7 @@ name: st-deploycenter
 
 services:
   postgresql:
-    image: postgres:16.6
+    image: postgres:16.15@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690
     ports:
       - "8965:5432"
     healthcheck:
@@ -15,7 +15,7 @@ services:
       - env.d/development/postgresql.local
 
   redis:
-    image: redis:5
+    image: redis:7.4.11@sha256:44960b3100c48159a66d28c18b0588c193492e25f7551d60e51dd464fc3eca5b
     ports:
       - "8966:6379"
 
@@ -210,7 +210,7 @@ services:
   #   working_dir: /app
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.2.5
+    image: quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244
     volumes:
       - ./src/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
     command:
@@ -218,7 +218,8 @@ services:
       - --features=preview
       - --health-enabled=true
       - --import-realm
-      - --proxy=edge
+      - --proxy-headers=xforwarded
+      - --http-enabled=true
       - --hostname=http://localhost:8962
       - --hostname-admin=http://localhost:8962/
       - --http-port=8802
