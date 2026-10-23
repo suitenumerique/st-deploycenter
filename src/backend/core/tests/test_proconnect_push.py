@@ -24,20 +24,19 @@ from rest_framework.test import APIClient
 
 from core import factories
 from core.models import OperatorServiceConfig, ServiceSubscription
-from core.services.locks import advisory_lock_key
+from core.services import locks as lock_service
+from core.services.locks import LockTimeout, advisory_lock_key
 from core.services.proconnect import (
     BATCH_MAX_RETRY_AFTER,
-    DriftReport,
     ProConnectPartnersClient,
     ProConnectPartnersError,
-    ProviderDrift,
     check_providers_drift,
     idp_routed_domains,
+    push_domain_changes,
     redact_credentials,
     sign_request,
     subscription_idp_id,
     sync_proconnect_provider,
-    update_out_of_sync,
 )
 from core.signals import suppress_proconnect_sync
 
@@ -64,9 +63,8 @@ class FakeProvider:
     ``writes`` as ``("PUT" | "DELETE", domain)``. ``refuse`` maps a domain to the
     ``(status, error)`` its PUT is answered with; ``down`` answers every write with
     that status instead, and ``delete_fails`` does so for the DELETE of those
-    domains only. ``concurrent`` domains get attached by someone else right after
-    each write that goes through. ``lost`` domains are attached by their PUT but the
-    answer never arrives (a read timeout).
+    domains only. ``lost`` domains are attached by their PUT but the answer never
+    arrives (a read timeout).
     """
 
     def __init__(
@@ -76,11 +74,9 @@ class FakeProvider:
         refuse=None,
         down=None,
         delete_fails=(),
-        concurrent=(),
         lost=(),
     ):
         self.live = set(live)
-        self.concurrent = set(concurrent)
         self.lost = set(lost)
         self.refuse = refuse or {}
         self.down = down
@@ -114,7 +110,6 @@ class FakeProvider:
         if domain in self.live:
             return 204, {}, ""
         self.live.add(domain)
-        self.live |= self.concurrent
         if domain in self.lost:
             raise requests.exceptions.ReadTimeout("Read timed out. (read timeout=15)")
         return 201, {}, json.dumps({"domain": domain})
@@ -494,9 +489,8 @@ def _too_many_requests(method, url):
 def test_sync_command_waits_out_a_rate_limit_window():
     """The commands that walk providers accept a Retry-After a web request would not."""
     _make_proconnect_subscription(IDP, ["a.fr"])
-    # Read before the push (nothing attached), then by the recheck (a.fr is).
+    # Read before the push: nothing attached.
     _drift_get([])
-    _drift_get(["a.fr"])
     _too_many_requests(responses.PUT, f"{DOMAINS_URL}/a.fr")
     responses.add(responses.PUT, f"{DOMAINS_URL}/a.fr", status=204)
 
@@ -504,7 +498,7 @@ def test_sync_command_waits_out_a_rate_limit_window():
         call_command("proconnect_sync", stdout=StringIO())
 
     sleep.assert_called_once_with(30)
-    assert [c.request.method for c in responses.calls] == ["GET", "PUT", "PUT", "GET"]
+    assert [c.request.method for c in responses.calls] == ["GET", "PUT", "PUT"]
 
 
 @proconnect_settings
@@ -620,13 +614,30 @@ def test_sync_provider_detaches_what_the_db_no_longer_routes():
     _make_proconnect_subscription(IDP, ["b.fr", "c.fr"])
     provider = FakeProvider(live={"a.fr", "b.fr"})
 
-    result = sync_proconnect_provider(IDP)
+    result = sync_proconnect_provider(IDP, prune=True)
 
     assert result["success"] is True
     assert result["attached"] == ["c.fr"]
     assert result["detached"] == ["a.fr"]
     assert provider.writes == [("DELETE", "a.fr"), ("PUT", "c.fr")]
     assert provider.live == {"b.fr", "c.fr"}
+
+
+@proconnect_settings
+@responses.activate
+def test_sync_provider_leaves_what_the_db_does_not_route_unless_pruning():
+    """Without prune a domain nobody of ours routes is reported, never detached."""
+    _make_proconnect_subscription(IDP, ["b.fr", "c.fr"])
+    provider = FakeProvider(live={"a.fr", "b.fr"})
+
+    result = sync_proconnect_provider(IDP)
+
+    assert result["success"] is True
+    assert result["attached"] == ["c.fr"]
+    assert result["detached"] == []
+    assert result["unexpected"] == ["a.fr"]
+    assert provider.writes == [("PUT", "c.fr")]
+    assert provider.live == {"a.fr", "b.fr", "c.fr"}
 
 
 @proconnect_settings
@@ -728,7 +739,7 @@ def test_sync_provider_undoes_its_calls_when_raising():
     )
 
     with pytest.raises(ProConnectPartnersError):
-        sync_proconnect_provider(IDP, raise_on_error=True)
+        sync_proconnect_provider(IDP, raise_on_error=True, prune=True)
 
     assert provider.live == {"a.fr"}
     assert provider.writes == [
@@ -749,7 +760,7 @@ def test_sync_provider_keeps_its_calls_when_not_raising():
         live={"a.fr"}, refuse={"c.fr": (403, "attached_email_domain_not_allowed")}
     )
 
-    result = sync_proconnect_provider(IDP)
+    result = sync_proconnect_provider(IDP, prune=True)
 
     assert result["success"] is False
     assert provider.live == {"b.fr"}
@@ -1085,12 +1096,7 @@ def test_detect_drift_no_active_providers():
     assert "No active" in out.getvalue()
 
 
-# --- Service.out_of_sync (config["out_of_sync"]) ------------------------------
-
-
-def _flag_out_of_sync(service):
-    service.config = {**(service.config or {}), "out_of_sync": True}
-    service.save()
+# --- drift check: locked recheck ----------------------------------------------
 
 
 def _drift_get(live_domains, status=200):
@@ -1104,269 +1110,16 @@ def _drift_get(live_domains, status=200):
 
 @proconnect_settings
 @responses.activate
-def test_detect_drift_flags_the_service_out_of_sync():
-    """A drifted provider flags its services; other providers' services stay clean."""
-    subscription = _make_proconnect_subscription(IDP, ["a.fr"])
-    _drift_get(["a.fr", "c.fr"])
-
-    with pytest.raises(CommandError):
-        call_command("proconnect_detect_drift")
-
-    subscription.service.refresh_from_db()
-    assert subscription.service.out_of_sync is True
-    # Stored next to the rest of the service config, which it leaves alone.
-    assert subscription.service.config == {"idp_id": IDP, "out_of_sync": True}
-
-
-@proconnect_settings
-@responses.activate
-def test_detect_drift_clears_the_flag_once_in_sync():
-    """The next run clears the flag when the provider matches again."""
-    subscription = _make_proconnect_subscription(IDP, ["a.fr"])
-    _flag_out_of_sync(subscription.service)
-    _drift_get(["a.fr"])
-
-    call_command("proconnect_detect_drift")
-
-    subscription.service.refresh_from_db()
-    assert subscription.service.out_of_sync is False
-    assert subscription.service.config == {"idp_id": IDP}
-
-
-@proconnect_settings
-@responses.activate
-def test_detect_drift_keeps_the_flag_when_the_provider_is_unreadable():
-    """No reading is no evidence: the flag is neither set nor cleared."""
-    subscription = _make_proconnect_subscription(IDP, ["a.fr"])
-    _flag_out_of_sync(subscription.service)
-    _drift_get([], status=500)
-
-    with pytest.raises(CommandError):
-        call_command("proconnect_detect_drift")
-
-    subscription.service.refresh_from_db()
-    assert subscription.service.out_of_sync is True
-
-
-@proconnect_settings
-@responses.activate
-def test_detect_drift_rechecks_a_flagged_provider_without_active_subscription():
-    """Otherwise nothing could ever clear the flag of a provider left unused."""
-    subscription = _make_proconnect_subscription(IDP, ["a.fr"], is_active=False)
-    _flag_out_of_sync(subscription.service)
-    _drift_get([])
-
-    call_command("proconnect_detect_drift")
-
-    subscription.service.refresh_from_db()
-    assert subscription.service.out_of_sync is False
-
-
-@proconnect_settings
-@responses.activate
-def test_detect_drift_does_not_flag_what_a_locked_recheck_finds_in_sync():
+def test_check_providers_drift_rechecks_under_the_lock():
     """A first read can predate a commit: the recheck under the lock decides."""
-    subscription = _make_proconnect_subscription(IDP, ["a.fr"])
+    _make_proconnect_subscription(IDP, ["a.fr"])
     _drift_get(["a.fr"])
     stale = {IDP: ["stale.fr"]}
 
     report = check_providers_drift({IDP}, ProConnectPartnersClient(), routed=stale)
-    update_out_of_sync(report)
 
-    subscription.service.refresh_from_db()
-    assert subscription.service.out_of_sync is False
     assert IDP in report.in_sync
-
-
-def test_update_out_of_sync_judges_a_service_by_the_provider_it_has_now():
-    """A service moved to another provider is not flagged for the one it left."""
-    subscription = _make_proconnect_subscription(IDP, ["a.fr"])
-    service = subscription.service
-    report = DriftReport(
-        drifted={"left-provider": ProviderDrift(missing=["x.fr"], unexpected=[])},
-        in_sync={IDP: 1},
-        unreadable={},
-    )
-    # The mapping an earlier read would have given, before the move.
-    with mock.patch(
-        "core.services.proconnect.service_idp_ids",
-        return_value={service.pk: "left-provider"},
-    ):
-        update_out_of_sync(report)
-
-    service.refresh_from_db()
-    assert service.out_of_sync is False
-
-
-def test_update_out_of_sync_leaves_a_service_the_report_does_not_cover():
-    """Neither drifted nor in sync (unreadable, not checked): nothing changes."""
-    subscription = _make_proconnect_subscription(IDP, ["a.fr"])
-    _flag_out_of_sync(subscription.service)
-
-    update_out_of_sync(DriftReport(drifted={}, in_sync={}, unreadable={}))
-
-    subscription.service.refresh_from_db()
-    assert subscription.service.out_of_sync is True
-
-
-@proconnect_settings
-def test_out_of_sync_service_blocks_subscription_writes():
-    """PATCH and DELETE are refused with a 409 and change nothing."""
-    client, operator, organization, service = _proconnect_api_setup(is_superuser=True)
-    with suppress_proconnect_sync():
-        subscription = factories.ServiceSubscriptionFactory(
-            organization=organization,
-            service=service,
-            operator=operator,
-            metadata={"domains": ["commune.fr"]},
-            is_active=True,
-        )
-    _flag_out_of_sync(service)
-    url = _subscription_url(operator, organization, service)
-
-    patched = client.patch(url, {"is_active": False}, format="json")
-    deleted = client.delete(url)
-
-    assert patched.status_code == 409
-    assert deleted.status_code == 409
-    assert "synchronisé" in patched.json()["detail"]
-    subscription.refresh_from_db()
-    assert subscription.is_active is True
-
-
-@proconnect_settings
-def test_out_of_sync_service_is_exposed_to_the_frontend():
-    """The organization's service payload carries the flag."""
-    client, operator, organization, service = _proconnect_api_setup()
-    _flag_out_of_sync(service)
-
-    response = client.get(
-        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}"
-        f"/services/{service.id}/"
-    )
-
-    assert response.status_code == 200
-    assert response.json()["out_of_sync"] is True
-
-
-@proconnect_settings
-@responses.activate
-def test_sync_command_clears_the_flag_after_the_push():
-    """The repair command does not leave the services blocked until the next cron."""
-    subscription = _make_proconnect_subscription(IDP, ["a.fr"])
-    _flag_out_of_sync(subscription.service)
-    FakeProvider()
-
-    call_command("proconnect_sync", stdout=StringIO())
-
-    subscription.service.refresh_from_db()
-    assert subscription.service.out_of_sync is False
-
-
-@proconnect_settings
-@responses.activate
-def test_sync_command_flags_the_service_when_the_push_failed():
-    """A failed push leaves the provider drifted: the API must stop writing now."""
-    subscription = _make_proconnect_subscription(IDP, ["a.fr"])
-    FakeProvider(down=500)
-
-    with pytest.raises(CommandError):
-        call_command("proconnect_sync", stdout=StringIO(), stderr=StringIO())
-
-    subscription.service.refresh_from_db()
-    assert subscription.service.out_of_sync is True
-
-
-@proconnect_settings
-@responses.activate
-def test_sync_command_dry_run_does_not_recheck():
-    """Nothing was pushed, so there is nothing to recheck."""
-    subscription = _make_proconnect_subscription(IDP, ["a.fr"])
-    _flag_out_of_sync(subscription.service)
-
-    call_command("proconnect_sync", "--dry-run", stdout=StringIO())
-
-    assert len(responses.calls) == 0
-    subscription.service.refresh_from_db()
-    assert subscription.service.out_of_sync is True
-
-
-@proconnect_settings
-@responses.activate
-def test_subscribe_bulk_clears_the_flag_after_the_push():
-    """The bulk push fixes the provider, so the flag goes with it."""
-    subscription = _make_proconnect_subscription(IDP, ["a.fr"])
-    _flag_out_of_sync(subscription.service)
-    FakeProvider(live={"a.fr"})
-
-    call_command(
-        "subscribe_bulk",
-        "unsubscribe",
-        "--service",
-        str(subscription.service_id),
-        "--soft",
-        stdout=StringIO(),
-    )
-
-    subscription.service.refresh_from_db()
-    assert subscription.service.out_of_sync is False
-
-
-@proconnect_settings
-@responses.activate
-def test_subscribe_bulk_flags_the_service_when_the_push_failed():
-    """Rows written but provider not updated: flagged without waiting for the cron."""
-    subscription = _make_proconnect_subscription(IDP, ["a.fr"])
-    FakeProvider(live={"a.fr"}, down=500)
-
-    with pytest.raises(CommandError):
-        call_command(
-            "subscribe_bulk",
-            "unsubscribe",
-            "--service",
-            str(subscription.service_id),
-            "--soft",
-            stdout=StringIO(),
-            stderr=StringIO(),
-        )
-
-    subscription.service.refresh_from_db()
-    assert subscription.service.out_of_sync is True
-
-
-@proconnect_settings
-@responses.activate
-def test_saving_a_subscription_clears_the_flag_once_committed(
-    django_capture_on_commit_callbacks,
-):
-    """A push that fixes a flagged provider is rechecked after the commit."""
-    subscription = _make_proconnect_subscription(IDP, ["a.fr"])
-    _flag_out_of_sync(subscription.service)
-    FakeProvider(live={"a.fr"})
-
-    subscription.is_active = False
-    with django_capture_on_commit_callbacks(execute=True):
-        subscription.save()
-
-    subscription.service.refresh_from_db()
-    assert subscription.service.out_of_sync is False
-
-
-@proconnect_settings
-@responses.activate
-def test_saving_a_subscription_does_not_recheck_an_unflagged_provider(
-    django_capture_on_commit_callbacks,
-):
-    """The recheck is one more request: only paid when the provider is flagged."""
-    subscription = _make_proconnect_subscription(IDP, ["a.fr"])
-    FakeProvider(live={"a.fr"})
-
-    subscription.is_active = False
-    with django_capture_on_commit_callbacks(execute=True):
-        subscription.save()
-
-    # The push (a read, then the detach) and no second read.
-    assert [call.request.method for call in responses.calls] == ["GET", "DELETE"]
+    assert not report.drifted
 
 
 # --- in-transaction sync: happy path, change-detection, suppression ----------
@@ -1547,7 +1300,7 @@ def test_subscription_activation_pushes_once_on_success():
         service=service, organization=organization
     ).exists()
     assert provider.writes == [("PUT", "commune.fr")]
-    assert len(responses.calls) == 2  # the read, then the one domain
+    assert len(responses.calls) == 1  # the one domain, the provider is not read
 
 
 @proconnect_settings
@@ -1609,11 +1362,11 @@ def test_subscription_resave_without_domain_change_does_not_repush():
     endpoint = _subscription_url(operator, organization, service)
 
     client.patch(endpoint, {"is_active": True}, format="json")  # create + push
-    assert len(responses.calls) == 2
+    assert len(responses.calls) == 1
 
     # Same domains, still active -> no re-push.
     client.patch(endpoint, {"is_active": True}, format="json")
-    assert len(responses.calls) == 2
+    assert len(responses.calls) == 1
 
     # Deactivating removes the contribution -> detaches the domain.
     response = client.patch(endpoint, {"is_active": False}, format="json")
@@ -1786,6 +1539,363 @@ def test_reassigning_the_service_pushes_both_providers():
     # The new provider gains the domain, the one it left loses it.
     assert new_provider.live == {"a.fr"}
     assert old_provider.live == set()
+
+
+# --- a request only pushes the domains it changes -----------------------------
+
+
+@proconnect_settings
+@responses.activate
+def test_client_reports_whether_attach_and_detach_changed_anything():
+    """204 on a PUT means already attached, a DELETE of an absent domain is a no-op."""
+    FakeProvider(live={"a.fr"})
+    client = ProConnectPartnersClient()
+
+    assert client.attach_email_domain(IDP, "a.fr") is False
+    assert client.attach_email_domain(IDP, "b.fr") is True
+    assert client.detach_email_domain(IDP, "b.fr") is True
+    assert client.detach_email_domain(IDP, "b.fr") is False
+
+
+@proconnect_settings
+@responses.activate
+def test_request_push_leaves_the_providers_other_domains_alone():
+    """The provider also serves domains we never routed (attached by hand, or by
+    another system). Activating and deactivating touch the subscription's own
+    domain only, and never read the provider's list."""
+    provider = FakeProvider(live={"stray.fr", "other.fr"})
+    client, operator, organization, service = _proconnect_api_setup()
+    endpoint = _subscription_url(operator, organization, service)
+
+    response = client.patch(endpoint, {"is_active": True}, format="json")
+    assert response.status_code == 201
+    assert provider.writes == [("PUT", "commune.fr")]
+
+    provider.writes.clear()
+    response = client.patch(endpoint, {"is_active": False}, format="json")
+    assert response.status_code == 200
+    assert provider.writes == [("DELETE", "commune.fr")]
+    assert provider.live == {"stray.fr", "other.fr"}
+    assert [call.request.method for call in responses.calls] == ["PUT", "DELETE"]
+
+
+@proconnect_settings
+@responses.activate
+def test_deleting_a_subscription_detaches_only_its_own_domains():
+    """Deleting the row detaches its domains and leaves the provider's other ones."""
+    provider = FakeProvider(live={"a.fr", "stray.fr"})
+    subscription = _make_proconnect_subscription(IDP, ["a.fr"])
+
+    subscription.delete()
+
+    assert provider.writes == [("DELETE", "a.fr")]
+    assert provider.live == {"stray.fr"}
+
+
+@proconnect_settings
+@responses.activate
+def test_a_failed_push_does_not_detach_a_domain_the_provider_already_had():
+    """b.fr is refused: the undo reverses what the request changed, not a.fr, which
+    the provider answered 204 to (already attached)."""
+    provider = FakeProvider(
+        live={"a.fr"}, refuse={"b.fr": (403, "attached_email_domain_not_allowed")}
+    )
+    client, operator, organization, service = _proconnect_api_setup(is_superuser=True)
+
+    response = client.patch(
+        _subscription_url(operator, organization, service),
+        {"is_active": True, "metadata": {"domains": ["a.fr", "b.fr"]}},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert provider.live == {"a.fr"}
+    assert ("DELETE", "a.fr") not in provider.writes
+
+
+@proconnect_settings
+@responses.activate
+def test_a_failed_push_detaches_the_domains_it_attached():
+    """a.fr went through before b.fr was refused: the request undoes it."""
+    provider = FakeProvider(refuse={"b.fr": (403, "attached_email_domain_not_allowed")})
+    client, operator, organization, service = _proconnect_api_setup(is_superuser=True)
+
+    response = client.patch(
+        _subscription_url(operator, organization, service),
+        {"is_active": True, "metadata": {"domains": ["a.fr", "b.fr"]}},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert provider.live == set()
+
+
+@proconnect_settings
+@responses.activate
+def test_push_domain_changes_keeps_a_domain_another_subscription_routes():
+    """A domain still routed by an active subscription is never detached."""
+    _make_proconnect_subscription(IDP, ["a.fr"])
+    provider = FakeProvider(live={"a.fr", "b.fr"})
+
+    result = push_domain_changes(IDP, detach=["a.fr", "b.fr"])
+
+    assert result["detached"] == ["b.fr"]
+    assert provider.writes == [("DELETE", "b.fr")]
+
+
+@proconnect_settings
+@responses.activate
+def test_push_domain_changes_without_changes_makes_no_call():
+    """Nothing to attach or detach means no call, not even a read."""
+    result = push_domain_changes(IDP)
+
+    assert result == {"idp_id": IDP, "success": True, "attached": [], "detached": []}
+    assert len(responses.calls) == 0
+
+
+@proconnect_settings
+@responses.activate
+def test_push_domain_changes_takes_a_bounded_per_idp_lock():
+    """A request never queues behind a batch push: it asks for the lock without
+    waiting, and gives up after a few seconds."""
+    FakeProvider()
+
+    with CaptureQueriesContext(connection) as ctx:
+        push_domain_changes(IDP, attach=["a.fr"])
+
+    taken = [q for q in ctx.captured_queries if "pg_try_advisory_xact_lock" in q["sql"]]
+    assert len(taken) == 1
+    assert str(advisory_lock_key(IDP)) in taken[0]["sql"]
+    assert not [q for q in ctx.captured_queries if "pg_advisory_xact_lock" in q["sql"]]
+
+
+@proconnect_settings
+@responses.activate
+def test_a_request_gives_up_when_the_provider_lock_stays_taken():
+    """A batch push holds the lock: the request fails with a retryable 502, calls
+    nothing, and keeps nothing."""
+    client, operator, organization, service = _proconnect_api_setup()
+
+    with mock.patch("core.services.proconnect.lock_idp", side_effect=LockTimeout):
+        response = client.patch(
+            _subscription_url(operator, organization, service),
+            {"is_active": True},
+            format="json",
+        )
+
+    assert response.status_code == 502
+    assert len(responses.calls) == 0
+    assert not ServiceSubscription.objects.filter(
+        service=service, organization=organization
+    ).exists()
+
+
+def test_a_bounded_lock_wait_gives_up_after_its_timeout():
+    """A lock that stays taken raises once the timeout is over."""
+    with (
+        mock.patch.object(lock_service, "connection") as conn,
+        mock.patch.object(lock_service.time, "sleep") as sleep,
+    ):
+        conn.vendor = "postgresql"
+        cursor = conn.cursor.return_value.__enter__.return_value
+        cursor.fetchone.return_value = (False,)
+        with pytest.raises(LockTimeout):
+            lock_service.lock_idp(IDP, timeout=0)
+    assert sleep.call_count == 0
+
+
+def test_a_bounded_lock_wait_asks_again_until_it_gets_the_lock():
+    """Each refusal is followed by a pause and another try."""
+    with (
+        mock.patch.object(lock_service, "connection") as conn,
+        mock.patch.object(lock_service.time, "sleep") as sleep,
+    ):
+        conn.vendor = "postgresql"
+        cursor = conn.cursor.return_value.__enter__.return_value
+        cursor.fetchone.side_effect = [(False,), (False,), (True,)]
+        lock_service.lock_idp(IDP, timeout=5)
+    assert sleep.call_count == 2
+
+
+@proconnect_settings
+@responses.activate
+def test_reassigning_the_service_to_a_failing_provider_changes_nothing():
+    """The new provider fails first: the old one is not even called."""
+    subscription = _make_proconnect_subscription(IDP, ["a.fr"])
+    other_service = factories.ServiceFactory(
+        type="proconnect", config={"idp_id": "other-idp"}
+    )
+    old_provider = FakeProvider(live={"a.fr"})
+    FakeProvider(idp="other-idp", down=500)
+
+    subscription.service = other_service
+    with pytest.raises(ProConnectPartnersError):
+        subscription.save()
+
+    assert old_provider.live == {"a.fr"}
+    assert not old_provider.writes
+
+
+@proconnect_settings
+@responses.activate
+def test_reassigning_the_service_undoes_the_new_provider_when_the_old_one_fails():
+    """The old provider cannot detach: the domain the new one took is given back."""
+    subscription = _make_proconnect_subscription(IDP, ["a.fr"])
+    other_service = factories.ServiceFactory(
+        type="proconnect", config={"idp_id": "other-idp"}
+    )
+    FakeProvider(live={"a.fr"}, delete_fails={"a.fr"})
+    new_provider = FakeProvider(idp="other-idp")
+
+    subscription.service = other_service
+    with pytest.raises(ProConnectPartnersError):
+        subscription.save()
+
+    assert new_provider.live == set()
+
+
+# --- the explicit reconciliation commands --------------------------------------
+
+
+@proconnect_settings
+@responses.activate
+def test_sync_command_empties_a_provider_without_active_subscription():
+    """With --prune the reconciliation reads every provider of a ProConnect service
+    and detaches what no subscription routes."""
+    factories.ServiceFactory(type="proconnect", config={"idp_id": IDP})
+    provider = FakeProvider(live={"old.fr"})
+
+    call_command("proconnect_sync", "--prune", stdout=StringIO())
+
+    assert provider.live == set()
+
+
+@proconnect_settings
+@responses.activate
+def test_sync_command_reports_but_keeps_domains_nobody_routes():
+    """Without --prune a stray domain is named and left in place."""
+    _make_proconnect_subscription(IDP, ["a.fr"])
+    provider = FakeProvider(live={"stray.fr"})
+    out = StringIO()
+
+    call_command("proconnect_sync", stdout=out)
+
+    assert provider.live == {"a.fr", "stray.fr"}
+    assert provider.writes == [("PUT", "a.fr")]
+    assert "left in place" in out.getvalue()
+    assert "stray.fr" in out.getvalue()
+    assert "--prune" in out.getvalue()
+
+
+@proconnect_settings
+@responses.activate
+def test_detect_drift_reads_a_provider_without_active_subscription():
+    """A provider that lost its last subscription must still serve nothing."""
+    factories.ServiceFactory(type="proconnect", config={"idp_id": IDP})
+    FakeProvider(live={"old.fr"})
+
+    with pytest.raises(CommandError, match="drifted"):
+        call_command("proconnect_detect_drift", stdout=StringIO(), stderr=StringIO())
+
+
+@proconnect_settings
+@responses.activate
+def test_detect_drift_reports_a_drifted_provider_to_sentry():
+    """The cron's exit status is read by nobody: the drift has to reach Sentry."""
+    _make_proconnect_subscription(IDP, ["a.fr"])
+    FakeProvider(live={"stray.fr"})
+
+    with (
+        mock.patch(
+            "core.management.commands.proconnect_detect_drift.sentry_sdk"
+        ) as sentry,
+        pytest.raises(CommandError),
+    ):
+        call_command("proconnect_detect_drift", stdout=StringIO(), stderr=StringIO())
+
+    sentry.capture_message.assert_called_once()
+    args, kwargs = sentry.capture_message.call_args
+    assert IDP in args[0]
+    assert "a.fr" in args[0]
+    assert "stray.fr" in args[0]
+    assert kwargs["level"] == "error"
+
+
+# --- subscribe_bulk -------------------------------------------------------------
+
+
+def _subscribe_bulk(*args):
+    call_command("subscribe_bulk", *args, stdout=StringIO(), stderr=StringIO())
+
+
+@proconnect_settings
+@responses.activate
+def test_subscribe_bulk_deactivating_detaches_only_the_rows_domains():
+    """--soft detaches the deactivated rows' domains, without reading the provider."""
+    subscription = _make_proconnect_subscription(IDP, ["a.fr"])
+    provider = FakeProvider(live={"a.fr", "stray.fr"})
+
+    _subscribe_bulk("unsubscribe", "--service", str(subscription.service_id), "--soft")
+
+    subscription.refresh_from_db()
+    assert subscription.is_active is False
+    assert provider.writes == [("DELETE", "a.fr")]
+    assert provider.live == {"stray.fr"}
+    assert "GET" not in [call.request.method for call in responses.calls]
+
+
+@proconnect_settings
+@responses.activate
+def test_subscribe_bulk_deleting_detaches_only_the_rows_domains():
+    """Deleting the rows detaches their domains and leaves the provider's others."""
+    subscription = _make_proconnect_subscription(IDP, ["a.fr"])
+    provider = FakeProvider(live={"a.fr", "stray.fr"})
+
+    _subscribe_bulk(
+        "unsubscribe", "--service", str(subscription.service_id), "--noinput"
+    )
+
+    assert not ServiceSubscription.objects.filter(pk=subscription.pk).exists()
+    assert provider.live == {"stray.fr"}
+
+
+@proconnect_settings
+@responses.activate
+def test_subscribe_bulk_activating_attaches_the_rows_domains():
+    """Reactivating a row attaches its domains, and nothing else changes."""
+    subscription = _make_proconnect_subscription(IDP, ["a.fr"], is_active=False)
+    provider = FakeProvider(live={"stray.fr"})
+
+    _subscribe_bulk(
+        "subscribe",
+        "--service",
+        str(subscription.service_id),
+        "--operator",
+        str(subscription.operator_id),
+        "--filter",
+        f"pk={subscription.organization_id}",
+        "--update-existing",
+    )
+
+    subscription.refresh_from_db()
+    assert subscription.is_active is True
+    assert provider.writes == [("PUT", "a.fr")]
+
+
+@proconnect_settings
+@responses.activate
+def test_subscribe_bulk_failed_push_raises_and_names_the_provider():
+    """The rows are written, the command fails and says which provider to check."""
+    subscription = _make_proconnect_subscription(IDP, ["a.fr"])
+    FakeProvider(live={"a.fr"}, down=500)
+
+    with pytest.raises(CommandError, match=IDP):
+        _subscribe_bulk(
+            "unsubscribe", "--service", str(subscription.service_id), "--soft"
+        )
+
+    subscription.refresh_from_db()
+    assert subscription.is_active is False
 
 
 @override_settings(
@@ -1978,7 +2088,9 @@ def test_admin_proconnect_manual_actions_deactivate_pushes():
 @proconnect_settings
 @responses.activate
 def test_admin_proconnect_manual_actions_save_pushes_unchanged_state():
-    """A plain save pushes even though nothing changed: that is how drift is fixed."""
+    """A plain save attaches the subscription's domains again even though nothing
+    changed: that is how a provider that lost one is repaired. A domain of someone
+    else on the provider is left alone."""
     provider = FakeProvider(live={"stray.fr"})
     subscription = _make_proconnect_subscription(IDP, ["commune.fr"])
 
@@ -1987,46 +2099,8 @@ def test_admin_proconnect_manual_actions_save_pushes_unchanged_state():
     )
 
     assert response.status_code == 302
-    assert provider.writes == [("DELETE", "stray.fr"), ("PUT", "commune.fr")]
-    assert provider.live == {"commune.fr"}
-
-
-@proconnect_settings
-@responses.activate
-def test_admin_proconnect_manual_actions_save_clears_out_of_sync():
-    """Fixing the provider from the form lifts the API block."""
-    FakeProvider()
-    subscription = _make_proconnect_subscription(IDP, ["commune.fr"])
-    _flag_out_of_sync(subscription.service)
-    client = _admin_client()
-    assert (
-        "out of sync" in client.get(_manual_actions_url(subscription)).content.decode()
-    )
-
-    client.post(_manual_actions_url(subscription), {"save": "", "is_active": "on"})
-
-    subscription.service.refresh_from_db()
-    assert subscription.service.out_of_sync is False
-
-
-@proconnect_settings
-@responses.activate
-def test_admin_proconnect_manual_actions_still_drifted_keeps_the_flag():
-    """If the provider still differs after the save, the block stays and says so."""
-    # Something else attaches a domain while the form is being saved.
-    FakeProvider(concurrent={"autre.fr"})
-    subscription = _make_proconnect_subscription(IDP, ["commune.fr"])
-    _flag_out_of_sync(subscription.service)
-
-    response = _admin_client().post(
-        _manual_actions_url(subscription),
-        {"save": "", "is_active": "on"},
-        follow=True,
-    )
-
-    subscription.service.refresh_from_db()
-    assert subscription.service.out_of_sync is True
-    assert "still out of sync" in response.content.decode()
+    assert provider.writes == [("PUT", "commune.fr")]
+    assert provider.live == {"stray.fr", "commune.fr"}
 
 
 @proconnect_settings

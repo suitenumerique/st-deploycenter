@@ -47,7 +47,7 @@ from core.models import (
     ServiceSubscription,
 )
 from core.services.domainnames import is_valid_domain, normalize_domains
-from core.services.locks import lock_idp
+from core.services.locks import LockTimeout, lock_idp
 
 logger = logging.getLogger(__name__)
 
@@ -275,6 +275,16 @@ class ProConnectPartnersClient:
     def _request(
         self, method: str, path: str, body: Optional[str] = None, timeout=None
     ) -> dict:
+        response = self._call(method, path, body, timeout)
+        try:
+            return response.json()
+        except ValueError:
+            return {}
+
+    def _call(
+        self, method: str, path: str, body: Optional[str] = None, timeout=None
+    ) -> requests.Response:
+        """One signed call, retried on a short rate limit; raises on a non-2xx."""
         if not self.is_configured:
             raise ProConnectPartnersError(
                 "api-partenaires client is not configured "
@@ -333,18 +343,19 @@ class ProConnectPartnersClient:
                 domains=domains if isinstance(domains, list) else None,
             )
 
-        try:
-            return response.json()
-        except ValueError:
-            return {}
+        return response
 
     def get_configuration(self, idp_id: str) -> dict:
         """Read the current provider configuration (uid, name, domains, ...)."""
         path = f"/api/oidc_providers/{validate_idp_id(idp_id)}/configuration"
         return self._request("GET", path)
 
-    def attach_email_domain(self, idp_id: str, domain: str) -> None:
+    def attach_email_domain(self, idp_id: str, domain: str) -> bool:
         """Attach one domain to the provider. Attaching one already there is a no-op.
+
+        Returns whether the call changed anything: ``False`` when the provider
+        answered 204, that the domain was already attached. A caller undoing its
+        calls must leave those alone.
 
         A refusal of the domain itself (see ``DOMAIN_REFUSAL_ERRORS``) raises with
         ``domains == [domain]``. A ``dns_unavailable`` answer (their DNS lookup timed
@@ -354,8 +365,8 @@ class ProConnectPartnersClient:
         path = _domain_path(idp_id, domain)
         for attempt in range(ATTACH_DNS_RETRIES + 1):
             try:
-                self._request("PUT", path, timeout=self.attach_timeout)
-                return
+                response = self._call("PUT", path, timeout=self.attach_timeout)
+                return response.status_code != 204
             except ProConnectPartnersError as exc:
                 if exc.error_code == DNS_UNAVAILABLE_ERROR and attempt < (
                     ATTACH_DNS_RETRIES
@@ -370,14 +381,19 @@ class ProConnectPartnersClient:
                     exc.domains = [domain]
                 raise
 
-    def detach_email_domain(self, idp_id: str, domain: str) -> None:
-        """Detach one domain from the provider. Detaching one not there is a no-op."""
+    def detach_email_domain(self, idp_id: str, domain: str) -> bool:
+        """Detach one domain from the provider. Detaching one not there is a no-op.
+
+        Returns whether the domain was attached before the call.
+        """
         path = _domain_path(idp_id, domain)
         try:
-            self._request("DELETE", path)
+            self._call("DELETE", path)
         except ProConnectPartnersError as exc:
             if exc.error_code != DOMAIN_NOT_ATTACHED_ERROR:
                 raise
+            return False
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -668,8 +684,8 @@ def _undo(idp_id: str, client, applied: list[tuple[str, str]]) -> None:
 
     For a push whose caller rolls the DB back: left alone, the domains that did go
     through would stay on the provider without a subscription behind them. Stops
-    at the first failure (the provider is probably limiting us); the next push
-    converges the provider anyway, being computed from its live state.
+    at the first failure (the provider is probably limiting us); the drift check
+    flags what is left, and ``proconnect_sync`` converges it.
     """
     for position, (action, domain) in enumerate(reversed(applied)):
         try:
@@ -689,23 +705,69 @@ def _undo(idp_id: str, client, applied: list[tuple[str, str]]) -> None:
             return
 
 
-def sync_proconnect_provider(
-    idp_id: str, client=None, raise_on_error: bool = False
+class ProConnectBusy(ProConnectPartnersError):
+    """The provider's push lock is held by another push for too long."""
+
+
+# The longest a request waits for a provider's push lock. A batch push holds it for
+# minutes, and a request must not queue behind it.
+REQUEST_LOCK_TIMEOUT = 5
+
+
+def _apply_changes(
+    idp_id: str,
+    client,
+    detach: list[str],
+    attach: list[str],
+    applied: list[tuple[str, str]],
+) -> None:
+    """Detach then attach, one call per domain, recording the calls that changed
+    something in ``applied``.
+
+    A domain the provider refuses (see ``DOMAIN_REFUSAL_ERRORS``) does not stop
+    the others: the refusals are raised together at the end. Any other failure
+    raises at once.
+    """
+    refused: dict[str, list[str]] = defaultdict(list)
+    for domain in detach:
+        try:
+            changed = client.detach_email_domain(idp_id, domain)
+        except ProConnectPartnersError as exc:
+            # A call whose answer never came may have gone through: it is undone
+            # with the rest.
+            if exc.unknown_outcome:
+                applied.append(("detach", domain))
+            raise
+        if changed:
+            applied.append(("detach", domain))
+    for domain in attach:
+        try:
+            changed = client.attach_email_domain(idp_id, domain)
+        except ProConnectPartnersError as exc:
+            if exc.error_code not in DOMAIN_REFUSAL_ERRORS:
+                if exc.unknown_outcome:
+                    applied.append(("attach", domain))
+                raise
+            refused[exc.error_code].append(domain)
+        else:
+            if changed:
+                applied.append(("attach", domain))
+    if refused:
+        raise _refusal_error(refused)
+
+
+def _push(
+    idp_id: str, client, plan, *, raise_on_error: bool, lock_timeout=None
 ) -> dict:
-    """Make the domains of ``idp_id`` on api-partenaires match the DB.
+    """Run ``plan`` under the provider's lock and apply what it returns.
 
-    Reads the provider's live domains and attaches or detaches the difference, one
-    domain per call (detaches first). The provider rate limits its routes, so a
-    large difference takes a while.
-
-    Serialized per provider (see :func:`core.services.locks.lock_idp`). Returns a
-    result dict. By default failures are logged and never raised; the calls that
-    went through stay, and a domain the provider refuses does not stop the others.
-    With ``raise_on_error=True``, a failure raises ``ProConnectPartnersError`` (so
-    the caller can roll back its transaction) after the calls made are undone. A
+    ``plan(info)`` returns ``(detach, attach)`` and may put ``domains`` in ``info``,
+    which is echoed in the result. Failures are logged and reported to Sentry; the
+    calls that went through stay and a refused domain does not stop the others.
+    With ``raise_on_error=True`` a failure raises ``ProConnectPartnersError`` (so the
+    caller can roll back its transaction) after the calls made are undone. A
     not-configured client is always a silent skip, never an error.
     """
-    client = client or ProConnectPartnersClient()
     if not client.is_configured:
         logger.info(
             "Skipping ProConnect domains push for idp %s: api-partenaires not configured",
@@ -714,77 +776,220 @@ def sync_proconnect_provider(
         return {"idp_id": idp_id, "success": False, "skipped": True}
 
     applied: list[tuple[str, str]] = []
+    info: dict = {}
     with transaction.atomic():
-        lock_idp(idp_id)
-        domains = idp_routed_domains(idp_id)
         try:
-            drift = provider_drift(idp_id, client, domains)
-            refused: dict[str, list[str]] = defaultdict(list)
-            if drift:
-                for domain in drift.unexpected:
-                    try:
-                        client.detach_email_domain(idp_id, domain)
-                    except ProConnectPartnersError as exc:
-                        # A call whose answer never came may have gone through:
-                        # it is undone with the rest.
-                        if exc.unknown_outcome:
-                            applied.append(("detach", domain))
-                        raise
-                    applied.append(("detach", domain))
-                for domain in drift.missing:
-                    try:
-                        client.attach_email_domain(idp_id, domain)
-                    except ProConnectPartnersError as exc:
-                        if exc.error_code not in DOMAIN_REFUSAL_ERRORS:
-                            if exc.unknown_outcome:
-                                applied.append(("attach", domain))
-                            raise
-                        refused[exc.error_code].append(domain)
-                    else:
-                        applied.append(("attach", domain))
-            if refused:
-                raise _refusal_error(refused)
+            try:
+                lock_idp(idp_id, timeout=lock_timeout)
+            except LockTimeout as exc:
+                raise ProConnectBusy(
+                    f"ProConnect provider {idp_id} is busy with another push"
+                ) from exc
+            detach, attach = plan(info)
+            _apply_changes(idp_id, client, detach, attach, applied)
         except ProConnectPartnersError as e:
-            logger.error("Failed to push ProConnect domains for idp %s: %s", idp_id, e)
-            # Report it even when we swallow it: with raise_on_error=False nothing
-            # downstream ever sees this failure otherwise.
-            sentry_sdk.capture_exception(e)
+            if isinstance(e, ProConnectBusy):
+                logger.warning("%s", e)
+            else:
+                logger.error(
+                    "Failed to push ProConnect domains for idp %s: %s", idp_id, e
+                )
+                # Report it even when we swallow it: with raise_on_error=False
+                # nothing downstream ever sees this failure otherwise.
+                sentry_sdk.capture_exception(e)
             if raise_on_error:
                 _undo(idp_id, client, applied)
                 raise
-            return {
-                "idp_id": idp_id,
-                "success": False,
-                "error": str(e),
-                "domains": domains,
-            }
+            return {"idp_id": idp_id, "success": False, "error": str(e), **info}
 
-    logger.info("Pushed ProConnect domains for idp %s: %s", idp_id, domains)
     return {
         "idp_id": idp_id,
         "success": True,
-        "domains": domains,
         "attached": [domain for action, domain in applied if action == "attach"],
         "detached": [domain for action, domain in applied if action == "detach"],
+        **info,
     }
 
 
-def sync_proconnect_provider_for_subscription(
-    subscription: ServiceSubscription, raise_on_error: bool = False
-) -> Optional[dict]:
-    """Resolve a subscription's ``idp_id`` and sync its provider's domains."""
-    idp_id = subscription_idp_id(subscription)
-    if not idp_id:
-        logger.warning(
-            "ProConnect subscription %s has no idp_id; skipping domains push",
-            subscription.pk,
+def sync_proconnect_provider(
+    idp_id: str, client=None, raise_on_error: bool = False, prune: bool = False
+) -> dict:
+    """Bring the domains of ``idp_id`` on api-partenaires up to what the DB routes.
+
+    A deliberate reconciliation, for the ``proconnect_sync`` command: it reads the
+    provider's live domains and attaches the ones it lacks, one domain per call. The
+    provider rate limits its routes, so a large difference takes a while. Requests
+    never use it: they push only the domains they change, see
+    :func:`push_domain_changes`.
+
+    A domain the provider serves that no active subscription routes (attached by
+    hand, or by another system) is left in place and listed under ``unexpected`` in
+    the result, unless ``prune`` is set: then it is detached too (detaches first).
+
+    Serialized per provider (see :func:`core.services.locks.lock_idp`), waiting as
+    long as it takes. Returns a result dict; see :func:`_push` for the failures.
+    """
+    client = client or ProConnectPartnersClient()
+
+    def plan(info):
+        info["domains"] = idp_routed_domains(idp_id)
+        drift = provider_drift(idp_id, client, info["domains"])
+        if not drift:
+            return [], []
+        if prune:
+            return drift.unexpected, drift.missing
+        info["unexpected"] = drift.unexpected
+        return [], drift.missing
+
+    result = _push(idp_id, client, plan, raise_on_error=raise_on_error)
+    if result["success"]:
+        logger.info(
+            "Pushed ProConnect domains for idp %s: %s", idp_id, result["domains"]
         )
-        return None
-    return sync_proconnect_provider(idp_id, raise_on_error=raise_on_error)
+    return result
+
+
+def push_domain_changes(
+    idp_id: str,
+    attach=(),
+    detach=(),
+    client=None,
+    raise_on_error: bool = False,
+    lock_timeout=REQUEST_LOCK_TIMEOUT,
+) -> dict:
+    """Attach and detach exactly these domains on a provider, one call each.
+
+    Nothing else is read or touched: the provider's other domains stay as they are,
+    whoever attached them. A domain another active subscription still routes is
+    never detached. Returns a result dict; see :func:`_push` for the failures.
+
+    Waits at most ``lock_timeout`` seconds for the provider's lock (``None``: as
+    long as it takes), and fails with :class:`ProConnectBusy` after that.
+    """
+    attach = sorted(set(attach))
+    detach = sorted(set(detach) - set(attach))
+    if not attach and not detach:
+        return {"idp_id": idp_id, "success": True, "attached": [], "detached": []}
+
+    client = client or ProConnectPartnersClient()
+
+    def plan(_info):
+        still_routed = set(idp_routed_domains(idp_id))
+        return [d for d in detach if d not in still_routed], attach
+
+    return _push(
+        idp_id,
+        client,
+        plan,
+        raise_on_error=raise_on_error,
+        lock_timeout=lock_timeout,
+    )
+
+
+def subscription_routing(
+    subscription: ServiceSubscription,
+) -> tuple[Optional[str], frozenset[str]]:
+    """The provider a subscription routes to, and the domains it routes there.
+
+    No domain when inactive: exactly what :func:`idp_routed_domains` unions.
+    """
+    idp_id = subscription_idp_id(subscription)
+    if not subscription.is_active:
+        return idp_id, frozenset()
+    domains = normalize_domains((subscription.metadata or {}).get("domains"))
+    return idp_id, frozenset(domains)
+
+
+def routing_changes(
+    subscription: ServiceSubscription,
+    before: Optional[tuple[Optional[str], frozenset[str]]] = None,
+    *,
+    resync: bool = False,
+    deleted: bool = False,
+) -> dict[str, tuple[frozenset[str], frozenset[str]]]:
+    """``{idp_id: (attach, detach)}``: what a subscription's routing change pushes.
+
+    ``before`` is what :func:`subscription_routing` returned before the change
+    (``None``: unchanged). Only the domains that were added or removed are listed.
+    With ``resync`` every domain it routes is listed to attach, which repairs a
+    provider that lost some of them. A subscription that changed provider is
+    detached from the old one. The new provider comes first.
+    """
+    idp_id, current = subscription_routing(subscription)
+    if before is None:
+        before = (idp_id, current)
+    if deleted:
+        current = frozenset()
+    before_idp, before_domains = before
+
+    changes: dict[str, tuple[frozenset, frozenset]] = {}
+    if before_idp == idp_id:
+        if idp_id:
+            attach = current if resync else current - before_domains
+            changes[idp_id] = (attach, before_domains - current)
+        return changes
+    if idp_id:
+        changes[idp_id] = (current, frozenset())
+    if before_idp:
+        changes[before_idp] = (frozenset(), before_domains)
+    return changes
+
+
+def push_subscription_domains(
+    subscription: ServiceSubscription,
+    before: Optional[tuple[Optional[str], frozenset[str]]] = None,
+    *,
+    resync: bool = False,
+    deleted: bool = False,
+) -> None:
+    """Push the change in a subscription's routing, and nothing more.
+
+    See :func:`routing_changes` for what is pushed: only this subscription's own
+    domains, never the rest of what the provider serves.
+
+    Raises ``ProConnectPartnersError`` on failure, after undoing the calls made, so
+    that the caller's transaction rolls back with the provider as it was.
+    """
+    plan = routing_changes(subscription, before, resync=resync, deleted=deleted)
+    if not plan:
+        if not subscription_idp_id(subscription):
+            logger.warning(
+                "ProConnect subscription %s has no idp_id; skipping domains push",
+                subscription.pk,
+            )
+        return
+
+    client = ProConnectPartnersClient()
+    done: list[tuple[str, dict]] = []
+    try:
+        for target, (attach, detach) in plan.items():
+            result = push_domain_changes(
+                target, attach, detach, client=client, raise_on_error=True
+            )
+            if result["success"]:
+                done.append((target, result))
+    except ProConnectPartnersError:
+        for target, result in reversed(done):
+            _undo(
+                target,
+                client,
+                [("detach", d) for d in result["detached"]]
+                + [("attach", d) for d in result["attached"]],
+            )
+        raise
+
+
+def configured_idp_ids() -> set[str]:
+    """The ``idp_id`` of every ProConnect service, with or without a subscription."""
+    return {
+        idp_id
+        for service in Service.objects.filter(type="proconnect")
+        if (idp_id := service_idp_id(service))
+    }
 
 
 # ---------------------------------------------------------------------------
-# Drift detection and the Service.out_of_sync flag.
+# Drift detection.
 # ---------------------------------------------------------------------------
 
 
@@ -826,7 +1031,7 @@ def check_providers_drift(idp_ids, client, routed=None) -> DriftReport:
     ``routed`` is :func:`routed_domains_by_idp` when the caller already has it.
     A provider that looks drifted is checked again under its push lock before it
     is reported: a request that pushed but has not committed yet would otherwise
-    read as drift, and drift blocks writes.
+    read as drift.
     """
     routed = routed_domains_by_idp() if routed is None else routed
     drifted, in_sync, unreadable = {}, {}, {}
@@ -846,70 +1051,6 @@ def check_providers_drift(idp_ids, client, routed=None) -> DriftReport:
         else:
             in_sync[idp_id] = len(routed.get(idp_id, []))
     return DriftReport(drifted, in_sync, unreadable)
-
-
-def service_idp_ids() -> dict[int, str]:
-    """``{service id: idp_id}`` for the ProConnect services that have one."""
-    return {
-        service.pk: idp_id
-        for service in Service.objects.filter(type="proconnect")
-        if (idp_id := service_idp_id(service))
-    }
-
-
-def out_of_sync_idp_ids() -> set[str]:
-    """The providers of the services currently flagged ``out_of_sync``."""
-    flagged = set(
-        Service.objects.filter(type="proconnect", config__out_of_sync=True).values_list(
-            "pk", flat=True
-        )
-    )
-    return {
-        idp_id
-        for service_id, idp_id in service_idp_ids().items()
-        if service_id in flagged
-    }
-
-
-def update_out_of_sync(report: DriftReport) -> None:
-    """Set ``config["out_of_sync"]`` of the services from a drift report.
-
-    A service is out of sync when its provider drifted, and back in sync when the
-    provider was read and matches. A provider the report does not cover, or could
-    not read, changes nothing.
-    """
-    # Row-locked: this rewrites the whole config, which an admin may edit too. The
-    # provider is read from the locked row, so a service moved to another provider
-    # meanwhile is judged by the one it has now.
-    with transaction.atomic():
-        for service in (
-            Service.objects.select_for_update().filter(type="proconnect").order_by("pk")
-        ):
-            idp_id = service_idp_id(service)
-            if idp_id in report.drifted:
-                flagged = True
-            elif idp_id in report.in_sync:
-                flagged = False
-            else:
-                continue
-            if service.out_of_sync == flagged:
-                continue
-            config = dict(service.config or {})
-            if flagged:
-                config["out_of_sync"] = True
-            else:
-                config.pop("out_of_sync", None)
-            Service.objects.filter(pk=service.pk).update(config=config)
-
-
-def refresh_out_of_sync(idp_ids, client=None) -> Optional[DriftReport]:
-    """Recheck providers and update the flags; ``None`` when not configured."""
-    client = client or ProConnectPartnersClient()
-    if not client.is_configured:
-        return None
-    report = check_providers_drift(idp_ids, client)
-    update_out_of_sync(report)
-    return report
 
 
 # ---------------------------------------------------------------------------

@@ -335,7 +335,6 @@ class ServiceSerializer(serializers.ModelSerializer):
             "launch_date",
             "is_active",
             "hidden",
-            "out_of_sync",
             "created_at",
             "logo",
             "config",

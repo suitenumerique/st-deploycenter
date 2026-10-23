@@ -31,6 +31,12 @@ class DomainExportEntrySerializer(serializers.Serializer):
     updated_at = serializers.DateTimeField()
     organization = serializers.DictField()
     operator = serializers.DictField()
+    source = serializers.CharField(
+        help_text=(
+            "'subscription' for a domain the organization declared, 'dpnt' for a "
+            "parking page proposed from the domains it declared at DILA."
+        )
+    )
 
 
 # pylint: disable=abstract-method
@@ -47,7 +53,10 @@ class DomainListView(APIView):
     Read-only export for external jobs (parking pages, zone generation): one entry
     per domain of an *active* domains subscription, with what we serve for it
     (``website``), the DNS records to publish for it (``records``), the organization
-    data a page needs and the operator managing it.
+    data a page needs and the operator managing it. A subscription that declares no
+    domain gets a parking page (``source`` ``dpnt``) for the domains its organization
+    declared at DILA that no one else holds; the entry is computed on each call and
+    nothing is stored.
 
     Everything in one response, unfiltered and unpaginated: the point is a single
     snapshot per run, out of a single query, and a consumer that only wants the

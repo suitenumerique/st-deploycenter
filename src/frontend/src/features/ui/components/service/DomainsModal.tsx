@@ -7,6 +7,7 @@ import { errorToString } from "@/features/api/APIError";
 import { CopyableValue } from "@/features/ui/components/copy/CopyableValue";
 import { useOperatorContext } from "@/features/layouts/components/GlobalLayout";
 import { DOMAIN_RE } from "@/features/ui/components/service/domainName";
+import { isWebUrl } from "@/features/ui/components/service/ServiceHelpLink";
 import { useDomainsChecks } from "@/hooks/useQueries";
 import {
   DomainCheck,
@@ -41,6 +42,8 @@ export type DomainsModalProps = {
   instanceName: string;
   domains: string[];
   website: DomainWebsiteConfig;
+  // The service's documentation (`help_center_url`), when it has one.
+  helpCenterUrl?: string;
   onSave: (
     domains: string[],
     website: DomainWebsiteConfig,
@@ -181,11 +184,15 @@ export const DomainsModal = (props: DomainsModalProps) => {
     return MODE_LABELS.filter(
       ([mode]) =>
         !allowed || allowed.includes(mode) || SHOWN_WHEN_DISALLOWED.includes(mode)
-    ).map(([mode, key]) => ({
-      label: t(`${PREFIX}.modal.modes.${key}`),
-      value: mode,
-      disabled: !!allowed && !allowed.includes(mode),
-    }));
+    ).map(([mode, key]) => {
+      const disabled = !!allowed && !allowed.includes(mode);
+      const label = t(`${PREFIX}.modal.modes.${key}`);
+      return {
+        label: disabled ? `${label} ${t(`${PREFIX}.modal.not_allowed`)}` : label,
+        value: mode,
+        disabled,
+      };
+    });
   };
 
   const needsTarget = (mode: string) => modesWithTarget.includes(mode);
@@ -318,6 +325,18 @@ export const DomainsModal = (props: DomainsModalProps) => {
       <div className="dc__service__attribute__modal__content">
         <p className="dc__service__attribute__modal__content__help">
           {t(`${PREFIX}.modal.description`)}
+          {isWebUrl(props.helpCenterUrl) && (
+            <>
+              {" "}
+              <a
+                href={props.helpCenterUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {t(`${PREFIX}.modal.help_link`)}
+              </a>
+            </>
+          )}
         </p>
         <form id="domains-form" onSubmit={handleSubmit}>
           <div className="dc__domain-selector">

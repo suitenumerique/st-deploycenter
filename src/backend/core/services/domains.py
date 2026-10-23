@@ -17,10 +17,14 @@ IPv4 and one ``AAAA`` per IPv6) or by a ``CNAME`` record (target = fqdn), an HTT
 redirection (target = https url), or ``none``.
 
 Unrelated to ``Organization.proconnect_domains``, which is ProConnect routing data —
-a domain declared here never reaches the ProConnect allowlist.
+a domain declared here never reaches the ProConnect allowlist. The only link is one
+way and read-only: the export proposes a parking page for the domains an
+organization declared at DILA when its subscription declares none (see
+:func:`export_domains`).
 """
 
 import ipaddress
+import logging
 from urllib.parse import urlsplit, urlunsplit
 
 from django.conf import settings
@@ -28,8 +32,16 @@ from django.conf import settings
 from core.models import ServiceSubscription
 from core.services import dns as dns_service
 from core.services.domainnames import is_valid_domain, normalize_domains
+from core.services.proconnect import dila_domain_owners, domain_bucket
+
+logger = logging.getLogger(__name__)
 
 SERVICE_TYPE = "domains"
+
+# Where an exported domain comes from: declared on the subscription, or proposed
+# from the organization's DILA domains when the subscription declares none.
+SOURCE_SUBSCRIPTION = "subscription"
+SOURCE_DPNT = "dpnt"
 
 DOMAINS_KEY = "domains"
 WEBSITE_KEY = "website"
@@ -355,36 +367,106 @@ def website_records(entry: dict) -> list[dict]:
     return []
 
 
+def _dpnt_parking_domains(subscription, taken, owners) -> list[str]:
+    """The domains proposed for an organization that declared none.
+
+    Its DILA domains (``proconnect_domains["dpnt"]``) that nobody else holds and
+    that can have a parking page. Nothing is stored: this is a default applied at
+    export time, which a declaration on the subscription replaces.
+
+    - ``taken``: every domain declared on an active ``domains`` subscription.
+    - ``owners``: :func:`dila_domain_owners`. A domain several organizations declare
+      at DILA (a shared site, a generic host) belongs to none of them.
+    - A domain without an RPNT 1.2 extension has no parking page, as in
+      :func:`default_mode`.
+    """
+    return [
+        domain
+        for domain in domain_bucket(subscription.organization, "dpnt")
+        if domain not in taken
+        and owners.get(domain) == {subscription.organization_id}
+        and default_mode(domain) == MODE_PARKING
+    ]
+
+
 def export_domains() -> list[dict]:
-    """Return every domain declared on an active ``domains`` subscription.
+    """Return every domain of an active ``domains`` subscription.
 
     One entry per domain, with what we serve for it (``website``), the DNS records
-    to publish for it (``records``), its organization and the operator managing the
-    subscription. Everything, in one snapshot: a consumer that only wants the parking
-    pages filters on ``website["mode"]`` itself.
+    to publish for it (``records``), its organization, the operator managing the
+    subscription and where it comes from (``source``). Everything, in one snapshot:
+    a consumer that only wants the parking pages filters on ``website["mode"]``
+    itself.
+
+    A subscription that declares no domain gets a parking page, source ``dpnt``, for
+    each domain its organization declared at DILA and no one else holds (see
+    :func:`_dpnt_parking_domains`). One that declares any domain gets exactly those.
+    A domain that is ambiguous (several organizations, or a subscription, hold it)
+    only ever comes from the subscription that declares it.
+
+    Each domain appears once. The API refuses a second active claim on a domain, but
+    a row written around it (the admin) can hold one: the earliest claim wins.
     """
-    subscriptions = (
+    subscriptions = list(
         ServiceSubscription.objects.filter(service__type=SERVICE_TYPE, is_active=True)
         .select_related("organization", "operator")
         .order_by("organization__name", "pk")
     )
+    declared = [subscription_domains(subscription) for subscription in subscriptions]
+    taken = {domain for domains, _ in declared for domain in domains}
+    holder: dict[str, int] = {}
+    for index in sorted(
+        range(len(subscriptions)),
+        key=lambda i: (subscriptions[i].created_at, subscriptions[i].pk),
+    ):
+        for domain in declared[index][0]:
+            holder.setdefault(domain, index)
+    # One scan of every organization: only when some subscription needs it.
+    owners = None
 
     entries = []
-    for subscription in subscriptions:
-        domains, website = subscription_domains(subscription)
-        organization = _organization_payload(subscription.organization)
+    for index, (subscription, (domains, website)) in enumerate(
+        zip(subscriptions, declared, strict=True)
+    ):
+        # What every entry of this subscription shares.
+        shared = {
+            "updated_at": subscription.updated_at,
+            "organization": _organization_payload(subscription.organization),
+            "operator": {
+                "id": str(subscription.operator_id),
+                "name": subscription.operator.name,
+            },
+        }
         for domain in domains:
+            if holder[domain] != index:
+                logger.warning(
+                    "Domain %s is declared by several active subscriptions; "
+                    "subscription %s does not get it",
+                    domain,
+                    subscription.pk,
+                )
+                continue
             entries.append(
                 {
                     "domain": domain,
                     "website": export_website(website[domain]),
                     "records": website_records(website[domain]),
-                    "updated_at": subscription.updated_at,
-                    "organization": organization,
-                    "operator": {
-                        "id": str(subscription.operator_id),
-                        "name": subscription.operator.name,
-                    },
+                    **shared,
+                    "source": SOURCE_SUBSCRIPTION,
+                }
+            )
+        if domains:
+            continue
+        if owners is None:
+            owners = dila_domain_owners()
+        for domain in _dpnt_parking_domains(subscription, taken, owners):
+            entries.append(
+                {
+                    "domain": domain,
+                    "website": {"mode": MODE_PARKING},
+                    "records": [],
+                    **shared,
+                    "source": SOURCE_DPNT,
                 }
             )
     return entries

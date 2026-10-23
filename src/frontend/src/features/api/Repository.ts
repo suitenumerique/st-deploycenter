@@ -201,7 +201,6 @@ export type Service = {
   subscription: ServiceSubscription;
   logo: string | null;
   hidden?: boolean;
-  out_of_sync?: boolean;
   operator_config?: {
     display_priority?: number;
     externally_managed?: boolean;
@@ -349,6 +348,19 @@ export const updateOrganizationServiceSubscription = async (
   );
   const subscription = (await response.json()) as ServiceSubscription;
   return subscription;
+};
+
+// Superusers only: moves another operator's subscription to `operatorId`.
+export const changeOrganizationServiceSubscriptionOperator = async (
+  operatorId: string,
+  organizationId: string,
+  serviceId: string
+): Promise<ServiceSubscription> => {
+  const response = await fetchAPI(
+    `operators/${operatorId}/organizations/${organizationId}/services/${serviceId}/subscription/change-operator/`,
+    { method: "POST" }
+  );
+  return (await response.json()) as ServiceSubscription;
 };
 
 export const getOrganizationAccounts = async (

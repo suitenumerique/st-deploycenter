@@ -58,10 +58,14 @@
             "content": "Êtes-vous sûr de vouloir désactiver le service {{service}} ?"
           },
           "goto": "Accéder au service",
+          "help_center": "Documentation",
           "externally_managed": "Ce service est géré de manière externe et ne peut pas être modifié ici.",
           "managed_by": "Opéré par {{operator}}",
           "managed_by_other_operator": "Ce service est géré par un autre opérateur.",
-          "out_of_sync": "Ce FI n'est plus synchronisé avec ProConnect : les modifications sont bloquées. Contactez le support.",
+          "change_operator": "Transférer à l'opérateur {{operator}}",
+          "change_operator_modal": {
+            "content": "Êtes-vous sûr de vouloir transférer {{service}} pour {{organization}} vers l'opérateur {{operator}} ?"
+          },
           "cannot_activate": "Ce service ne peut pas être activé pour cette collectivité.",
           "population_limit_exceeded": "Ce service est uniquement disponible pour les communes de moins de 3 500 habitants ou les EPCI de moins de 15 000 habitants.",
           "missing_required_services": "Ce service ne peut pas être activé pour cette collectivité. ProConnect est requis.",
@@ -102,6 +106,8 @@
               "modal": {
                 "title": "Domaines",
                 "description": "Déclarez les noms de domaine de la collectivité et choisissez ce qui sert leur site internet.",
+                "help_link": "Consulter la documentation",
+                "not_allowed": "(Non autorisé)",
                 "no_domains": "Aucun domaine déclaré",
                 "add_placeholder": "Ajouter un domaine (ex. : exemple.fr)",
                 "add_button": "Ajouter",

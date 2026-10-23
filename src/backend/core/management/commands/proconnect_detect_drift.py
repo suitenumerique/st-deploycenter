@@ -9,20 +9,19 @@ active subscriptions resolving to that idp (:func:`idp_routed_domains`). The two
 lists must match EXACTLY; any difference is reported and the command exits
 non-zero so a cron can alert.
 
-Never writes to the provider. In the DB it only maintains ``Service.config["out_of_sync"]``:
-set on the services of a drifted provider (which blocks their subscription writes
-in the API), cleared once every provider of the service is read and in sync.
+Never writes to the provider nor to the DB.
 """
 
 from django.core.management.base import BaseCommand, CommandError
+
+import sentry_sdk
 
 from core.services.proconnect import (
     BATCH_MAX_RETRY_AFTER,
     ProConnectPartnersClient,
     check_providers_drift,
-    out_of_sync_idp_ids,
+    configured_idp_ids,
     routed_domains_by_idp,
-    update_out_of_sync,
 )
 
 
@@ -49,19 +48,17 @@ class Command(BaseCommand):
 
         # One pass over the subscriptions for every provider, not one per provider.
         routed = routed_domains_by_idp()
-        # Providers of flagged services are always rechecked, even when they no
-        # longer have an active subscription: otherwise nothing could clear the flag.
+        # A provider whose last subscription went away must still serve nothing.
         idp_ids = (
             {options["idp_id"]}
             if options["idp_id"]
-            else set(routed) | out_of_sync_idp_ids()
+            else set(routed) | configured_idp_ids()
         )
         if not idp_ids:
             self.stdout.write("No active ProConnect providers found.")
             return
 
         report = check_providers_drift(idp_ids, client, routed)
-        update_out_of_sync(report)
 
         for idp_id in sorted(idp_ids):
             if idp_id in report.in_sync:
@@ -72,6 +69,14 @@ class Command(BaseCommand):
                 )
             elif idp_id in report.drifted:
                 drift = report.drifted[idp_id]
+                # This runs on a cron, where a CommandError is only a non-zero exit
+                # nobody reads: report the drift to Sentry too.
+                sentry_sdk.capture_message(
+                    f"ProConnect provider {idp_id} drifted: "
+                    f"missing on provider: {drift.missing}; "
+                    f"unexpected on provider: {drift.unexpected}",
+                    level="error",
+                )
                 self.stderr.write(
                     self.style.WARNING(
                         f"{idp_id}: DRIFT: missing on provider: {drift.missing}; "
@@ -95,7 +100,6 @@ class Command(BaseCommand):
                 )
             if drifted:
                 problems.append(
-                    f"{len(drifted)} provider(s) out of sync: "
-                    f"{', '.join(sorted(drifted))}"
+                    f"{len(drifted)} provider(s) drifted: {', '.join(sorted(drifted))}"
                 )
             raise CommandError("; ".join(problems))

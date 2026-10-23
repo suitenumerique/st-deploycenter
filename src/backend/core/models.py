@@ -968,15 +968,6 @@ class Service(BaseModel):
     def __str__(self):
         return f"{self.name} ({self.instance_name})"
 
-    @property
-    def out_of_sync(self):
-        """ProConnect only: the provider serves a domain list that differs from ours.
-
-        Kept in ``config["out_of_sync"]`` by proconnect_detect_drift; subscription
-        writes are blocked until it is fixed.
-        """
-        return bool((self.config or {}).get("out_of_sync"))
-
     def get_logo_url(self):
         """
         Get the URL of the service logo as SVG.

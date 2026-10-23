@@ -135,6 +135,15 @@ urlpatterns = [
                                                                     name="organizationservice-subscription",
                                                                 ),
                                                                 path(
+                                                                    "change-operator/",
+                                                                    OrganizationServiceSubscriptionViewSet.as_view(
+                                                                        {
+                                                                            "post": "change_operator",
+                                                                        }
+                                                                    ),
+                                                                    name="organizationservice-subscription-change-operator",
+                                                                ),
+                                                                path(
                                                                     "entitlements/",
                                                                     include(
                                                                         organization_subscription_entitlements_router.urls

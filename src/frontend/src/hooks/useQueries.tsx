@@ -3,6 +3,7 @@ import {
   getOrganizationServices,
   getOperatorOrganizations,
   updateOrganizationServiceSubscription,
+  changeOrganizationServiceSubscriptionOperator,
   ServiceSubscriptionInput,
   getOrganizationAccounts,
   createOrganizationAccount,
@@ -107,6 +108,38 @@ export const useMutationUpdateOrganizationServiceSubscription = () => {
         organizationId,
         serviceId,
         data,
+      );
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: [
+          "operators",
+          variables.operatorId,
+          "organizations",
+          variables.organizationId,
+          "services",
+        ],
+      });
+    },
+  });
+};
+
+export const useMutationChangeOrganizationServiceSubscriptionOperator = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      operatorId,
+      organizationId,
+      serviceId,
+    }: {
+      operatorId: string;
+      organizationId: string;
+      serviceId: string;
+    }) => {
+      return changeOrganizationServiceSubscriptionOperator(
+        operatorId,
+        organizationId,
+        serviceId,
       );
     },
     onSuccess: (data, variables) => {

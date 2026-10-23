@@ -1218,6 +1218,61 @@
                 }
             }
         },
+        "/api/v1.0/operators/{operator_id}/organizations/{organization_id}/services/{service_id}/subscription/change-operator/": {
+            "post": {
+                "operationId": "operators_organizations_services_subscription_change_operator_create",
+                "description": "Reassign the subscription of another operator to the operator in the URL.\n\nSuperusers only: operators never act on a subscription they do not own.\nThe state, metadata and entitlements are left as they are, but the\nsubscription is saved (and validated) as one of the new operator: an active\none that operator may not activate (population limit) is refused with a 400,\nand the new operator's webhooks and service config now apply to it. The\nprevious operator gets no event.\n\nThe move is recorded in the organization's admin history.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "operator_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "organization_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "service_id",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9a-z-]*$"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "operators"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServiceSubscription"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/v1.0/operators/{operator_id}/organizations/{id}/": {
             "get": {
                 "operationId": "operators_organizations_retrieve",
@@ -1847,6 +1902,10 @@
                     "operator": {
                         "type": "object",
                         "additionalProperties": {}
+                    },
+                    "source": {
+                        "type": "string",
+                        "description": "'subscription' for a domain the organization declared, 'dpnt' for a parking page proposed from the domains it declared at DILA."
                     }
                 },
                 "required": [
@@ -1854,6 +1913,7 @@
                     "operator",
                     "organization",
                     "records",
+                    "source",
                     "updated_at",
                     "website"
                 ]

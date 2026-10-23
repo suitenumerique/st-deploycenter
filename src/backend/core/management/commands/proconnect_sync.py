@@ -1,10 +1,13 @@
 """
-Attach and detach domains on the ProConnect api-partenaires API, one call each,
-until every active ProConnect provider (idp_id) serves what the DB routes to it.
+Attach domains on the ProConnect api-partenaires API, one call each, until every
+ProConnect provider (idp_id) serves what the DB routes to it.
 
 Useful for the initial backfill and for periodic reconciliation. The provider
-allows few calls per minute, so a large difference takes a while. Each provider is
-then rechecked, which sets or clears its services' ``out_of_sync`` flag.
+allows few calls per minute, so a large difference takes a while.
+
+A domain the provider serves that no active subscription routes (attached by hand,
+or by another system) is reported and left in place. ``--prune`` detaches those too.
+Check what it would remove with ``proconnect_detect_drift`` first.
 """
 
 from django.core.management.base import BaseCommand, CommandError
@@ -12,7 +15,7 @@ from django.core.management.base import BaseCommand, CommandError
 from core.services.proconnect import (
     BATCH_MAX_RETRY_AFTER,
     ProConnectPartnersClient,
-    refresh_out_of_sync,
+    configured_idp_ids,
     routed_domains_by_idp,
     sync_proconnect_provider,
 )
@@ -22,8 +25,9 @@ class Command(BaseCommand):
     """Reconcile ProConnect provider domains with active subscriptions."""
 
     help = (
-        "Sync authorized domains with the ProConnect api-partenaires API for all "
-        "active providers (or a single one with --idp-id)."
+        "Attach the domains the DB routes to each ProConnect provider that lacks "
+        "them (or a single one with --idp-id). Domains no subscription routes are "
+        "left alone unless --prune is given."
     )
 
     def add_arguments(self, parser):
@@ -32,6 +36,14 @@ class Command(BaseCommand):
             dest="idp_id",
             default=None,
             help="Only sync this idp_id (OIDC provider uid).",
+        )
+        parser.add_argument(
+            "--prune",
+            action="store_true",
+            help=(
+                "Also detach the domains a provider serves that no active "
+                "subscription routes."
+            ),
         )
         parser.add_argument(
             "--dry-run",
@@ -52,7 +64,13 @@ class Command(BaseCommand):
 
         # One pass over the subscriptions for every provider, not one per provider.
         routed = routed_domains_by_idp()
-        idp_ids = {options["idp_id"]} if options["idp_id"] else set(routed)
+        # A provider without any active subscription is read too: with --prune it
+        # is emptied, without it its strays are reported.
+        idp_ids = (
+            {options["idp_id"]}
+            if options["idp_id"]
+            else set(routed) | configured_idp_ids()
+        )
         if not idp_ids:
             self.stdout.write("No active ProConnect providers found.")
             return
@@ -66,11 +84,20 @@ class Command(BaseCommand):
                 self.stdout.write(f"[dry-run] {idp_id}: {routed.get(idp_id, [])}")
                 continue
 
-            result = sync_proconnect_provider(idp_id, client=client)
+            result = sync_proconnect_provider(
+                idp_id, client=client, prune=options["prune"]
+            )
             if result.get("success"):
                 self.stdout.write(
                     self.style.SUCCESS(f"{idp_id}: OK -> {result.get('domains')}")
                 )
+                if result.get("unexpected"):
+                    self.stdout.write(
+                        self.style.WARNING(
+                            f"{idp_id}: left in place, no subscription routes "
+                            f"{result['unexpected']} (--prune detaches them)"
+                        )
+                    )
             else:
                 failures.append(idp_id)
                 self.stderr.write(
@@ -79,9 +106,6 @@ class Command(BaseCommand):
                         f"{result.get('domains')}"
                     )
                 )
-
-        if not dry_run:
-            refresh_out_of_sync(idp_ids, client)
 
         if failures:
             raise CommandError(
