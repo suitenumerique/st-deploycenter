@@ -2,6 +2,13 @@
 {% load i18n admin_urls %}
 
 {% block object-tools-items %}
+    {% if bulk_operator_subscribe_url %}
+    <li>
+        <a href="{{ bulk_operator_subscribe_url }}" class="addlink">
+            {% trans 'Bulk operator subscription' %}
+        </a>
+    </li>
+    {% endif %}
     <li>
         <a href="{{ bulk_subscribe_url }}" class="addlink">
             {% trans 'Bulk Subscribe' %}

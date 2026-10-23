@@ -1,0 +1,99 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+&rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+&rsaquo; <a href="{% url 'admin:core_servicesubscription_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+&rsaquo; {{ title }}
+</div>
+{% endblock %}
+
+{% block content %}
+<form method="post" id="bulk-operator-subscribe-form">
+    {% csrf_token %}
+
+    {% if preview %}
+        <fieldset class="module aligned">
+            <h2>{% trans 'Summary' %}</h2>
+            <div class="form-row"><div><label>{% trans 'Operator' %}:</label> {{ form.cleaned_data.operator }}</div></div>
+            <div class="form-row"><div><label>{% trans 'Service' %}:</label> {{ form.cleaned_data.service }}</div></div>
+            <div class="form-row"><div><label>{% trans 'Organizations managed by the operator' %}:</label> {{ preview.managed }}</div></div>
+            <div class="form-row"><div><label>{% trans 'To subscribe' %}:</label> <strong>{{ preview.to_create }}</strong> ({% if form.cleaned_data.is_active %}{% trans 'active' %}{% else %}{% trans 'inactive' %}{% endif %})</div></div>
+            <div class="form-row"><div><label>{% trans 'Already subscribed under this operator' %}:</label> {{ preview.owned }}</div></div>
+            <div class="form-row"><div>
+                <label>{% trans 'Subscribed under another operator' %}:</label>
+                <strong>{{ preview.elsewhere }}</strong>
+                {% if form.cleaned_data.reassign_existing %}
+                    ({% trans 'will be reassigned to this operator' %})
+                {% else %}
+                    ({% trans 'left untouched' %})
+                {% endif %}
+            </div></div>
+            <p class="help">{% trans 'Subscriptions are written one by one, webhooks included: for several thousands, prefer the subscribe_bulk command.' %}</p>
+        </fieldset>
+
+        <input type="hidden" name="operator" value="{{ form.cleaned_data.operator.pk }}">
+        <input type="hidden" name="service" value="{{ form.cleaned_data.service.pk }}">
+        {% if form.cleaned_data.is_active %}<input type="hidden" name="is_active" value="on">{% endif %}
+        {% if form.cleaned_data.reassign_existing %}<input type="hidden" name="reassign_existing" value="on">{% endif %}
+        <input type="hidden" name="metadata" value="{{ form.data.metadata }}">
+
+        <div class="submit-row">
+            <input type="submit" value="{% trans 'Confirm' %}" class="default" name="confirm">
+            <a href="{% url 'admin:core_servicesubscription_bulk_operator_subscribe' %}" class="button">{% trans 'Back' %}</a>
+        </div>
+    {% else %}
+        {% if form.errors %}
+            <p class="errornote">
+            {% if form.errors|length == 1 %}{% trans "Please correct the error below." %}{% else %}{% trans "Please correct the errors below." %}{% endif %}
+            </p>
+            {{ form.non_field_errors }}
+        {% endif %}
+
+        <fieldset class="module aligned">
+            <h2>{% trans 'Operator & Service' %}</h2>
+            {% for field in form %}
+                {% if field.name == "operator" or field.name == "service" %}
+                <div class="form-row">
+                    <div>
+                        <label for="{{ field.id_for_label }}" class="required">{{ field.label }}:</label>
+                        {{ field }}
+                        {% if field.help_text %}<p class="help">{{ field.help_text }}</p>{% endif %}
+                        {{ field.errors }}
+                    </div>
+                </div>
+                {% endif %}
+            {% endfor %}
+        </fieldset>
+
+        <fieldset class="module aligned">
+            <h2>{% trans 'Subscription Options' %}</h2>
+            {% for field in form %}
+                {% if field.name == "is_active" or field.name == "reassign_existing" or field.name == "metadata" %}
+                <div class="form-row">
+                    <div>
+                        {% if field.name == "metadata" %}
+                            <label for="{{ field.id_for_label }}">{{ field.label }}:</label>
+                            {{ field }}
+                        {% else %}
+                            {{ field }} <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        {% endif %}
+                        {% if field.help_text %}<p class="help">{{ field.help_text }}</p>{% endif %}
+                        {{ field.errors }}
+                    </div>
+                </div>
+                {% endif %}
+            {% endfor %}
+        </fieldset>
+
+        <div class="submit-row">
+            <input type="submit" value="{% trans 'Preview' %}" class="default" name="_save">
+            <a href="{% url 'admin:core_servicesubscription_changelist' %}" class="button">{% trans 'Cancel' %}</a>
+        </div>
+    {% endif %}
+</form>
+{% endblock %}

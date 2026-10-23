@@ -2,7 +2,7 @@
 
 Deploy Center has two deployment targets. Both serve the frontend with
 [Caddy](https://caddyserver.com/), from the same config file,
-[`src/frontend/caddy/Caddyfile`](../src/frontend/caddy/Caddyfile): it serves the
+[`src/caddy/Caddyfile`](../src/caddy/Caddyfile): it serves the
 Next.js static export and proxies `/api/*`, `/static/*` and the Django admin URL
 to the Django backend. The config reads its settings from the environment, so
 no templating step is needed.
@@ -11,8 +11,8 @@ no templating step is needed.
 
 The `web` container runs two processes (see `bin/scalingo_run_web`): gunicorn
 serving the backend on `localhost:8000`, and Caddy serving the frontend on
-`$PORT`. Caddy is downloaded and its config copied at build time by
-`bin/scalingo_postfrontend`.
+`$PORT`. Caddy is compiled and its config copied at build time by
+`bin/scalingo_postfrontend` (see [Caddy build](#caddy-build)).
 
 ## Container images
 
@@ -54,6 +54,59 @@ Migrations are not run by the images:
 ```shellscript
 $ docker compose --profile prod run --rm --build backend-prod python manage.py migrate
 ```
+
+## Caddy build
+
+Caddy is compiled from source in both targets, from
+[`src/caddy/`](../src/caddy), so the Go toolchain and the dependencies are ours
+to update, and the binary only holds what the Caddyfile uses. In the images it
+is the `caddy-build` stage of `src/frontend/Dockerfile`, which gets `src/caddy`
+as the named build context `caddy-src` (outside the image's own context,
+`src/frontend`): the Makefile and `compose.yaml` pass it, so a bare
+`docker build src/frontend` fails. On Scalingo, `bin/scalingo_postfrontend`
+downloads a checksummed Go toolchain into `/tmp` and runs the same script.
+
+| File | Role |
+|------|------|
+| `main.go` | The modules linked in, instead of Caddy's `modules/standard`. A module that is not imported cannot be configured. |
+| `build.sh` | The build flags (`-trimpath`, stripped binary, build tags that leave out database drivers, gRPC tracing and the standard library's HTTP/2), and the check below. |
+| `modules.txt` | The exact set of modules the binary must register. `build.sh` fails when it differs, so a dependency upgrade cannot add modules unnoticed. |
+| `go.mod`, `go.sum` | Caddy's version and every dependency, pinned and checksummed. |
+
+The binary has no HTTP/2, and the Caddyfile sets `protocols h1` and
+`versions 1.1` on the backend transport: the listener is plain HTTP, TLS ends
+upstream. A Caddyfile that enables h2 makes Caddy panic at startup.
+
+### Customizing
+
+To add a Caddy directive that needs another module, import it in `main.go`.
+To change the flags, edit `build.sh`. Then review what changed in the module set
+and update `modules.txt`:
+
+```shellscript
+$ cd src/caddy
+$ docker run --rm -v "$PWD:/src" -w /src golang:1.27.3 sh -c \
+    'sh build.sh /tmp/caddy || { /tmp/caddy list-modules | grep "^[a-z]" | LC_ALL=C sort | diff modules.txt -; }'
+```
+
+When the difference is expected, write the new list to `modules.txt` with
+`/tmp/caddy list-modules | grep '^[a-z]' | LC_ALL=C sort > modules.txt`
+inside the same container.
+
+### Upgrading
+
+- **Caddy**: `go get github.com/caddyserver/caddy/v2@vX.Y.Z && go mod tidy` in
+  `src/caddy/`, then check `modules.txt`.
+- **Go**: the `go` directive of `go.mod`, the `golang` image in
+  `src/frontend/Dockerfile` (with its digest) and `GO_VERSION` with its
+  checksum in `bin/scalingo_postfrontend` move together. `build.sh` refuses a
+  toolchain that differs from `go.mod`.
+- **Vulnerabilities**: run `govulncheck` with the tags of `build.sh` in
+  `src/caddy/`, and bump the module it names (for example
+  `go get golang.org/x/net@latest`).
+
+On Scalingo the compile adds a couple of minutes to each deploy, and nothing is
+cached between deploys.
 
 ## Web server environment variables
 

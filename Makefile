@@ -60,6 +60,9 @@ BACKEND_IMAGE_CHECK = import django, gunicorn, psycopg, ssl, sys, whitenoise, zo
 	zoneinfo.ZoneInfo('Europe/Paris'); \
 	assert Path('/data/static/admin/css/base.css').is_file(), 'collected static files are missing'; \
 	print(f'OK: Python {sys.version.split()[0]}, Django {django.__version__}, {ssl.OPENSSL_VERSION}')
+# The frontend image builds Caddy from src/caddy, which is outside its build
+# context (src/frontend): it is passed as a named context.
+FRONTEND_DOCKER_BUILD = docker build --build-context caddy-src=src/caddy
 
 
 # ==============================================================================
@@ -150,11 +153,11 @@ build-back-distroless: ## build the distroless backend production image
 .PHONY: build-back-distroless
 
 build-front-all: ## build the frontend production image (with a shell)
-	@docker build --target runtime-prod -t st-deploycenter-frontend-all src/frontend/
+	@$(FRONTEND_DOCKER_BUILD) --target runtime-prod -t st-deploycenter-frontend-all src/frontend/
 .PHONY: build-front-all
 
 build-front-distroless: ## build the distroless frontend production image
-	@docker build --target runtime-distroless-prod -t st-deploycenter-frontend-distroless src/frontend/
+	@$(FRONTEND_DOCKER_BUILD) --target runtime-distroless-prod -t st-deploycenter-frontend-distroless src/frontend/
 .PHONY: build-front-distroless
 
 build-prod-images: ## build the four production images

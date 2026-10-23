@@ -13,6 +13,7 @@ import { Icon, IconSize } from "@gouvfr-lasuite/ui-components";
 import { useModal } from "@gouvfr-lasuite/ui-components";
 import { MutateOptions } from "@tanstack/react-query";
 import { ServiceAttribute } from "../ServiceAttribute";
+import { ServiceHelpLink } from "../ServiceHelpLink";
 import { DomainsModal } from "../DomainsModal";
 
 const PREFIX = "organizations.services.types.domains";
@@ -85,6 +86,7 @@ export const DomainsServiceBlock = (props: {
               instanceName={props.service.instance_name}
               domains={domains}
               website={website}
+              helpCenterUrl={props.service.config?.help_center_url}
               onSave={handleSave}
             />
           )}
@@ -110,6 +112,7 @@ export const DomainsServiceBlock = (props: {
               {t(`${PREFIX}.warning`)}
             </div>
           )}
+          <ServiceHelpLink url={props.service.config?.help_center_url} />
         </div>
       }
     />

@@ -3,13 +3,18 @@ API endpoints for Service model.
 """
 # pylint: disable=line-too-long
 
+import logging
+
+from django.contrib.admin.models import CHANGE, LogEntry
 from django.db import transaction
 from django.db.models import Prefetch, Q
 from django.http import HttpResponse
 
 from django_filters.rest_framework import DjangoFilterBackend
+from drf_spectacular.utils import extend_schema
 from rest_framework import mixins, status, viewsets
-from rest_framework.exceptions import APIException, NotFound, PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
+from rest_framework.generics import get_object_or_404
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.settings import api_settings
@@ -23,22 +28,7 @@ from core.signals import request_user_context, suppress_proconnect_sync
 
 from .. import permissions, serializers
 
-
-class ProConnectOutOfSync(APIException):
-    """A ProConnect provider serves other domains than ours: writes are blocked."""
-
-    status_code = status.HTTP_409_CONFLICT
-    default_code = "proconnect_out_of_sync"
-    default_detail = (
-        "Ce fournisseur d'identité ProConnect n'est plus synchronisé avec "
-        "Deploy Center. Les modifications sont bloquées. Contactez le support."
-    )
-
-
-def refuse_if_out_of_sync(service):
-    """Block subscription writes on a ProConnect service flagged out of sync."""
-    if service.type == "proconnect" and service.out_of_sync:
-        raise ProConnectOutOfSync()
+logger = logging.getLogger(__name__)
 
 
 class ServiceLogoViewSet(viewsets.ReadOnlyModelViewSet):
@@ -230,8 +220,9 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
         # domains — drift. Still inside @transaction.atomic, so a push failure rolls
         # back the whole subscription + entitlement change and returns 502.
         with request_user_context(request.user), suppress_proconnect_sync():
-            queryset = self.get_queryset()
-            subscription = queryset.first()
+            # Locked, so that a transfer to another operator cannot be overwritten
+            # by this request's stale copy of the row.
+            subscription = self._locked_subscription()
 
             organization = models.Organization.objects.get(
                 id=self.kwargs["organization_id"]
@@ -241,8 +232,17 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
             ).first()
             if service is None:
                 raise NotFound("Service not found.")
-            refuse_if_out_of_sync(service)
             operator = models.Operator.objects.get(id=self.kwargs["operator_id"])
+
+            if (
+                subscription is None
+                and models.ServiceSubscription.objects.filter(
+                    organization=organization, service=service
+                ).exists()
+            ):
+                raise PermissionDenied(
+                    "This service is managed by another operator for this organization."
+                )
 
             is_configured = models.OperatorServiceConfig.objects.filter(
                 operator=operator, service=service
@@ -285,19 +285,109 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
                 serializer.instance = subscription
                 serializer.apply_entitlement_configs(subscription)
 
-        # Push last. Reuse the change-detection flag set by the pre_save signal
-        # (True on create) so an unrelated edit doesn't push needlessly.
-        if service.type == "proconnect" and getattr(
-            subscription, "_proconnect_needs_sync", True
-        ):
+        # Push last. The pre_save signal recorded what the subscription routed
+        # before, so only the domains this request added or removed are pushed, and
+        # an unrelated edit pushes nothing.
+        if service.type == "proconnect":
             from core.services.proconnect import (  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-                sync_proconnect_provider_for_subscription,
+                push_subscription_domains,
             )
 
-            sync_proconnect_provider_for_subscription(subscription, raise_on_error=True)
+            push_subscription_domains(
+                subscription, getattr(subscription, "_proconnect_before", None)
+            )
 
         status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
         return Response(self.get_serializer(subscription).data, status=status_code)
+
+    @extend_schema(request=None, responses=serializers.ServiceSubscriptionSerializer)
+    @transaction.atomic
+    def change_operator(self, request, *args, **kwargs):
+        """
+        Reassign the subscription of another operator to the operator in the URL.
+
+        Superusers only: operators never act on a subscription they do not own.
+        The state, metadata and entitlements are left as they are, but the
+        subscription is saved (and validated) as one of the new operator: an active
+        one that operator may not activate (population limit) is refused with a 400,
+        and the new operator's webhooks and service config now apply to it. The
+        previous operator gets no event.
+
+        The move is recorded in the organization's admin history.
+        """
+        # External API keys authenticate without a user.
+        if request.user is None or not request.user.is_superuser:
+            raise PermissionDenied(
+                "Only superusers can change the operator of a subscription."
+            )
+
+        operator = get_object_or_404(models.Operator, id=self.kwargs["operator_id"])
+        # Only this row is locked: the joins of select_related and of the model's
+        # ordering would lock the organization, service and operator rows too, for
+        # as long as the webhooks take.
+        subscription = (
+            models.ServiceSubscription.objects.select_for_update(of=("self",))
+            .select_related("service", "operator", "organization")
+            .filter(
+                organization=self.kwargs["organization_id"],
+                service=self.kwargs["service_id"],
+            )
+            .first()
+        )
+        if subscription is None:
+            raise NotFound("Subscription not found.")
+        previous_operator = subscription.operator
+        if previous_operator.pk == operator.pk:
+            raise ValidationError("This subscription already belongs to this operator.")
+
+        config = models.OperatorServiceConfig.objects.filter(
+            operator=operator, service=subscription.service
+        ).first()
+        if config is None:
+            raise PermissionDenied("This service is not available for this operator.")
+        if config.externally_managed:
+            raise PermissionDenied(
+                "This service is managed externally for this operator."
+            )
+
+        with request_user_context(request.user):
+            subscription.operator = operator
+            subscription.save()
+
+        self._log_operator_change(
+            request.user, subscription, previous_operator, operator
+        )
+        return Response(self.get_serializer(subscription).data)
+
+    @staticmethod
+    def _log_operator_change(user, subscription, previous_operator, operator):
+        """Record who moved a subscription, and from which operator."""
+        change_message = (
+            f"Subscription to {subscription.service.name} moved from operator "
+            f"{previous_operator.name} ({previous_operator.pk}) to "
+            f"{operator.name} ({operator.pk})"
+        )
+        logger.info(
+            "%s for org=%s by user=%s",
+            change_message,
+            subscription.organization_id,
+            user.pk,
+        )
+        LogEntry.objects.log_actions(
+            user.pk,
+            [subscription.organization],
+            CHANGE,
+            change_message=change_message,
+            single_object=True,
+        )
+
+    def _locked_subscription(self):
+        """This operator's subscription for the organization and service, row-locked.
+
+        ``None`` when there is none. Only the subscription row is locked, not the
+        rows the model's ordering joins in.
+        """
+        return self.get_queryset().select_for_update(of=("self",)).first()
 
     @transaction.atomic
     def destroy(self, request, *args, **kwargs):
@@ -308,8 +398,13 @@ class OrganizationServiceSubscriptionViewSet(viewsets.ModelViewSet):
         the deletion instead of drifting from the provider.
         """
         with request_user_context(request.user):
-            subscription = self.get_object()
-            refuse_if_out_of_sync(subscription.service)
+            # Locked, so that a transfer in flight cannot lose its row to this
+            # request's stale copy of it.
+            subscription = self._locked_subscription()
+            if subscription is None:
+                raise NotFound(
+                    "Subscription not found for this operator-organization-service triple."
+                )
             subscription.delete()
             return Response({}, status=status.HTTP_204_NO_CONTENT)
 

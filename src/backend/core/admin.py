@@ -7,6 +7,7 @@ import secrets
 from django import forms
 from django.conf import settings
 from django.contrib import admin, messages
+from django.contrib.admin.models import CHANGE, LogEntry
 from django.contrib.admin.utils import unquote
 from django.contrib.auth import admin as auth_admin
 from django.core.exceptions import PermissionDenied
@@ -18,16 +19,12 @@ from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
+import sentry_sdk
 from rest_framework import serializers as drf_serializers
 
 from . import models
 from .api.serializers import ServiceSubscriptionSerializer
-from .services.proconnect import (
-    ProConnectPartnersError,
-    refresh_out_of_sync,
-    subscription_idp_id,
-    sync_proconnect_provider_for_subscription,
-)
+from .services.proconnect import ProConnectPartnersError, push_subscription_domains
 from .signals import request_user_context, suppress_proconnect_sync
 
 
@@ -345,7 +342,24 @@ class BulkSiretImportForm(forms.ModelForm):
         return clean_siret_list(self.cleaned_data.get("siret_list", ""))
 
 
-class BulkSubscriptionImportForm(forms.Form):
+class MetadataJSONMixin:
+    """``clean_metadata`` for a form whose ``metadata`` field holds a JSON object."""
+
+    def clean_metadata(self):
+        """Validate and parse the JSON metadata."""
+        raw = self.cleaned_data.get("metadata", "").strip()
+        if not raw:
+            return {}
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise forms.ValidationError(_("Invalid JSON: {}").format(str(e))) from e
+        if not isinstance(parsed, dict):
+            raise forms.ValidationError(_("Metadata must be a JSON object."))
+        return parsed
+
+
+class BulkSubscriptionImportForm(MetadataJSONMixin, forms.Form):
     """Form for bulk creating ServiceSubscription entries from SIRET/SIREN/INSEE codes."""
 
     operator = forms.ModelChoiceField(
@@ -403,18 +417,85 @@ class BulkSubscriptionImportForm(forms.Form):
         """Clean and validate the SIRET/SIREN/INSEE list."""
         return clean_siret_list(self.cleaned_data.get("siret_list", ""))
 
-    def clean_metadata(self):
-        """Validate and parse the JSON metadata."""
-        raw = self.cleaned_data.get("metadata", "").strip()
-        if not raw:
-            return {}
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError as e:
-            raise forms.ValidationError(_("Invalid JSON: {}").format(str(e))) from e
-        if not isinstance(parsed, dict):
-            raise forms.ValidationError(_("Metadata must be a JSON object."))
-        return parsed
+
+class BulkOperatorSubscriptionForm(MetadataJSONMixin, forms.Form):
+    """Form for subscribing every organization of an operator to a service."""
+
+    operator = forms.ModelChoiceField(
+        queryset=models.Operator.objects.all(),
+        label=_("Operator"),
+        help_text=_("Every organization this operator manages is subscribed."),
+    )
+
+    service = forms.ModelChoiceField(
+        queryset=models.Service.objects.all(),
+        label=_("Service"),
+    )
+
+    is_active = forms.BooleanField(
+        required=False,
+        initial=True,
+        label=_("Active"),
+        help_text=_("Whether the created subscriptions should be active."),
+    )
+
+    reassign_existing = forms.BooleanField(
+        required=False,
+        initial=False,
+        label=_("Reassign existing subscriptions to this operator"),
+        help_text=_(
+            "A managed organization that already has a subscription to this service "
+            "under another operator gets it moved to the selected operator. Without "
+            "it, those subscriptions are left untouched."
+        ),
+    )
+
+    metadata = forms.CharField(
+        widget=forms.Textarea(attrs={"rows": 4, "cols": 50}),
+        label=_("Metadata (JSON)"),
+        help_text=_(
+            "Optional JSON metadata for all created subscriptions. Domains cannot be "
+            "set here: they are exclusive to one organization."
+        ),
+        required=False,
+        initial="{}",
+    )
+
+    def clean(self):
+        """The service must be available to the operator, and carry no shared domains.
+
+        A ProConnect subscription is only active with a domain, which cannot be given
+        in bulk: as in the API, it is created inactive. A Domains subscription needs
+        none, its parking pages default to the organization's DILA domains.
+        """
+        cleaned_data = super().clean()
+        operator = cleaned_data.get("operator")
+        service = cleaned_data.get("service")
+        if operator and service:
+            if service.type == "proconnect" and cleaned_data.get("is_active"):
+                self.add_error(
+                    "is_active",
+                    _(
+                        "A ProConnect subscription needs a domain to be active: "
+                        "create it inactive."
+                    ),
+                )
+            if not models.OperatorServiceConfig.objects.filter(
+                operator=operator, service=service
+            ).exists():
+                raise forms.ValidationError(
+                    _("This service is not available for this operator.")
+                )
+            if service.type in ("proconnect", "domains") and "domains" in (
+                cleaned_data.get("metadata") or {}
+            ):
+                self.add_error(
+                    "metadata",
+                    _(
+                        "Domains are exclusive to one organization: do not set them in bulk."
+                    ),
+                )
+        return cleaned_data
 
 
 class BulkAccountImportForm(forms.Form):
@@ -951,7 +1032,6 @@ class ServiceAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
         "entitlements_api_key_display",
-        "out_of_sync",
     )
 
     fieldsets = (
@@ -968,7 +1048,6 @@ class ServiceAdmin(admin.ModelAdmin):
                     "launch_date",
                     "is_active",
                     "hidden",
-                    "out_of_sync",
                     "required_services",
                 )
             },
@@ -1566,6 +1645,11 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
                 self.admin_site.admin_view(self.bulk_subscribe_results_view),
                 name="core_servicesubscription_bulk_subscribe_results",
             ),
+            path(
+                "bulk-operator-subscribe/",
+                self.admin_site.admin_view(self.bulk_operator_subscribe_view),
+                name="core_servicesubscription_bulk_operator_subscribe",
+            ),
         ]
         return custom_urls + urls
 
@@ -1615,11 +1699,16 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
                     serializer.is_valid(raise_exception=True)
                     serializer.save()
                     # Pushed here rather than by the signal, which skips a save
-                    # that leaves the routed domains unchanged: this form is also
-                    # how a provider that drifted from the DB gets fixed.
+                    # that leaves the routed domains unchanged: a plain save is
+                    # also how a provider that lost some of the subscription's
+                    # domains gets fixed, so it attaches all of them again. Only
+                    # this subscription's own domains are ever pushed.
                     if not skip_push:
-                        sync_proconnect_provider_for_subscription(
-                            serializer.instance, raise_on_error=True
+                        push_subscription_domains(
+                            serializer.instance,
+                            getattr(serializer.instance, "_proconnect_before", None),
+                            resync="add" not in request.POST
+                            and "remove" not in request.POST,
                         )
             except drf_serializers.ValidationError as err:
                 messages.error(
@@ -1644,21 +1733,6 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
                     if skip_push
                     else _("Saved."),
                 )
-                # Committed by now: recheck the provider, which clears the
-                # out-of-sync flag when this save fixed it.
-                idp_id = subscription_idp_id(subscription)
-                report = (
-                    refresh_out_of_sync({idp_id})
-                    if idp_id and subscription.service.out_of_sync
-                    else None
-                )
-                if report and idp_id in report.drifted:
-                    messages.warning(
-                        request,
-                        _("The provider is still out of sync: {drift}").format(
-                            drift=report.drifted[idp_id]
-                        ),
-                    )
                 return HttpResponseRedirect(request.path)
 
         context = {
@@ -1666,7 +1740,6 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
             "title": _("ProConnect manual actions"),
             "form": form,
             "domains": domains,
-            "out_of_sync": subscription.service.out_of_sync,
             "original": subscription,
             "opts": self.model._meta,  # pylint: disable=protected-access # noqa: SLF001
             "has_view_permission": self.has_view_permission(request, subscription),
@@ -1805,11 +1878,164 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
             context,
         )
 
+    def _can_bulk_operator_subscribe(self, request):
+        """The bulk operator page creates and reassigns subscriptions."""
+        return self.has_add_permission(request) and self.has_change_permission(request)
+
+    @staticmethod
+    def _operator_subscriptions(operator, service):
+        """The managed organizations of an operator, and their subscriptions to a service."""
+        organizations = models.Organization.objects.filter(
+            operator_roles__operator=operator
+        )
+        subscriptions = models.ServiceSubscription.objects.filter(
+            service=service, organization__in=organizations
+        )
+        return organizations, subscriptions
+
+    def _count_bulk_operator_subscribe(self, operator, service):
+        """What a bulk operator subscription would do, without doing it."""
+        organizations, subscriptions = self._operator_subscriptions(operator, service)
+        owned = subscriptions.filter(operator=operator).count()
+        elsewhere = subscriptions.exclude(operator=operator).count()
+        return {
+            "managed": organizations.count(),
+            "to_create": organizations.count() - owned - elsewhere,
+            "owned": owned,
+            "elsewhere": elsewhere,
+        }
+
+    def _write_subscription(self, subscription, errors):
+        """Save one row in its own transaction; report a refusal instead of raising."""
+        try:
+            with transaction.atomic():
+                subscription.save()
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            # One bad row must not abort the batch: it is listed in the result.
+            sentry_sdk.capture_exception(exc)
+            errors.append(f"{subscription.organization.name}: {exc}")
+            return False
+        return True
+
+    def _process_bulk_operator_subscribe(self, form, user):
+        """Create the missing subscriptions of an operator's organizations.
+
+        Rows are written one by one, in their own transaction, so that the default
+        entitlements and the webhooks fire as for any subscription and one refused row
+        (a population limit, say) does not stop the others.
+        """
+        operator = form.cleaned_data["operator"]
+        service = form.cleaned_data["service"]
+        organizations, subscriptions = self._operator_subscriptions(operator, service)
+        counts = self._count_bulk_operator_subscribe(operator, service)
+        created = reassigned = 0
+        errors = []
+
+        with request_user_context(user):
+            missing = organizations.exclude(service_subscriptions__service=service)
+            for organization in missing.iterator(chunk_size=500):
+                subscription = models.ServiceSubscription(
+                    organization=organization,
+                    operator=operator,
+                    service=service,
+                    is_active=form.cleaned_data["is_active"],
+                    metadata=dict(form.cleaned_data["metadata"]),
+                )
+                created += self._write_subscription(subscription, errors)
+
+            if form.cleaned_data["reassign_existing"]:
+                elsewhere = subscriptions.exclude(operator=operator).select_related(
+                    "organization", "service"
+                )
+                for subscription in elsewhere.iterator(chunk_size=500):
+                    subscription.operator = operator
+                    reassigned += self._write_subscription(subscription, errors)
+
+        # What stays with another operator: all of it, or the rows that were refused.
+        left = counts["elsewhere"] - reassigned
+        LogEntry.objects.log_actions(
+            user.pk,
+            [operator],
+            CHANGE,
+            change_message=(
+                f"Bulk subscription to {service.name}: {created} created, "
+                f"{reassigned} reassigned, {len(errors)} error(s)"
+            ),
+            single_object=True,
+        )
+        return {
+            "created": created,
+            "reassigned": reassigned,
+            "owned": counts["owned"],
+            "left": left,
+            "errors": errors,
+        }
+
+    def bulk_operator_subscribe_view(self, request):
+        """Subscribe every organization of an operator to a service.
+
+        A first submit shows what would be done, and nothing is written until the
+        result is confirmed: a reassignment moves other operators' subscriptions.
+        """
+        if not self._can_bulk_operator_subscribe(request):
+            raise PermissionDenied
+
+        preview = None
+        if request.method == "POST":
+            form = BulkOperatorSubscriptionForm(request.POST)
+            if form.is_valid():
+                if request.POST.get("confirm"):
+                    results = self._process_bulk_operator_subscribe(form, request.user)
+                    messages.success(
+                        request,
+                        _(
+                            "Bulk operator subscription completed: {created} created, "
+                            "{reassigned} reassigned, {owned} already belonged to this "
+                            "operator, {left} left with another operator."
+                        ).format(**results),
+                    )
+                    for error in results["errors"][:20]:
+                        messages.error(request, error)
+                    if len(results["errors"]) > 20:
+                        messages.error(
+                            request,
+                            _("{count} more error(s), see the logs.").format(
+                                count=len(results["errors"]) - 20
+                            ),
+                        )
+                    return HttpResponseRedirect(
+                        reverse("admin:core_servicesubscription_changelist")
+                    )
+                preview = self._count_bulk_operator_subscribe(
+                    form.cleaned_data["operator"], form.cleaned_data["service"]
+                )
+        else:
+            form = BulkOperatorSubscriptionForm()
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": _("Bulk operator subscription"),
+            "form": form,
+            "preview": preview,
+            "opts": self.model._meta,  # pylint: disable=protected-access # noqa: SLF001
+            "has_view_permission": self.has_view_permission(request),
+        }
+        return render(
+            request,
+            "admin/core/servicesubscription/bulk_operator_subscribe.html",
+            context,
+        )
+
     def changelist_view(self, request, extra_context=None):
-        """Add bulk subscribe link to changelist view."""
+        """Add the bulk subscribe links to changelist view."""
         extra_context = extra_context or {}
         extra_context["bulk_subscribe_url"] = reverse(
             "admin:core_servicesubscription_bulk_subscribe"
+        )
+        extra_context["bulk_operator_subscribe_url"] = (
+            reverse("admin:core_servicesubscription_bulk_operator_subscribe")
+            if self._can_bulk_operator_subscribe(request)
+            else None
         )
         return super().changelist_view(request, extra_context)
 

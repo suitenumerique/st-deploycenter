@@ -239,8 +239,8 @@ def _create_service_subscriptions(operator, service_id, org_ids, valid_services)
     # here because this only seeds subscription rows, with no metadata["domains"] to
     # contribute; the provider is reconciled by the `proconnect_sync` command, which
     # is NOT currently scheduled in cron.json. If this ever creates *active*
-    # proconnect subscriptions with routed domains, call sync_proconnect_provider()
-    # for the affected idps afterwards or the provider will silently drift.
+    # proconnect subscriptions with routed domains, call push_domain_changes() for
+    # the domains it adds afterwards or the provider will silently drift.
     ServiceSubscription.objects.bulk_create(new_sub_objects, ignore_conflicts=True)
 
     count_after = ServiceSubscription.objects.filter(

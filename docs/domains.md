@@ -14,7 +14,9 @@ which is what the modal tells the user and what the check below compares against
 
 It is unrelated to the ProConnect card, which routes domains to an identity
 provider ([docs/proconnect_domains.md](proconnect_domains.md)). Nothing declared
-here reaches the ProConnect allowlist.
+here reaches the ProConnect allowlist. The only link goes the other way and is
+read-only: the export proposes a parking page for the domains an organization
+declared at DILA when it declares none itself (see below).
 
 ## Storage
 
@@ -189,11 +191,15 @@ curl -H "Authorization: Bearer $DOMAINS_API_KEY" \
         "adresse_messagerie": "mairie@ville-x.fr", "telephone": "…",
         "site_internet": "…", "service_public_url": "…"
       },
-      "operator": {"id": "…", "name": "Opérateur"}
+      "operator": {"id": "…", "name": "Opérateur"},
+      "source": "subscription"
     }
   ]
 }
 ```
+
+`source` says where the domain comes from: `subscription` for a domain the
+organization declared, `dpnt` for a default described below.
 
 Two fields describe the domain, and they answer different questions:
 
@@ -215,7 +221,32 @@ the records, not on the mode.
 - Every declared domain is returned, unfiltered: a job that only wants the parking
   pages keeps the entries whose `website.mode` is `parking`. There is no query
   parameter, and an unknown one is ignored rather than refused.
+- Each domain appears **once**. The API refuses a second active claim on a domain,
+  but a row written around it (the admin) can hold one: the earliest claim wins and
+  the others are logged and left out.
+
 - The response is not paginated: one snapshot per run, one query. `count` is simply
   `len(results)` — despite the shape, there is no `next` page to follow.
 - Access requires `Authorization: Bearer <key>` matching the `DOMAINS_API_KEY`
   setting. When that setting is empty the route is closed to everyone.
+
+### Default parking pages
+
+A subscription that declares **no** domain (a bulk subscription, for instance) still
+gets a parking page for the domains its organization declared at DILA, the `dpnt`
+bucket of `Organization.proconnect_domains`. These entries have `source: "dpnt"` and
+`website: {"mode": "parking"}`. They are computed on each call: nothing is stored on
+the subscription, so the default follows the DILA data and disappears the moment the
+organization declares a domain of its own (it then gets exactly those).
+
+Only a domain that is unambiguous is proposed. A DILA domain is left out when:
+
+- several organizations declare it at DILA (a shared site, a generic host);
+- any active subscription declares it (it is then exported once, as a declared
+  domain, for that subscription): an ambiguous domain only ever comes from the
+  subscription that declares it;
+- it has no RPNT 1.2 extension, since such a domain cannot have a parking page.
+
+The default says what we would serve, not that the domain is ours to serve: a job
+that creates zones or pages should still require the domain to be delegated to the
+ANCT nameservers (see the check above).

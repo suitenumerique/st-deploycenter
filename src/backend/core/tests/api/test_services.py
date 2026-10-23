@@ -4,10 +4,18 @@ Test users API endpoints in the deploycenter core app.
 
 # pylint: disable=too-many-lines
 
+from unittest import mock
+
+from django.contrib.admin.models import LogEntry
+from django.db import connection
+from django.test.utils import CaptureQueriesContext, override_settings
+
 import pytest
+import responses
 from rest_framework.test import APIClient
 
 from core import factories, models
+from core.signals import suppress_proconnect_sync
 
 pytestmark = pytest.mark.django_db
 
@@ -1302,3 +1310,348 @@ def test_api_organization_service_subscription_no_longer_configured():
     assert response.status_code == 403
     subscription.refresh_from_db()
     assert subscription.is_active is False
+
+
+def _change_operator_setup(
+    is_superuser,
+    configured=True,
+    service_kwargs=None,
+    organization_kwargs=None,
+    operator2_kwargs=None,
+    config1_kwargs=None,
+    config2_kwargs=None,
+    metadata=None,
+):
+    """A user on operator1, an organization managed by both, operator2's subscription."""
+    user = factories.UserFactory(is_superuser=is_superuser)
+    client = APIClient()
+    client.force_login(user)
+    operator1 = factories.OperatorFactory()
+    operator2 = factories.OperatorFactory(**(operator2_kwargs or {}))
+    factories.UserOperatorRoleFactory(user=user, operator=operator1)
+    organization = factories.OrganizationFactory(**(organization_kwargs or {}))
+    for operator in (operator1, operator2):
+        factories.OperatorOrganizationRoleFactory(
+            operator=operator, organization=organization
+        )
+    service = factories.ServiceFactory(**(service_kwargs or {}))
+    if configured:
+        factories.OperatorServiceConfigFactory(
+            operator=operator1, service=service, **(config1_kwargs or {})
+        )
+    factories.OperatorServiceConfigFactory(
+        operator=operator2, service=service, **(config2_kwargs or {})
+    )
+    # The setup is not what is tested: no push to a ProConnect provider.
+    with suppress_proconnect_sync():
+        subscription = factories.ServiceSubscriptionFactory(
+            organization=organization,
+            service=service,
+            operator=operator2,
+            is_active=True,
+            metadata=metadata if metadata is not None else {"foo": "bar"},
+        )
+    url = (
+        f"/api/v1.0/operators/{operator1.id}/organizations/{organization.id}"
+        f"/services/{service.id}/subscription/change-operator/"
+    )
+    return client, operator1, subscription, url
+
+
+def test_api_organization_service_subscription_change_operator_superuser():
+    """A superuser moves another operator's subscription to the operator in the URL."""
+    client, operator1, subscription, url = _change_operator_setup(is_superuser=True)
+
+    response = client.post(url)
+
+    assert response.status_code == 200
+    assert response.json()["is_active"] is True
+    subscription.refresh_from_db()
+    assert subscription.operator == operator1
+    assert subscription.is_active is True
+    assert subscription.metadata == {"foo": "bar"}
+
+
+def test_api_organization_service_subscription_change_operator_not_superuser():
+    """Operator admins cannot change a subscription's operator."""
+    client, _operator1, subscription, url = _change_operator_setup(is_superuser=False)
+    previous_operator = subscription.operator
+
+    response = client.post(url)
+
+    assert response.status_code == 403
+    subscription.refresh_from_db()
+    assert subscription.operator == previous_operator
+
+
+def test_api_organization_service_subscription_change_operator_anonymous():
+    """Anonymous users cannot change a subscription's operator."""
+    _client, _operator1, subscription, url = _change_operator_setup(is_superuser=True)
+    previous_operator = subscription.operator
+
+    response = APIClient().post(url)
+
+    assert response.status_code == 401
+    subscription.refresh_from_db()
+    assert subscription.operator == previous_operator
+
+
+def test_api_organization_service_subscription_change_operator_api_key():
+    """An operator API key cannot change a subscription's operator."""
+    _client, operator1, subscription, url = _change_operator_setup(is_superuser=True)
+    previous_operator = subscription.operator
+    operator1.external_management_api_key = "secret"
+    operator1.save()
+
+    response = APIClient().post(url, HTTP_AUTHORIZATION="Bearer secret")
+
+    assert response.status_code == 403
+    subscription.refresh_from_db()
+    assert subscription.operator == previous_operator
+
+
+def test_api_organization_service_subscription_change_operator_already_owned():
+    """Moving a subscription to the operator that already has it is refused."""
+    client, operator1, subscription, url = _change_operator_setup(is_superuser=True)
+    subscription.operator = operator1
+    subscription.save()
+
+    response = client.post(url)
+
+    assert response.status_code == 400
+
+
+def test_api_organization_service_subscription_change_operator_no_subscription():
+    """There is nothing to move without a subscription."""
+    client, _operator1, subscription, url = _change_operator_setup(is_superuser=True)
+    subscription.delete()
+
+    response = client.post(url)
+
+    assert response.status_code == 404
+
+
+def test_api_organization_service_subscription_change_operator_unconfigured_service():
+    """The service must be available for the new operator."""
+    client, _operator1, subscription, url = _change_operator_setup(
+        is_superuser=True, configured=False
+    )
+    previous_operator = subscription.operator
+
+    response = client.post(url)
+
+    assert response.status_code == 403
+    subscription.refresh_from_db()
+    assert subscription.operator == previous_operator
+
+
+def test_api_organization_service_subscription_change_operator_proconnect_makes_no_call():
+    """Moving a ProConnect subscription changes neither the domains it routes nor the
+    provider, so nothing is sent to api-partenaires."""
+    client, operator1, subscription, url = _change_operator_setup(
+        is_superuser=True,
+        service_kwargs={"type": "proconnect", "config": {"idp_id": "some-idp"}},
+        metadata={"domains": ["commune.fr"]},
+    )
+
+    with (
+        override_settings(
+            PROCONNECT_API_PARTENAIRES_URL="https://api-partenaires.test",
+            PROCONNECT_API_PARTENAIRES_SECRET="secret",
+        ),
+        responses.RequestsMock() as provider,
+    ):
+        response = client.post(url)
+
+    assert response.status_code == 200
+    assert len(provider.calls) == 0
+    subscription.refresh_from_db()
+    assert subscription.operator == operator1
+    assert subscription.metadata == {"domains": ["commune.fr"]}
+
+
+def test_api_organization_service_subscription_change_operator_keeps_entitlements():
+    """The entitlements, edited or not, are the ones the subscription had."""
+    client, operator1, subscription, url = _change_operator_setup(
+        is_superuser=True, service_kwargs={"type": "drive"}
+    )
+    entitlement = subscription.entitlements.first()
+    entitlement.config = {"max_storage": 42}
+    entitlement.save()
+    before = {(e.pk, str(e.config)) for e in subscription.entitlements.all()}
+    assert len(before) == 2
+
+    response = client.post(url)
+
+    assert response.status_code == 200
+    subscription.refresh_from_db()
+    assert subscription.operator == operator1
+    assert {(e.pk, str(e.config)) for e in subscription.entitlements.all()} == before
+
+
+def test_api_organization_service_subscription_change_operator_webhooks_follow_new_operator():
+    """subscription.updated goes to the new operator's endpoints only."""
+    client, operator1, subscription, url = _change_operator_setup(
+        is_superuser=True,
+        config1_kwargs={"config_override": {"webhooks": [{"url": "https://new.hook"}]}},
+        config2_kwargs={"config_override": {"webhooks": [{"url": "https://old.hook"}]}},
+    )
+
+    with mock.patch("core.signals.WebhookClient") as webhook_client:
+        response = client.post(url)
+
+    assert response.status_code == 200
+    subscription.refresh_from_db()
+    assert subscription.operator == operator1
+    webhook_client.assert_called_once_with([{"url": "https://new.hook"}])
+    send = webhook_client.return_value.send_webhooks
+    assert send.call_count == 1
+    assert send.call_args.args[0] == "subscription.updated"
+
+
+def test_api_organization_service_subscription_change_operator_population_limit():
+    """The move is validated as the new operator's: an active subscription it may not
+    activate is refused, and stays where it is."""
+    client, _operator1, subscription, url = _change_operator_setup(
+        is_superuser=True,
+        service_kwargs={"config": {"population_limits": {"commune": 1000}}},
+        organization_kwargs={
+            "type": "commune",
+            "population": 5000,
+            "epci_population": None,
+        },
+        operator2_kwargs={"config": {"can_bypass_population_limits": True}},
+    )
+    previous_operator = subscription.operator
+
+    response = client.post(url)
+
+    assert response.status_code == 400
+    assert "population_limit_exceeded" in str(response.json())
+    subscription.refresh_from_db()
+    assert subscription.operator == previous_operator
+
+
+def test_api_organization_service_subscription_change_operator_externally_managed():
+    """An operator that manages the service in its own system gets nothing moved in."""
+    client, _operator1, subscription, url = _change_operator_setup(
+        is_superuser=True, config1_kwargs={"externally_managed": True}
+    )
+    previous_operator = subscription.operator
+
+    response = client.post(url)
+
+    assert response.status_code == 403
+    subscription.refresh_from_db()
+    assert subscription.operator == previous_operator
+
+
+def test_api_organization_service_subscription_change_operator_hyphenless_uuid():
+    """The owner's id written without hyphens is still the owner."""
+    client, operator1, subscription, url = _change_operator_setup(is_superuser=True)
+    subscription.operator = operator1
+    subscription.save()
+
+    response = client.post(url.replace(str(operator1.id), operator1.id.hex))
+
+    assert response.status_code == 400
+    subscription.refresh_from_db()
+    assert subscription.operator == operator1
+
+
+def test_api_organization_service_subscription_change_operator_unknown_operator():
+    """An operator that does not exist is not a target."""
+    client, operator1, _subscription, url = _change_operator_setup(is_superuser=True)
+
+    response = client.post(
+        url.replace(str(operator1.id), "3f2b9d10-6c2e-4e0a-9d7a-0a5c1d6a7b11")
+    )
+
+    assert response.status_code in (403, 404)
+
+
+def test_api_organization_service_subscription_change_operator_is_logged():
+    """Who moved the subscription, and from which operator, is in the history."""
+    client, operator1, subscription, url = _change_operator_setup(is_superuser=True)
+    previous_operator = subscription.operator
+
+    response = client.post(url)
+
+    assert response.status_code == 200
+    entry = LogEntry.objects.get(object_id=str(subscription.organization_id))
+    assert entry.user.is_superuser
+    assert previous_operator.name in entry.change_message
+    assert str(previous_operator.pk) in entry.change_message
+    assert operator1.name in entry.change_message
+
+
+def test_api_organization_service_subscription_change_operator_locks_only_its_row():
+    """FOR UPDATE would otherwise also lock the organization, service and operator
+    rows for as long as the webhooks take."""
+    client, _operator1, _subscription, url = _change_operator_setup(is_superuser=True)
+
+    with CaptureQueriesContext(connection) as queries:
+        response = client.post(url)
+
+    assert response.status_code == 200
+    locking = [q["sql"] for q in queries if "FOR UPDATE" in q["sql"]]
+    assert len(locking) == 1
+    assert 'FOR UPDATE OF "deploycenter_service_subscription"' in locking[0]
+
+
+def _locks_of(queries):
+    return [q["sql"] for q in queries if "FOR UPDATE" in q["sql"]]
+
+
+def test_api_organization_service_subscription_update_locks_its_row():
+    """A transfer in flight is waited for, not overwritten with a stale copy."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    operator = factories.OperatorFactory()
+    factories.UserOperatorRoleFactory(user=user, operator=operator)
+    organization = factories.OrganizationFactory()
+    factories.OperatorOrganizationRoleFactory(
+        operator=operator, organization=organization
+    )
+    service = factories.ServiceFactory()
+    factories.OperatorServiceConfigFactory(operator=operator, service=service)
+    factories.ServiceSubscriptionFactory(
+        organization=organization, service=service, operator=operator, is_active=False
+    )
+    url = (
+        f"/api/v1.0/operators/{operator.id}/organizations/{organization.id}"
+        f"/services/{service.id}/subscription/"
+    )
+
+    with CaptureQueriesContext(connection) as queries:
+        response = client.patch(url, {"is_active": True}, format="json")
+    assert response.status_code == 200
+    locking = _locks_of(queries)
+    assert len(locking) == 1
+    assert 'FOR UPDATE OF "deploycenter_service_subscription"' in locking[0]
+
+    with CaptureQueriesContext(connection) as queries:
+        response = client.delete(url)
+    assert response.status_code == 204
+    locking = _locks_of(queries)
+    assert len(locking) == 1
+    assert 'FOR UPDATE OF "deploycenter_service_subscription"' in locking[0]
+
+
+def test_api_organization_service_subscription_update_after_a_transfer():
+    """The previous owner, whose copy of the row is stale, is told the subscription is
+    now managed by another operator, instead of failing on the unique constraint."""
+    client, operator1, subscription, _url = _change_operator_setup(is_superuser=False)
+    # operator1 acts on a subscription that operator2 holds.
+    url = (
+        f"/api/v1.0/operators/{operator1.id}/organizations/{subscription.organization_id}"
+        f"/services/{subscription.service_id}/subscription/"
+    )
+
+    response = client.patch(url, {"is_active": True}, format="json")
+
+    assert response.status_code == 403
+    assert "another operator" in response.json()["detail"]
+    subscription.refresh_from_db()
+    assert subscription.operator != operator1

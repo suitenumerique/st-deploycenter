@@ -13,8 +13,16 @@ domains (sorted) first, then the idp — and never the reverse.
 """
 
 import hashlib
+import time
 
 from django.db import connection
+
+# How often a bounded wait asks again.
+LOCK_POLL_INTERVAL = 0.1
+
+
+class LockTimeout(Exception):
+    """A bounded wait for an advisory lock ran out."""
 
 
 def advisory_lock_key(*parts: str) -> int:
@@ -30,12 +38,26 @@ def advisory_lock_key(*parts: str) -> int:
     )
 
 
-def _acquire(key: int) -> None:
-    """Take one transaction-scoped advisory lock."""
+def _acquire(key: int, timeout: float | None = None) -> None:
+    """Take one transaction-scoped advisory lock.
+
+    Waits as long as it takes, or at most ``timeout`` seconds when given (then
+    raises :class:`LockTimeout`).
+    """
     if connection.vendor != "postgresql":
         return
     with connection.cursor() as cursor:
-        cursor.execute("SELECT pg_advisory_xact_lock(%s)", [key])
+        if timeout is None:
+            cursor.execute("SELECT pg_advisory_xact_lock(%s)", [key])
+            return
+        deadline = time.monotonic() + timeout
+        while True:
+            cursor.execute("SELECT pg_try_advisory_xact_lock(%s)", [key])
+            if cursor.fetchone()[0]:
+                return
+            if time.monotonic() >= deadline:
+                raise LockTimeout(f"advisory lock {key} not available")
+            time.sleep(LOCK_POLL_INTERVAL)
 
 
 def lock_domains(domains) -> None:
@@ -51,13 +73,15 @@ def lock_domains(domains) -> None:
         _acquire(advisory_lock_key("domain", domain))
 
 
-def lock_idp(idp_id: str) -> None:
+def lock_idp(idp_id: str, timeout: float | None = None) -> None:
     """Serialize the ProConnect pushes of one provider across processes.
 
-    The push is a full replace computed from the DB, so two overlapping writers
-    lose an update: the one that reads first can push *last* and drop the other's
-    domain, with no error anywhere. The lock is held until the caller's outermost
-    transaction commits, so the read, the PATCH and the commit are one critical
-    section per idp.
+    A reconciliation reads the provider, then detaches what the DB does not route.
+    Without the lock it would detach a domain that a concurrent request has just
+    attached and not committed yet. The lock is held until the caller's outermost
+    transaction commits, so the calls and the commit are one critical section per
+    idp.
+
+    A request passes a ``timeout`` so it never queues behind a long batch push.
     """
-    _acquire(advisory_lock_key(idp_id))
+    _acquire(advisory_lock_key(idp_id), timeout)

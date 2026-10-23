@@ -253,78 +253,90 @@ collectivité" test to the website domain as well as the email one.
 
 ## Pushing
 
-Any change to an active ProConnect subscription's domains syncs the provider
+Any change to an active ProConnect subscription's domains is pushed to the provider
 synchronously, inside the request's transaction (`core/signals.py` →
-`sync_proconnect_provider`), so a failed sync rolls the change back instead of
+`push_subscription_domains`), so a failed push rolls the change back instead of
 drifting. A provider is the `idp_id` of the **service**: operators cannot override
 it (`OperatorServiceConfig` refuses the key, and ignores one saved before that rule).
-Reassigning a subscription's **service** syncs too, and syncs *both* providers: the
-subscription moves provider with its domains untouched, so the one it left has to be
-recomputed as well. Bulk writes bypass signals: reconcile with
-`manage.py proconnect_sync`.
+Reassigning a subscription's **service** pushes to *both* providers: the subscription
+moves provider with its domains untouched, so the new one gets them and the one it
+left loses them. Transferring a subscription to another operator changes neither the
+domains nor the provider, so nothing is pushed.
 
-A sync reads the provider's live domains, then makes one call per difference, on
-api-partenaires' per-domain routes: `DELETE` for each domain we no longer route
-(first, so a domain moving between providers is free in time), `PUT` for each one
-the provider lacks. Nothing is sent as a whole list. What follows from that:
+**A request pushes only the domains it changes.** The `pre_save` signal records what
+the subscription routed before (its provider and its domains, none when inactive);
+after the save, the difference with what it routes now is pushed, one call per
+domain, on api-partenaires' per-domain routes: `DELETE` for each domain removed (first,
+so a domain moving between providers is free in time), `PUT` for each one added.
+Nothing is sent as a whole list, and the provider's own list is not even read. What
+the provider serves for anyone else, or that no subscription of ours ever routed
+(attached by hand, or by another system), is never touched. A domain that another
+active subscription still routes is not detached either.
+
+Activating with `commune.fr` attaches `commune.fr`. Deactivating (`is_active:false`),
+deleting, or removing a domain from the list detaches those domains, and no others.
+A save that changes neither `is_active`, the domain list nor the service pushes nothing.
+
+Only `proconnect_sync` reconciles a whole provider, and it is run by hand. It is the
+one place where a domain we do not route can get detached, and only with `--prune`:
+
+- `manage.py proconnect_sync` reads each provider (including those with no active
+  subscription) and attaches what is missing. A domain the provider serves that no
+  active subscription routes is named in the output and left in place. With
+  `--prune` it is detached too. Check what it would remove with
+  `proconnect_detect_drift` first.
+- `manage.py subscribe_bulk` pushes the domains of the rows it wrote, like a request.
+  Rows bypass signals (`QuerySet.bulk_create`, `update` and `delete` too), so code
+  that writes subscriptions that way pushes the domains it changed with
+  `push_domain_changes`, or reconciles with `proconnect_sync`.
+
+What follows from the per-domain calls:
 
 - **Rate limit.** api-partenaires allows, by default, 10 requests a minute per
-  provider (60 overall), and a sync costs one read plus one call per domain. A web
-  request only waits out a `Retry-After` of 10 seconds, so a change that touches
-  about ten domains fails with a 502 and is rolled back. The batch commands wait
-  out a whole window (65 seconds), so a large backfill takes about a minute per ten
-  domains and provider, while holding that provider's lock.
+  provider (60 overall), and a push costs one call per domain. A web request only
+  waits out a `Retry-After` of 10 seconds, so a change that touches about ten domains
+  fails with a 502 and is rolled back. The batch commands wait out a whole window (65
+  seconds), so a large backfill takes about a minute per ten domains and provider,
+  while holding that provider's lock.
 - **Refused domains.** A domain api-partenaires refuses (not allowed, taken,
   unreachable) does not stop the others. In a request the calls already made are
   then undone, best effort, and the user is told which domains were refused, with
   the same messages as before. The batch commands keep what went through and report
   the failure.
+- **Undo.** Only a call that changed something is undone: a `PUT` answered `204` (the
+  domain was already attached) or a `DELETE` of a domain that was not there are left
+  alone, so a failed request never removes a domain the provider already had.
 - **Timeouts.** An attach gets a 15 second read timeout, the other calls 5:
   api-partenaires checks the domain's MX and A records through `dns.google` before
   accepting it, 5 seconds each on their side. A call that times out may still have
   been applied, so a request that rolls back also detaches it. A `dns_unavailable`
   answer (their lookup timed out, usually on a zone Google has not cached yet) is
   asked again twice before giving up.
-- **Not atomic.** Any other error (a 5xx, a rate limit that lasts) stops the sync
+- **Busy provider.** Pushes to one provider are serialized by an advisory lock. A
+  request asks for it for at most 5 seconds and then fails with a 502 (rolled back,
+  retry), instead of queuing behind a batch push that holds it for minutes and
+  starving the web workers. The batch commands wait for it as long as it takes.
+- **Not atomic.** Any other error (a 5xx, a rate limit that lasts) stops the push
   where it is. If undoing fails too, the provider is left with part of the change:
-  the next sync converges it, being computed from the live state, and the drift
-  check flags it meanwhile.
+  the drift check flags it, and `proconnect_sync` (with `--prune` for a domain that
+  should not be there) converges it.
 
-### Drift detection and the `out_of_sync` flag
+### Drift detection
 
 `manage.py proconnect_detect_drift` compares what each provider serves with what we
 intend to route, and exits non-zero on any difference. It runs every hour, right
 after `proconnect_fetch_prevalidated`, in the same `cron.json` job (a failed fetch
 does not skip it).
 
-It also maintains `Service.config["out_of_sync"]` (read as `Service.out_of_sync`):
+It only reports: it writes neither to the provider nor to the database, and a
+drifted provider does not block anything. It reads every provider of a ProConnect
+service, including those with no active subscription. A provider that looks drifted
+is checked again under its push lock first, so a request that pushed but has not
+committed yet is not read as drift. An unreadable provider is reported as such.
 
-- **Set** when the service's provider drifted. A provider that looks drifted is
-  checked again under its push lock first, so a request that pushed but has not
-  committed yet is not read as drift.
-- **Effect.** The API refuses PATCH (which also creates a subscription) and DELETE
-  on a subscription of that service (409, `ProConnectOutOfSync`), and the interface
-  disables the switch and the domain editor. Editing an organization's
-  `proconnect_domains` buckets is not blocked: they are an inventory, not what is
-  pushed.
-- **Cleared** by the next run that reads the provider and finds it in sync, or at
-  once by saving the subscription's *ProConnect manual actions* page in the admin,
-  which pushes the database state to ProConnect and rechecks it. With *Skip the
-  ProConnect push* ticked nothing is pushed: the provider is still rechecked, so the
-  flag only clears if it already matches.
-- An unreadable provider changes nothing: no reading is no evidence.
-- Providers of flagged services are rechecked even without an active subscription,
-  otherwise nothing could ever clear their flag.
-
-Every other push rechecks the provider too, so the flag follows the push instead of
-waiting for the next hourly run:
-
-- `proconnect_sync` and `subscribe_bulk` recheck each provider they pushed, failed
-  pushes included (a failed push leaves the provider drifted, which sets the flag).
-  `proconnect_sync --dry-run` pushes nothing and rechecks nothing.
-- A subscription saved or deleted through the signals (the standard admin form, for
-  instance) rechecks the providers it pushed, after the commit, only when one of
-  them is flagged.
+The cron's exit status is read by nobody, so each drifted provider is also reported
+to Sentry as an error, with the domains missing on the provider and the unexpected
+ones.
 
 Pushes are serialized per provider by an advisory lock, and each routed domain is
 locked before the uniqueness check, so two subscriptions cannot both claim it.

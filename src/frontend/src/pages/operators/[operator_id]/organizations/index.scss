@@ -107,9 +107,18 @@
     text-align: center;
   }
 
+  &__transfer {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 8px;
+  }
+
   &--disabled {
-    opacity: 0.7;
     background-color: var(--c--theme--colors--greyscale-050);
+
+    > :not(.dc__service__block__transfer) {
+      opacity: 0.7;
+    }
   }
 
   &__header {
@@ -594,6 +603,13 @@
 
       > .c__field:first-child {
         flex: 55 1 0;
+      }
+
+      // The theme's disabled colour is a translucent white: invisible on the
+      // white menu, where a mode we cannot offer is shown on purpose.
+      .c__select__menu__item--disabled {
+        color: var(--c--contextuals--content--palette--gray--primary);
+        font-style: italic;
       }
     }
   }

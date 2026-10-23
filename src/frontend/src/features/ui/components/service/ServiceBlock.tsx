@@ -8,7 +8,11 @@ import { Service } from "@/features/api/Repository";
 import { Button, Switch, Tooltip, useModals } from "@gouvfr-lasuite/ui-components";
 import { Icon, IconSize, Spinner } from "@gouvfr-lasuite/ui-components";
 import { useEffect, useState } from "react";
-import { useMutationUpdateOrganizationServiceSubscription } from "@/hooks/useQueries";
+import {
+  useMutationChangeOrganizationServiceSubscriptionOperator,
+  useMutationUpdateOrganizationServiceSubscription,
+} from "@/hooks/useQueries";
+import { useAuth } from "@/features/auth/Auth";
 import { useOperatorContext } from "@/features/layouts/components/GlobalLayout";
 import { UseMutateFunction } from "@tanstack/react-query";
 import { errorToString } from "@/features/api/APIError";
@@ -88,6 +92,8 @@ const ENTITLEMENTS_FIELDS: Record<
   },
 };
 
+const normalizeId = (id: string) => id.replaceAll("-", "").toLowerCase();
+
 export const useServiceBlock = (
   service: Service,
   organization: Organization
@@ -99,10 +105,11 @@ export const useServiceBlock = (
     useMutationUpdateOrganizationServiceSubscription();
   const { operatorId } = useOperatorContext();
 
-  // Check if subscription is managed by another operator
+  // Check if subscription is managed by another operator. The id in the URL may be
+  // written without hyphens or in upper case, the API's is not.
   const isManagedByOtherOperator =
     !!service.subscription?.operator_id &&
-    service.subscription.operator_id !== operatorId;
+    normalizeId(service.subscription.operator_id) !== normalizeId(operatorId);
 
   useEffect(() => {
     setChecked(service.subscription ? service.subscription.is_active : false);
@@ -158,6 +165,12 @@ export type ServiceBlockProps = {
 export const ServiceBlock = (props: ServiceBlockProps) => {
   const { t } = useTranslation();
   const modals = useModals();
+  const { user } = useAuth();
+  const { operatorId, operator } = useOperatorContext();
+  // Only superusers may move a subscription between operators (enforced by the API).
+  const isSuperUser = user?.is_superuser ?? false;
+  const changeOperator =
+    useMutationChangeOrganizationServiceSubscriptionOperator();
   // A change of the subscription is in flight (see the switch below).
   const [isChanging, setIsChanging] = useState(false);
   const isExternallyManaged =
@@ -169,9 +182,18 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
   const canSwitch =
     !isExternallyManaged &&
     props.service.can_activate &&
-    !props.service.out_of_sync &&
     !props.disabled &&
     !props.isManagedByOtherOperator;
+
+  // The API refuses a transfer to an operator that does not have the service, that
+  // manages it externally, or that may not activate it for this organization.
+  const canTransfer =
+    isSuperUser &&
+    props.isManagedByOtherOperator &&
+    !!props.service.subscription &&
+    !!props.service.operator_config &&
+    !isExternallyManaged &&
+    (!props.service.subscription.is_active || props.service.can_activate);
 
   const disabledReason = isExternallyManaged
     ? t("organizations.services.externally_managed")
@@ -181,9 +203,7 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
         ? t("organizations.services.missing_required_services")
         : props.isManagedByOtherOperator
           ? t("organizations.services.managed_by_other_operator")
-          : props.service.out_of_sync
-            ? t("organizations.services.out_of_sync")
-            : t("organizations.services.cannot_activate");
+          : t("organizations.services.cannot_activate");
 
   return (
     <div
@@ -323,6 +343,38 @@ export const ServiceBlock = (props: ServiceBlockProps) => {
           <div className="dc__service__block__footer">{props.footer}</div>
         )}
       </div>
+      {canTransfer && (
+        <div className="dc__service__block__transfer">
+          <Button
+            variant="secondary"
+            color="neutral"
+            size="nano"
+            disabled={changeOperator.isPending}
+            onClick={async () => {
+              const decision = await modals.confirmationModal({
+                children: t("organizations.services.change_operator_modal.content", {
+                  service: props.service.name,
+                  organization: props.organization.name,
+                  operator: operator?.name,
+                }),
+              });
+              if (decision !== "yes") {
+                return;
+              }
+              // Errors are toasted by the global mutation handler.
+              changeOperator.mutate({
+                operatorId,
+                organizationId: props.organization.id,
+                serviceId: props.service.id,
+              });
+            }}
+          >
+            {t("organizations.services.change_operator", {
+              operator: operator?.name,
+            })}
+          </Button>
+        </div>
+      )}
     </div>
   );
 };

@@ -5,14 +5,12 @@ import logging
 from contextlib import contextmanager
 from contextvars import ContextVar
 
-from django.db import transaction
 from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 
 import sentry_sdk
 
 from core.models import Account, AccountServiceLink, ServiceSubscription
-from core.services.domainnames import normalize_domains
 from core.webhooks import WebhookClient
 
 logger = logging.getLogger(__name__)
@@ -67,114 +65,78 @@ def get_request_user():
     return _request_user.get()
 
 
-def _subscription_routed_domains(subscription):
-    """The domains this subscription contributes to its provider's pushed set.
-
-    Its routed domains when active, nothing when inactive — exactly what
-    :func:`idp_routed_domains` unions. Used to decide whether a save actually
-    changes the pushed set (and thus needs a re-push).
-    """
-    if not subscription.is_active:
-        return frozenset()
-    return frozenset(normalize_domains((subscription.metadata or {}).get("domains")))
-
-
 @receiver(pre_save, sender=ServiceSubscription)
 def capture_proconnect_change(sender, instance, **kwargs):
-    """Record whether this save changes the subscription's routed domains.
+    """Record what the subscription routed before this save.
 
-    Lets :func:`_sync_proconnect` skip the api-partenaires push when a save touches
-    neither ``is_active`` nor the domain list (e.g. an unrelated metadata edit).
+    :func:`_sync_proconnect` pushes the difference with what it routes after, so a
+    save that touches neither ``is_active``, the domain list nor the service pushes
+    nothing. It reads the database on every save: a push that was suppressed for an
+    earlier save is not carried over to this one. A caller that pushes later, after
+    suppressing the signal, reads ``_proconnect_before`` right after its save.
     """
     # Local import to avoid an import cycle at module load.
     from core.services.proconnect import (  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-        subscription_idp_id,
+        subscription_routing,
     )
 
     if instance.service.type != "proconnect":
         return
-    # Stash transient flags on the instance for the post_save handler to read.
     # pylint: disable=protected-access
     if instance._state.adding or instance.pk is None:  # noqa: SLF001
-        # A new inactive or domainless subscription leaves the pushed set as is.
-        instance._proconnect_needs_sync = bool(  # noqa: SLF001
-            _subscription_routed_domains(instance)
-        )
-        instance._proconnect_previous_idp_id = None  # noqa: SLF001
+        instance._proconnect_before = (None, frozenset())  # noqa: SLF001
         return
-    old = (
-        ServiceSubscription.objects.filter(pk=instance.pk)
-        .select_related("service", "operator")
-        .first()
-    )
     # The idp_id comes from the service, so reassigning the service (admin: the
     # field is editable) moves the subscription to another provider with its domain
-    # list untouched. Comparing only the domains would read that as "nothing to
-    # push" and leave BOTH providers wrong: the old one still advertising the
-    # domains, the new one missing them.
-    old_idp = subscription_idp_id(old) if old else None
-    new_idp = subscription_idp_id(instance)
-    instance._proconnect_previous_idp_id = (  # noqa: SLF001
-        old_idp if old_idp and old_idp != new_idp else None
+    # list untouched: the routing includes the provider for that reason.
+    old = (
+        ServiceSubscription.objects.filter(pk=instance.pk)
+        .select_related("service")
+        .first()
     )
-    instance._proconnect_needs_sync = (  # noqa: SLF001
-        old is None
-        or old_idp != new_idp
-        or _subscription_routed_domains(old) != _subscription_routed_domains(instance)
+    instance._proconnect_before = (  # noqa: SLF001
+        subscription_routing(old) if old else (None, frozenset())
     )
 
 
-def _sync_proconnect(instance, service):
-    """Sync the provider's domains with api-partenaires, synchronously.
+def _sync_proconnect(instance, service, deleted=False):
+    """Push the change in the subscription's routed domains to api-partenaires.
 
     Runs inside the request's transaction so that a push failure raises and rolls
     back the subscription change (keeping local DB and the provider in sync). The
     API user then gets a sync error instead of a silent drift.
 
-    Skips the push when the save or delete does not change the pushed domain set
-    (per the ``_proconnect_needs_sync`` flag, set in
-    :func:`capture_proconnect_change` and :func:`handle_subscription_delete`).
+    Only the domains this change adds or removes are attached or detached (see
+    :func:`core.services.proconnect.push_subscription_domains`): what the provider
+    serves for anyone else is never read nor touched.
 
     FOOTGUN: this fires from ``post_save`` / ``post_delete`` signals, which Django
     does NOT emit for bulk operations — ``QuerySet.bulk_create``,
     ``QuerySet.update``, ``QuerySet.delete`` all bypass it. Any code that mutates
     proconnect ``ServiceSubscription`` rows in bulk (e.g. ``core/tasks/dpnt.py``)
-    will NOT push and must reconcile the provider explicitly afterwards by calling
-    ``sync_proconnect_provider(idp_id)`` (or running the ``proconnect_sync``
-    command). Rollback-on-failure only holds on the request paths that open a
-    transaction (the ``@transaction.atomic`` subscription viewset methods); a bare
+    will NOT push and must push the domains it changed explicitly afterwards, with
+    ``push_domain_changes`` (or reconcile with the ``proconnect_sync`` command).
+    Rollback-on-failure only holds on the request paths that open a transaction (the
+    ``@transaction.atomic`` subscription viewset methods); a bare
     ``instance.save()`` in autocommit commits first, then pushes — the inverse of
     rollback. Prefer the viewset/serializer path for one-off writes.
     """
     if service.type != "proconnect" or _suppress_proconnect_sync.get():
         return
-    if not getattr(instance, "_proconnect_needs_sync", True):
-        return
 
     # Local import to avoid an import cycle at module load.
     from core.services.proconnect import (  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-        out_of_sync_idp_ids,
-        refresh_out_of_sync,
-        subscription_idp_id,
-        sync_proconnect_provider,
-        sync_proconnect_provider_for_subscription,
+        push_subscription_domains,
+        subscription_routing,
     )
 
-    sync_proconnect_provider_for_subscription(instance, raise_on_error=True)
-    pushed = {subscription_idp_id(instance)}
-
-    # The subscription just moved between providers: the one it left still holds
-    # its domains, and only a push recomputed from the DB will drop them.
-    previous_idp_id = getattr(instance, "_proconnect_previous_idp_id", None)
-    if previous_idp_id:
-        sync_proconnect_provider(previous_idp_id, raise_on_error=True)
-        pushed.add(previous_idp_id)
-
-    # The push may have fixed a flagged provider. Rechecked once committed, so that
-    # the flag write is not lost to a later rollback.
-    flagged = pushed & out_of_sync_idp_ids()
-    if flagged:
-        transaction.on_commit(lambda: refresh_out_of_sync(flagged), robust=True)
+    # A deleted instance never went through pre_save: it routes what it holds.
+    before = (
+        subscription_routing(instance)
+        if deleted
+        else getattr(instance, "_proconnect_before", None)
+    )
+    push_subscription_domains(instance, before, deleted=deleted)
 
 
 def _mask_email(email):
@@ -285,11 +247,7 @@ def handle_subscription_delete(sender, instance, **kwargs):
 
     # Before the webhooks, for the same reason as on save: a failed push rolls the
     # deletion back, and subscription.deleted would already be out.
-    # pylint: disable-next=protected-access
-    instance._proconnect_needs_sync = bool(  # noqa: SLF001
-        _subscription_routed_domains(instance)
-    )
-    _sync_proconnect(instance, service)
+    _sync_proconnect(instance, service, deleted=True)
 
     _dispatch_subscription_webhooks(
         "subscription.deleted", instance, organization, service

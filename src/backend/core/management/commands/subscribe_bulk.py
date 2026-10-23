@@ -23,8 +23,9 @@ queryset. ``__in`` lookups split the value on commas; ``true``/``false``/``null`
 are converted. Always check the plan with ``--dry-run`` first.
 
 Rows are written one by one so that entitlements and webhooks still fire, but the
-per-row ProConnect push is suppressed: each affected provider is pushed once at
-the end instead of once per organization, then rechecked (``out_of_sync`` flag).
+per-row ProConnect push is suppressed: the domains the rows added or removed are
+pushed once per provider at the end instead of once per organization. Nothing else
+the provider serves is touched.
 """
 
 import logging
@@ -39,9 +40,8 @@ from core.models import Operator, Organization, Service, ServiceSubscription
 from core.services.proconnect import (
     BATCH_MAX_RETRY_AFTER,
     ProConnectPartnersClient,
-    refresh_out_of_sync,
-    subscription_idp_id,
-    sync_proconnect_provider,
+    push_domain_changes,
+    routing_changes,
 )
 from core.signals import suppress_proconnect_sync
 
@@ -170,19 +170,17 @@ class Command(BaseCommand):
         if not organization_ids:
             return
 
-        # The idps are collected before the writes so that deleted rows are still
-        # pushed.
         if action == "subscribe":
-            idp_ids = self._subscribe(
+            changes = self._subscribe(
                 service, operator, organization_ids, options, dry_run
             )
         else:
-            idp_ids = self._unsubscribe(
+            changes = self._unsubscribe(
                 service, operator, organization_ids, options, dry_run
             )
 
-        if idp_ids and not dry_run and not options["no_proconnect_sync"]:
-            self._push_proconnect(idp_ids)
+        if changes and not dry_run and not options["no_proconnect_sync"]:
+            self._push_proconnect(changes)
 
     def _get_service(self, service_id):
         """Return the target service or fail."""
@@ -221,7 +219,7 @@ class Command(BaseCommand):
             raise CommandError(f"Invalid filter: {exc}") from exc
 
     def _subscribe(self, service, operator, organization_ids, options, dry_run):
-        """Create the missing subscriptions; return the affected idp_ids."""
+        """Create the missing subscriptions; return the ProConnect domain changes."""
         is_active = not options["inactive"]
         existing = ServiceSubscription.objects.filter(
             service=service, organization_id__in=organization_ids
@@ -263,9 +261,9 @@ class Command(BaseCommand):
             )
         if dry_run or (not missing_ids and not to_update):
             self.stdout.write(self.style.SUCCESS("Nothing written."))
-            return set()
+            return {}
 
-        idp_ids = set()
+        changes = {}
         created = errors = updated = 0
         with suppress_proconnect_sync():
             for organization in self._iter_organizations(missing_ids):
@@ -277,6 +275,7 @@ class Command(BaseCommand):
                 )
                 if self._write(subscription.save, organization):
                     created += 1
+                    self._track(changes, subscription)
                     self._progress(created, len(missing_ids), "created")
                 else:
                     errors += 1
@@ -285,24 +284,23 @@ class Command(BaseCommand):
                 subscription.is_active = is_active
                 if self._write(subscription.save, subscription.organization):
                     updated += 1
+                    self._track(changes, subscription)
                 else:
                     errors += 1
-
-            idp_ids = self._collect_idp_ids(service, [operator])
 
         self.stdout.write(
             self.style.SUCCESS(
                 f"{created} created, {updated} updated, {errors} error(s)."
             )
         )
-        return idp_ids
+        return changes
 
     def _unsubscribe(self, service, operator, organization_ids, options, dry_run):
-        """Delete (or deactivate) the subscriptions; return the affected idp_ids."""
+        """Delete (or deactivate) the subscriptions; return the ProConnect changes."""
         soft = options["soft"]
         subscriptions = ServiceSubscription.objects.filter(
             service=service, organization_id__in=organization_ids
-        ).select_related("organization", "operator")
+        ).select_related("organization", "operator", "service")
         if operator:
             subscriptions = subscriptions.filter(operator=operator)
         if soft:
@@ -313,7 +311,7 @@ class Command(BaseCommand):
         self.stdout.write(f"{len(subscriptions)} subscription(s) to {verb}.")
         if dry_run or not subscriptions:
             self.stdout.write(self.style.SUCCESS("Nothing written."))
-            return set()
+            return {}
 
         if options["interactive"] and not soft:
             try:
@@ -325,12 +323,7 @@ class Command(BaseCommand):
             if answer.strip().lower() not in ("y", "yes"):
                 raise CommandError("Aborted.")
 
-        # Collected before the writes: once the rows are gone the operators are
-        # unreachable, and the push below needs their idps.
-        idp_ids = self._collect_idp_ids(
-            service, {sub.operator_id: sub.operator for sub in subscriptions}.values()
-        )
-
+        changes = {}
         done = errors = 0
         with suppress_proconnect_sync():
             for subscription in subscriptions:
@@ -341,6 +334,7 @@ class Command(BaseCommand):
                     write = subscription.delete
                 if self._write(write, subscription.organization):
                     done += 1
+                    self._track(changes, subscription, deleted=not soft)
                     self._progress(done, len(subscriptions), f"{verb.lower()}d")
                 else:
                     errors += 1
@@ -350,7 +344,7 @@ class Command(BaseCommand):
                 f"{done} subscription(s) {verb.lower()}d, {errors} error(s)."
             )
         )
-        return idp_ids
+        return changes
 
     def _iter_organizations(self, organization_ids):
         """Yield the organizations for the given ids, in chunks."""
@@ -382,28 +376,39 @@ class Command(BaseCommand):
             return False
         return True
 
-    def _collect_idp_ids(self, service, operators):
-        """Return the idp_ids of the (service, operator) pairs touched."""
-        if service.type != "proconnect":
-            return set()
-        idp_ids = set()
-        for operator in operators:
-            idp_id = subscription_idp_id(
-                ServiceSubscription(service=service, operator=operator)
-            )
-            if idp_id:
-                idp_ids.add(idp_id)
-        return idp_ids
+    @staticmethod
+    def _track(changes, subscription, deleted=False):
+        """Add the ProConnect domains a written row attached or detached to ``changes``.
 
-    def _push_proconnect(self, idp_ids):
-        """Sync the domains once per affected ProConnect provider."""
+        ``changes`` maps each provider to the sets of domains to attach and detach.
+        """
+        if subscription.service.type != "proconnect":
+            return
+        for idp_id, (attach, detach) in routing_changes(
+            subscription,
+            getattr(subscription, "_proconnect_before", None),
+            deleted=deleted,
+        ).items():
+            pending = changes.setdefault(idp_id, (set(), set()))
+            pending[0].update(attach)
+            pending[1].update(detach)
+
+    def _push_proconnect(self, changes):
+        """Push the domains the rows changed, once per affected provider."""
         failures = []
         client = ProConnectPartnersClient(max_retry_after=BATCH_MAX_RETRY_AFTER)
-        for idp_id in sorted(idp_ids):
-            result = sync_proconnect_provider(idp_id, client=client)
+        for idp_id in sorted(changes):
+            attach, detach = changes[idp_id]
+            # No lock timeout: a batch waits for a push in progress.
+            result = push_domain_changes(
+                idp_id, attach, detach, client=client, lock_timeout=None
+            )
             if result.get("success"):
                 self.stdout.write(
-                    self.style.SUCCESS(f"{idp_id}: pushed {result.get('domains')}")
+                    self.style.SUCCESS(
+                        f"{idp_id}: attached {result['attached']}, "
+                        f"detached {result['detached']}"
+                    )
                 )
             elif result.get("skipped"):
                 self.stdout.write(f"{idp_id}: api-partenaires not configured, skipped.")
@@ -412,11 +417,11 @@ class Command(BaseCommand):
                 self.stderr.write(
                     self.style.ERROR(f"{idp_id}: push FAILED ({result.get('error')})")
                 )
-        refresh_out_of_sync(idp_ids, client)
         if failures:
             raise CommandError(
                 f"Rows written but the domains push failed for {', '.join(failures)}. "
-                f"Re-run `manage.py proconnect_sync`."
+                f"Check them with `manage.py proconnect_detect_drift --idp-id <idp_id>`, "
+                f"then `manage.py proconnect_sync --idp-id <idp_id>` reconciles one."
             )
 
     def _progress(self, done, total, label):

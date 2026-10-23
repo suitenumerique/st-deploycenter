@@ -1,5 +1,7 @@
 """Tests for the domains service: subscription metadata and the external export."""
 
+# pylint: disable=too-many-lines
+
 from django.conf import settings
 from django.test import override_settings
 
@@ -451,6 +453,212 @@ def test_domains_export_excludes_other_service_types():
     response = _export(APIClient())
     assert response.status_code == 200
     assert response.json() == {"count": 0, "results": []}
+
+
+def _dpnt_organization(*domains, **kwargs):
+    """An organization that declared these domains at DILA, managed by an operator."""
+    return factories.OrganizationFactory(
+        proconnect_domains={"dpnt": list(domains)}, **kwargs
+    )
+
+
+def _domains_subscription(operator, service, organization, **kwargs):
+    kwargs.setdefault("metadata", {})
+    return factories.ServiceSubscriptionFactory(
+        organization=organization,
+        service=service,
+        operator=operator,
+        **{"is_active": True, **kwargs},
+    )
+
+
+@override_settings(DOMAINS_API_KEY=DOMAINS_API_KEY)
+def test_domains_export_proposes_parking_for_the_dila_domains():
+    """A subscription that declares nothing gets a parking page for the domains its
+    organization declared at DILA. Nothing is stored for it."""
+    operator, _organization, service = _setup()
+    organization = _dpnt_organization("mairie-exemple.fr")
+    subscription = _domains_subscription(operator, service, organization)
+
+    data = _export(APIClient()).json()
+
+    assert data["count"] == 1
+    entry = data["results"][0]
+    assert entry["domain"] == "mairie-exemple.fr"
+    assert entry["website"] == {"mode": "parking"}
+    assert entry["records"] == []
+    assert entry["source"] == "dpnt"
+    assert entry["organization"]["siret"] == organization.siret
+    assert entry["operator"]["name"] == operator.name
+    subscription.refresh_from_db()
+    assert not subscription.metadata.get("domains")
+
+
+@override_settings(DOMAINS_API_KEY=DOMAINS_API_KEY)
+def test_domains_export_marks_declared_domains_as_such():
+    """A domain the organization declared is reported with its own source."""
+    operator, organization, service = _setup()
+    _domains_subscription(
+        operator, service, organization, metadata={"domains": ["exemple.fr"]}
+    )
+
+    entry = _export(APIClient()).json()["results"][0]
+
+    assert entry["source"] == "subscription"
+
+
+@override_settings(DOMAINS_API_KEY=DOMAINS_API_KEY)
+def test_domains_export_dila_domains_give_way_to_a_declaration():
+    """Once the organization declares a domain, its DILA domains are not added."""
+    operator, _organization, service = _setup()
+    organization = _dpnt_organization("mairie-exemple.fr")
+    _domains_subscription(
+        operator, service, organization, metadata={"domains": ["autre.fr"]}
+    )
+
+    data = _export(APIClient()).json()
+
+    assert [(r["domain"], r["source"]) for r in data["results"]] == [
+        ("autre.fr", "subscription")
+    ]
+
+
+@override_settings(DOMAINS_API_KEY=DOMAINS_API_KEY)
+def test_domains_export_skips_a_dila_domain_several_organizations_declare():
+    """A domain shared at DILA (a generic host, a shared site) belongs to none."""
+    operator, _organization, service = _setup()
+    first = _dpnt_organization("commun.fr", "seul-un.fr")
+    second = _dpnt_organization("commun.fr")
+    _domains_subscription(operator, service, first)
+    _domains_subscription(operator, service, second)
+
+    data = _export(APIClient()).json()
+
+    assert [r["domain"] for r in data["results"]] == ["seul-un.fr"]
+
+
+@override_settings(DOMAINS_API_KEY=DOMAINS_API_KEY)
+def test_domains_export_skips_a_dila_domain_declared_by_another_subscription():
+    """A domain someone declared on a subscription is theirs, not proposed again."""
+    operator, other_organization, service = _setup()
+    _domains_subscription(
+        operator,
+        service,
+        other_organization,
+        metadata={"domains": ["mairie-exemple.fr"]},
+    )
+    organization = _dpnt_organization("mairie-exemple.fr")
+    _domains_subscription(operator, service, organization)
+
+    data = _export(APIClient()).json()
+
+    assert [(r["domain"], r["source"]) for r in data["results"]] == [
+        ("mairie-exemple.fr", "subscription")
+    ]
+    assert data["results"][0]["organization"]["id"] == str(other_organization.id)
+
+
+@override_settings(DOMAINS_API_KEY=DOMAINS_API_KEY)
+def test_domains_export_an_ambiguous_dila_domain_only_comes_from_its_subscription():
+    """Three organizations declare commun.fr at DILA, one also declares it on its
+    subscription: it is exported once, for that one, as a declared domain."""
+    operator, _organization, service = _setup()
+    holder = _dpnt_organization("commun.fr")
+    others = [_dpnt_organization("commun.fr"), _dpnt_organization("commun.fr")]
+    _domains_subscription(
+        operator, service, holder, metadata={"domains": ["commun.fr"]}
+    )
+    for organization in others:
+        _domains_subscription(operator, service, organization)
+
+    data = _export(APIClient()).json()
+
+    assert [(r["domain"], r["source"]) for r in data["results"]] == [
+        ("commun.fr", "subscription")
+    ]
+    assert data["results"][0]["organization"]["id"] == str(holder.id)
+
+
+@override_settings(DOMAINS_API_KEY=DOMAINS_API_KEY)
+def test_domains_export_a_domain_claimed_twice_goes_to_the_earliest_claim():
+    """The API refuses a second active claim, but a row written around it can hold
+    one. The domain is still exported once."""
+    operator, _organization, service = _setup()
+    first = _domains_subscription(
+        operator,
+        service,
+        factories.OrganizationFactory(name="Zebra"),
+        metadata={"domains": ["exemple.fr"]},
+    )
+    second = _domains_subscription(
+        operator,
+        service,
+        factories.OrganizationFactory(name="Alpha"),
+        metadata={"domains": ["exemple.fr", "autre.fr"]},
+    )
+
+    data = _export(APIClient()).json()
+
+    assert sorted((r["domain"], r["organization"]["id"]) for r in data["results"]) == [
+        ("autre.fr", str(second.organization_id)),
+        ("exemple.fr", str(first.organization_id)),
+    ]
+
+
+@override_settings(DOMAINS_API_KEY=DOMAINS_API_KEY)
+def test_domains_export_lists_each_domain_once():
+    """Whatever the mix of declared and proposed domains, no domain repeats."""
+    operator, _organization, service = _setup()
+    _domains_subscription(
+        _setup()[0],
+        service,
+        factories.OrganizationFactory(),
+        metadata={"domains": ["declare.fr", "commun.fr"]},
+    )
+    for domains in (["commun.fr", "a.fr"], ["commun.fr", "declare.fr"], ["b.fr"]):
+        _domains_subscription(operator, service, _dpnt_organization(*domains))
+
+    listed = [r["domain"] for r in _export(APIClient()).json()["results"]]
+
+    assert sorted(listed) == ["a.fr", "b.fr", "commun.fr", "declare.fr"]
+
+
+@override_settings(DOMAINS_API_KEY=DOMAINS_API_KEY)
+def test_domains_export_proposes_a_dila_domain_once_across_services():
+    """An organization subscribed to two domains services gets its default once."""
+    operator, _organization, service = _setup()
+    other_service = factories.ServiceFactory(type="domains")
+    organization = _dpnt_organization("mairie-exemple.fr")
+    _domains_subscription(operator, service, organization)
+    _domains_subscription(operator, other_service, organization)
+
+    listed = [r["domain"] for r in _export(APIClient()).json()["results"]]
+
+    assert listed == ["mairie-exemple.fr"]
+
+
+@override_settings(DOMAINS_API_KEY=DOMAINS_API_KEY)
+def test_domains_export_skips_a_dila_domain_without_a_parking_page():
+    """A domain outside RPNT 1.2 cannot have a parking page, so none is proposed."""
+    operator, _organization, service = _setup()
+    organization = _dpnt_organization("mairie-exemple.com", "mairie-exemple.fr")
+    _domains_subscription(operator, service, organization)
+
+    data = _export(APIClient()).json()
+
+    assert [r["domain"] for r in data["results"]] == ["mairie-exemple.fr"]
+
+
+@override_settings(DOMAINS_API_KEY=DOMAINS_API_KEY)
+def test_domains_export_proposes_nothing_without_an_active_subscription():
+    """The default follows the subscription: no subscription, or an inactive one,
+    exports nothing."""
+    operator, _organization, service = _setup()
+    _dpnt_organization("sans-abonnement.fr")
+    inactive = _dpnt_organization("inactif.fr")
+    _domains_subscription(operator, service, inactive, is_active=False)
+
+    assert _export(APIClient()).json() == {"count": 0, "results": []}
 
 
 @override_settings(DOMAINS_API_KEY=DOMAINS_API_KEY)
