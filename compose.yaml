@@ -2,7 +2,7 @@ name: st-deploycenter
 
 services:
   postgresql:
-    image: postgres:16.15@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690
+    image: postgres:16.15@sha256:9e2cf6287f25c3151f4c9421ccce2b17f3e60061c111a29165e0d2cdd9ff0a97
     ports:
       - "8965:5432"
     healthcheck:
@@ -210,7 +210,7 @@ services:
   #   working_dir: /app
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244
+    image: quay.io/keycloak/keycloak:26.8.1@sha256:a78d6b79572168cb25886b80a8b5b8d4ed4390743e3eecb810538683e209dd6b
     volumes:
       - ./src/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
     command:
@@ -268,6 +268,9 @@ services:
       - prod
     build:
       context: ./src/frontend
+      # The Caddy sources, outside the context (see the caddy-src stage).
+      additional_contexts:
+        caddy-src: ./src/caddy
       dockerfile: Dockerfile
       target: ${FRONTEND_PROD_TARGET:-runtime-distroless-prod}
     environment:

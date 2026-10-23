@@ -20,7 +20,7 @@ description = "ST Deploy Center"
 keywords = ["Django"]
 license = "MIT"
 readme = "README.md"
-requires-python = ">=3.14.8,<4.0"
+requires-python = ">=3.14.9,<4.0"
 
 # Note: after changing this list you must re-run `make deps-lock-back`
 dependencies = [
@@ -48,7 +48,7 @@ dependencies = [
     "redis==6.4.0",  # pinned: kombu 5.6 requires redis<6.5
     # [socks]: ProConnectPartnersClient can route through a SOCKS5 proxy.
     "requests[socks]==2.34.2",
-    "sentry-sdk[django]==2.72.0",
+    "sentry-sdk[django]==2.73.0",
     "whitenoise==6.12.0",
 ]
 
@@ -76,7 +76,7 @@ dev = [
     "pytest-repeat==0.9.4",
     "pytest-xdist==3.8.0",
     "responses==0.26.3",
-    "ruff==0.17.1"
+    "ruff==0.17.2"
 ]
 
 [tool.uv]

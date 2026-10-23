@@ -6,12 +6,31 @@
 {
 	auto_https off
 	admin off
+	# Caddy otherwise saves the adapted config to disk on every start.
+	persist_config off
 	servers {
+		# HTTP/1.1 only. The listener is plain HTTP, TLS ends upstream, so
+		# there was never an h2 or h3 to serve, and the binary is built
+		# without the standard library's HTTP/2 (see build.sh): a
+		# config that enables h2 makes Caddy panic at startup.
+		protocols h1
 		trusted_proxies static {$DEPLOYCENTER_TRUSTED_PROXIES}
 		# Walk X-Forwarded-For right to left and take the first address
 		# that is not a trusted proxy. Without this, the leftmost entry
 		# wins and a client-appended prefix defeats the admin allowlist.
 		trusted_proxies_strict
+	}
+}
+
+# What the three proxied locations below share.
+(backend) {
+	header_up X-Forwarded-Proto https
+	header_up X-Forwarded-For {client_ip}
+	transport http {
+		# The backend speaks plain HTTP/1.1. The default also configures h2,
+		# which the binary is built without (see build.sh): Caddy
+		# panics at startup if this is left out.
+		versions 1.1
 	}
 }
 
@@ -38,8 +57,7 @@
 
 		# Django REST framework
 		reverse_proxy /api/* {$DEPLOYCENTER_BACKEND_SERVER:localhost:8000} {
-			header_up X-Forwarded-Proto https
-			header_up X-Forwarded-For {client_ip}
+			import backend
 		}
 
 		# Django admin IP allowlist. The default allows all (no filtering).
@@ -58,14 +76,12 @@
 
 		# Django admin
 		reverse_proxy /{$DJANGO_ADMIN_URL:admin}/* {$DEPLOYCENTER_BACKEND_SERVER:localhost:8000} {
-			header_up X-Forwarded-Proto https
-			header_up X-Forwarded-For {client_ip}
+			import backend
 		}
 
 		# Django static files, served by whitenoise (admin assets, DRF UI)
 		reverse_proxy /static/* {$DEPLOYCENTER_BACKEND_SERVER:localhost:8000} {
-			header_up X-Forwarded-Proto https
-			header_up X-Forwarded-For {client_ip}
+			import backend
 		}
 
 		# --- Cache policy for the static export ---

@@ -1,9 +1,9 @@
 ARG FRONTEND_IMAGE=frontend-build-output
 
-FROM node:24.22.0-slim@sha256:91acba91b842bec0bf7ea6f5e09c644c7ccad72c4996ed9616d861d1c7cd60d4 AS frontend-base
+FROM node:24.22.1-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS frontend-base
 
 # Bump to force an apt refresh + security upgrade of the base OS.
-ENV MIN_UPDATE_DATE="2026-10-21"
+ENV MIN_UPDATE_DATE="2026-10-24"
 
 RUN <<EOR
 set -eu
@@ -61,7 +61,33 @@ COPY --from=frontend-build /home/frontend/out /app
 # frontend-deps, frontend-build and frontend-build-output entirely
 FROM ${FRONTEND_IMAGE} AS frontend-source
 
-# ---- Web server binaries ----
+# ---- Caddy sources ----
+# src/caddy of the repository, outside this build context: the build passes it as
+# the named context "caddy-src" (`--build-context` in the Makefile,
+# `additional_contexts` in compose.yaml), which replaces this empty stage. A
+# build without it fails on the first COPY from this stage.
+FROM scratch AS caddy-src
+
+# ---- Caddy, built from source ----
+# Only the modules src/caddy/main.go lists, with the flags of src/caddy/build.sh,
+# so the Go toolchain and the dependencies are ours to update: the go directive
+# of src/caddy/go.mod, this image and the tarball in bin/scalingo_postfrontend
+# must stay on the same Go version (build.sh checks it). Runs on the build
+# platform and cross-compiles, so a multi-arch build does not go through
+# emulation.
+FROM --platform=$BUILDPLATFORM golang:1.27.3@sha256:f20d83a83e18dbd2a4714b8ffd4b30b287b6243962dd75608e86abcc63ba4efc AS caddy-build
+ARG TARGETOS
+ARG TARGETARCH
+
+WORKDIR /src
+COPY --from=caddy-src go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+
+COPY --from=caddy-src / ./
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    GOOS=${TARGETOS} GOARCH=${TARGETARCH} sh build.sh /out/caddy
+
+# ---- Health check probe ----
 FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS tools-download
 ARG TARGETARCH
 
@@ -73,22 +99,6 @@ DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
     wget
 rm -rf /var/lib/apt/lists/*
 EOR
-
-ARG CADDY_VERSION=2.11.7
-# When upgrading, run
-# for arch in amd64 arm64; do printf "CADDY_SHA256_%s=%s\n" "$(echo $arch | tr a-z A-Z)" "$(wget -qO- "https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_linux_${arch}.tar.gz" | sha256sum | cut -d' ' -f1)"; done
-# and update checksums accordingly (also in bin/scalingo_postfrontend)
-ARG CADDY_SHA256_AMD64=727b91701a392de6ebc5027509f548bf39979e5216340d0faed8fa5e69c84f8b
-ARG CADDY_SHA256_ARM64=d8fc6d179a5d283028a472a5618564f6ad8a86fed513e64f032b3b0b7cc45e42
-RUN wget -qO /tmp/caddy.tar.gz "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_${TARGETARCH}.tar.gz" \
-    && case "${TARGETARCH}" in \
-         amd64) echo "${CADDY_SHA256_AMD64}  /tmp/caddy.tar.gz" | sha256sum -c - ;; \
-         arm64) echo "${CADDY_SHA256_ARM64}  /tmp/caddy.tar.gz" | sha256sum -c - ;; \
-         *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
-       esac \
-    && tar -xzf /tmp/caddy.tar.gz caddy \
-    && mv caddy /usr/bin/caddy \
-    && rm /tmp/caddy.tar.gz
 
 # HTTP probe for the healthcheck: the distroless image has no shell and no curl.
 ARG LPROBE_VERSION=v0.2.1
@@ -110,14 +120,14 @@ RUN wget -qO /usr/bin/lprobe "https://github.com/fivexl/lprobe/releases/download
 FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS runtime-prod
 
 # Bump to force an apt refresh + security upgrade of the base OS.
-ENV MIN_UPDATE_DATE="2026-10-21"
+ENV MIN_UPDATE_DATE="2026-10-24"
 
 RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 
-COPY --from=tools-download /usr/bin/caddy /usr/bin/caddy
+COPY --from=caddy-build /out/caddy /usr/bin/caddy
 COPY --from=tools-download /usr/bin/lprobe /usr/bin/lprobe
 COPY --from=frontend-source /app /app
-COPY caddy/Caddyfile /etc/caddy/Caddyfile
+COPY --from=caddy-src Caddyfile /etc/caddy/Caddyfile
 
 ENV PORT=8080
 ENV DEPLOYCENTER_FRONTEND_ROOT=/app
@@ -141,12 +151,12 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
   CMD ["/usr/bin/lprobe", "-mode=http", "-port=8080", "-endpoint=/__lbheartbeat__"]
 
 # ---- Production runtime, distroless ----
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:516757106de35205efb70b91ba03f6f1298424a0678c603255cf2852a7000087 AS runtime-distroless-prod
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 AS runtime-distroless-prod
 
-COPY --from=tools-download /usr/bin/caddy /usr/bin/caddy
+COPY --from=caddy-build /out/caddy /usr/bin/caddy
 COPY --from=tools-download /usr/bin/lprobe /usr/bin/lprobe
 COPY --from=frontend-source /app /app
-COPY caddy/Caddyfile /etc/caddy/Caddyfile
+COPY --from=caddy-src Caddyfile /etc/caddy/Caddyfile
 
 ENV PORT=8080
 ENV DEPLOYCENTER_FRONTEND_ROOT=/app

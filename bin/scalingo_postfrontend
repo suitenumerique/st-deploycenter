@@ -11,23 +11,31 @@ mv src/frontend/out build/frontend-out
 
 mv src/backend/* ./
 
-# Download the Caddy binary (the container images pin the same version, see
-# src/frontend/Dockerfile)
-CADDY_VERSION="2.11.7"
-# When upgrading, run
-# curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.tar.gz" | sha256sum
-# and update the checksum accordingly
-CADDY_SHA256_AMD64="727b91701a392de6ebc5027509f548bf39979e5216340d0faed8fa5e69c84f8b"
-curl -fsSL -o /tmp/caddy.tar.gz "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.tar.gz"
-echo "${CADDY_SHA256_AMD64}  /tmp/caddy.tar.gz" | sha256sum -c -
-tar -xzf /tmp/caddy.tar.gz -C bin/ caddy
-rm /tmp/caddy.tar.gz
-chmod +x bin/caddy
+# Build Caddy from source, with the same modules and flags as the container
+# images (src/caddy/build.sh). The Go toolchain is only needed here, it
+# stays in /tmp and out of the slug.
+# GO_VERSION must be the go directive of src/caddy/go.mod (build.sh
+# checks it), and the golang image in src/frontend/Dockerfile.
+GO_VERSION="1.27.3"
+# When upgrading, take the linux-amd64 checksum from https://go.dev/dl/
+GO_SHA256_AMD64="65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40"
+curl -fsSL -o /tmp/go.tar.gz "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
+echo "${GO_SHA256_AMD64}  /tmp/go.tar.gz" | sha256sum -c -
+tar -xzf /tmp/go.tar.gz -C /tmp
+rm /tmp/go.tar.gz
+
+(
+  export PATH="/tmp/go/bin:${PATH}"
+  # -modcacherw: the module cache is read-only by default, which rm cannot clear.
+  export GOPATH=/tmp/gopath GOCACHE=/tmp/gocache GOFLAGS=-modcacherw
+  sh src/caddy/build.sh "${PWD}/bin/caddy"
+)
+rm -rf /tmp/go /tmp/gopath /tmp/gocache
 
 # Copy the Caddyfile (uses {$ENV} vars natively, no ERB needed)
-cp src/frontend/caddy/Caddyfile ./Caddyfile
+cp src/caddy/Caddyfile ./Caddyfile
 
 # The Scalingo Python buildpack detects the app from uv.lock (moved to the root
 # by the mv above) and requires .python-version to pick the interpreter. Keep
 # this in step with requires-python in src/backend/pyproject.toml.
-echo "3.14.8" > .python-version
+echo "3.14.9" > .python-version
