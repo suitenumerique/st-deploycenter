@@ -1816,9 +1816,31 @@ def test_detect_drift_reports_a_drifted_provider_to_sentry():
     sentry.capture_message.assert_called_once()
     args, kwargs = sentry.capture_message.call_args
     assert IDP in args[0]
-    assert "a.fr" in args[0]
-    assert "stray.fr" in args[0]
     assert kwargs["level"] == "error"
+    # The domains are in the extras, not the message, so the issue is one per provider.
+    assert "a.fr" not in args[0]
+    scope = sentry.new_scope.return_value.__enter__.return_value
+    assert scope.fingerprint == ["proconnect-drift", IDP]
+    extras = {call.args[0]: call.args[1] for call in scope.set_extra.call_args_list}
+    assert extras == {"missing": ["a.fr"], "unexpected": ["stray.fr"]}
+
+
+@proconnect_settings
+@responses.activate
+def test_detect_drift_reports_only_unexpected_domains_as_a_warning():
+    """A domain only the provider holds is not an outage: warning, not error."""
+    _make_proconnect_subscription(IDP, ["a.fr"])
+    FakeProvider(live={"a.fr", "stray.fr"})
+
+    with (
+        mock.patch(
+            "core.management.commands.proconnect_detect_drift.sentry_sdk"
+        ) as sentry,
+        pytest.raises(CommandError),
+    ):
+        call_command("proconnect_detect_drift", stdout=StringIO(), stderr=StringIO())
+
+    assert sentry.capture_message.call_args.kwargs["level"] == "warning"
 
 
 # --- subscribe_bulk -------------------------------------------------------------

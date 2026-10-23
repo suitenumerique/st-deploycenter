@@ -423,6 +423,7 @@ def export_domains() -> list[dict]:
             holder.setdefault(domain, index)
     # One scan of every organization: only when some subscription needs it.
     owners = None
+    proposed: set[str] = set()
 
     entries = []
     for index, (subscription, (domains, website)) in enumerate(
@@ -460,6 +461,11 @@ def export_domains() -> list[dict]:
         if owners is None:
             owners = dila_domain_owners()
         for domain in _dpnt_parking_domains(subscription, taken, owners):
+            # An organization can hold several domains subscriptions (one per
+            # service): its default is proposed once.
+            if domain in proposed:
+                continue
+            proposed.add(domain)
             entries.append(
                 {
                     "domain": domain,

@@ -1,6 +1,7 @@
 """Tests for the admin page that subscribes every organization of an operator."""
 
 from django.contrib.admin.models import LogEntry
+from django.contrib.auth.models import Permission
 from django.test import Client
 from django.urls import reverse
 
@@ -174,6 +175,89 @@ def test_reassigning_moves_the_subscriptions_of_other_operators():
     # An organization the operator does not manage stays with its operator.
     outsider.refresh_from_db()
     assert outsider.operator == other
+
+
+def test_the_result_counts_the_rows_left_with_another_operator():
+    """A refused reassignment stays with its operator, and is counted as such."""
+    operator, organizations, service = _setup(
+        managed=2, service_kwargs={"config": {"population_limits": {"commune": 1000}}}
+    )
+    other = factories.OperatorFactory()
+    for organization in organizations:
+        organization.type = "commune"
+        organization.population = 100
+        organization.epci_population = None
+        organization.save()
+        factories.ServiceSubscriptionFactory(
+            organization=organization, service=service, operator=other
+        )
+    big = organizations[0]
+    big.population = 50000
+    big.save()
+
+    response = _admin_client().post(
+        URL,
+        {**_data(operator, service, reassign_existing="on"), "confirm": "1"},
+        follow=True,
+    )
+
+    assert "1 reassigned, 0 already belonged to this operator, 1 left" in (
+        response.content.decode()
+    )
+    big_subscription = models.ServiceSubscription.objects.get(
+        service=service, organization=big
+    )
+    assert big_subscription.operator == other
+
+
+def test_the_left_count_is_the_whole_set_without_reassigning():
+    """Without the reassign box, every row of another operator is left."""
+    operator, organizations, service = _setup(managed=2)
+    other = factories.OperatorFactory()
+    for organization in organizations:
+        factories.ServiceSubscriptionFactory(
+            organization=organization, service=service, operator=other
+        )
+
+    response = _admin_client().post(
+        URL, {**_data(operator, service), "confirm": "1"}, follow=True
+    )
+
+    assert "0 reassigned, 0 already belonged to this operator, 2 left" in (
+        response.content.decode()
+    )
+
+
+def test_a_proconnect_subscription_cannot_be_created_active_in_bulk():
+    """As in the API, ProConnect is only active with a domain: it is created inactive."""
+    operator, _organizations, service = _setup(
+        managed=2, service_kwargs={"type": "proconnect"}
+    )
+    client = _admin_client()
+
+    refused = _subscribe(client, operator, service)
+    assert refused.status_code == 200
+    assert "needs a domain to be active" in refused.content.decode()
+    assert not models.ServiceSubscription.objects.filter(service=service).exists()
+
+    _subscribe(client, operator, service, is_active="")
+    assert models.ServiceSubscription.objects.filter(service=service).count() == 2
+
+
+def test_the_changelist_link_needs_the_permission_of_the_page():
+    """A staff user who would get a 403 on the page is not shown the button."""
+    changelist = reverse("admin:core_servicesubscription_changelist")
+    user = factories.UserFactory(is_staff=True, is_superuser=False)
+    user.user_permissions.add(
+        Permission.objects.get(codename="view_servicesubscription")
+    )
+    client = Client()
+    client.force_login(user)
+
+    response = client.get(changelist)
+
+    assert response.status_code == 200
+    assert URL not in response.content.decode()
 
 
 def test_a_service_the_operator_does_not_offer_is_refused():

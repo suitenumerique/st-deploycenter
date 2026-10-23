@@ -462,11 +462,24 @@ class BulkOperatorSubscriptionForm(MetadataJSONMixin, forms.Form):
     )
 
     def clean(self):
-        """The service must be available to the operator, and carry no shared domains."""
+        """The service must be available to the operator, and carry no shared domains.
+
+        A ProConnect subscription is only active with a domain, which cannot be given
+        in bulk: as in the API, it is created inactive. A Domains subscription needs
+        none, its parking pages default to the organization's DILA domains.
+        """
         cleaned_data = super().clean()
         operator = cleaned_data.get("operator")
         service = cleaned_data.get("service")
         if operator and service:
+            if service.type == "proconnect" and cleaned_data.get("is_active"):
+                self.add_error(
+                    "is_active",
+                    _(
+                        "A ProConnect subscription needs a domain to be active: "
+                        "create it inactive."
+                    ),
+                )
             if not models.OperatorServiceConfig.objects.filter(
                 operator=operator, service=service
             ).exists():
@@ -1865,6 +1878,10 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
             context,
         )
 
+    def _can_bulk_operator_subscribe(self, request):
+        """The bulk operator page creates and reassigns subscriptions."""
+        return self.has_add_permission(request) and self.has_change_permission(request)
+
     @staticmethod
     def _operator_subscriptions(operator, service):
         """The managed organizations of an operator, and their subscriptions to a service."""
@@ -1934,7 +1951,8 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
                     subscription.operator = operator
                     reassigned += self._write_subscription(subscription, errors)
 
-        left = 0 if form.cleaned_data["reassign_existing"] else counts["elsewhere"]
+        # What stays with another operator: all of it, or the rows that were refused.
+        left = counts["elsewhere"] - reassigned
         LogEntry.objects.log_actions(
             user.pk,
             [operator],
@@ -1959,9 +1977,7 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
         A first submit shows what would be done, and nothing is written until the
         result is confirmed: a reassignment moves other operators' subscriptions.
         """
-        if not (
-            self.has_add_permission(request) and self.has_change_permission(request)
-        ):
+        if not self._can_bulk_operator_subscribe(request):
             raise PermissionDenied
 
         preview = None
@@ -2016,8 +2032,10 @@ class ServiceSubscriptionAdmin(admin.ModelAdmin):
         extra_context["bulk_subscribe_url"] = reverse(
             "admin:core_servicesubscription_bulk_subscribe"
         )
-        extra_context["bulk_operator_subscribe_url"] = reverse(
-            "admin:core_servicesubscription_bulk_operator_subscribe"
+        extra_context["bulk_operator_subscribe_url"] = (
+            reverse("admin:core_servicesubscription_bulk_operator_subscribe")
+            if self._can_bulk_operator_subscribe(request)
+            else None
         )
         return super().changelist_view(request, extra_context)
 

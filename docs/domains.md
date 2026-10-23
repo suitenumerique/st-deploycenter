@@ -225,6 +225,11 @@ the records, not on the mode.
   but a row written around it (the admin) can hold one: the earliest claim wins and
   the others are logged and left out.
 
+- The response is not paginated: one snapshot per run, one query. `count` is simply
+  `len(results)` — despite the shape, there is no `next` page to follow.
+- Access requires `Authorization: Bearer <key>` matching the `DOMAINS_API_KEY`
+  setting. When that setting is empty the route is closed to everyone.
+
 ### Default parking pages
 
 A subscription that declares **no** domain (a bulk subscription, for instance) still
@@ -245,7 +250,3 @@ Only a domain that is unambiguous is proposed. A DILA domain is left out when:
 The default says what we would serve, not that the domain is ours to serve: a job
 that creates zones or pages should still require the domain to be delegated to the
 ANCT nameservers (see the check above).
-- The response is not paginated: one snapshot per run, one query. `count` is simply
-  `len(results)` — despite the shape, there is no `next` page to follow.
-- Access requires `Authorization: Bearer <key>` matching the `DOMAINS_API_KEY`
-  setting. When that setting is empty the route is closed to everyone.

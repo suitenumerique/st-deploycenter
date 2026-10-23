@@ -624,6 +624,20 @@ def test_domains_export_lists_each_domain_once():
 
 
 @override_settings(DOMAINS_API_KEY=DOMAINS_API_KEY)
+def test_domains_export_proposes_a_dila_domain_once_across_services():
+    """An organization subscribed to two domains services gets its default once."""
+    operator, _organization, service = _setup()
+    other_service = factories.ServiceFactory(type="domains")
+    organization = _dpnt_organization("mairie-exemple.fr")
+    _domains_subscription(operator, service, organization)
+    _domains_subscription(operator, other_service, organization)
+
+    listed = [r["domain"] for r in _export(APIClient()).json()["results"]]
+
+    assert listed == ["mairie-exemple.fr"]
+
+
+@override_settings(DOMAINS_API_KEY=DOMAINS_API_KEY)
 def test_domains_export_skips_a_dila_domain_without_a_parking_page():
     """A domain outside RPNT 1.2 cannot have a parking page, so none is proposed."""
     operator, _organization, service = _setup()

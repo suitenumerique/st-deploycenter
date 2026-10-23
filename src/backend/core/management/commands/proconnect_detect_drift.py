@@ -71,12 +71,17 @@ class Command(BaseCommand):
                 drift = report.drifted[idp_id]
                 # This runs on a cron, where a CommandError is only a non-zero exit
                 # nobody reads: report the drift to Sentry too.
-                sentry_sdk.capture_message(
-                    f"ProConnect provider {idp_id} drifted: "
-                    f"missing on provider: {drift.missing}; "
-                    f"unexpected on provider: {drift.unexpected}",
-                    level="error",
-                )
+                # One issue per provider, whatever the domains: they go in the
+                # extras. A domain only we do not route is not an outage, and
+                # proconnect_sync leaves it in place without --prune.
+                with sentry_sdk.new_scope() as scope:
+                    scope.fingerprint = ["proconnect-drift", idp_id]
+                    scope.set_extra("missing", sorted(drift.missing))
+                    scope.set_extra("unexpected", sorted(drift.unexpected))
+                    sentry_sdk.capture_message(
+                        f"ProConnect provider {idp_id} drifted",
+                        level="error" if drift.missing else "warning",
+                    )
                 self.stderr.write(
                     self.style.WARNING(
                         f"{idp_id}: DRIFT: missing on provider: {drift.missing}; "
