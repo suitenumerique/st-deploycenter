@@ -208,6 +208,10 @@ def test_the_result_counts_the_rows_left_with_another_operator():
         service=service, organization=big
     )
     assert big_subscription.operator == other
+    moved = models.ServiceSubscription.objects.get(
+        service=service, organization=organizations[1]
+    )
+    assert moved.operator == operator
 
 
 def test_the_left_count_is_the_whole_set_without_reassigning():
@@ -241,23 +245,36 @@ def test_a_proconnect_subscription_cannot_be_created_active_in_bulk():
     assert not models.ServiceSubscription.objects.filter(service=service).exists()
 
     _subscribe(client, operator, service, is_active="")
-    assert models.ServiceSubscription.objects.filter(service=service).count() == 2
+    subscriptions = models.ServiceSubscription.objects.filter(service=service)
+    assert subscriptions.count() == 2
+    assert not subscriptions.filter(is_active=True).exists()
 
 
-def test_the_changelist_link_needs_the_permission_of_the_page():
-    """A staff user who would get a 403 on the page is not shown the button."""
-    changelist = reverse("admin:core_servicesubscription_changelist")
+@pytest.mark.parametrize(
+    ("granted", "shown"),
+    [
+        (["view"], False),
+        (["view", "add"], False),
+        (["view", "change"], False),
+        (["view", "add", "change"], True),
+    ],
+)
+def test_the_changelist_link_needs_the_permissions_of_the_page(granted, shown):
+    """The button needs both the add and the change permission, like the page."""
     user = factories.UserFactory(is_staff=True, is_superuser=False)
     user.user_permissions.add(
-        Permission.objects.get(codename="view_servicesubscription")
+        *Permission.objects.filter(
+            codename__in=[f"{action}_servicesubscription" for action in granted]
+        )
     )
     client = Client()
     client.force_login(user)
 
-    response = client.get(changelist)
+    response = client.get(reverse("admin:core_servicesubscription_changelist"))
 
     assert response.status_code == 200
-    assert URL not in response.content.decode()
+    assert (URL in response.content.decode()) is shown
+    assert (client.get(URL).status_code == 200) is shown
 
 
 def test_a_service_the_operator_does_not_offer_is_refused():
